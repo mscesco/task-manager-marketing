@@ -1,14 +1,6 @@
-// web/lib/useWarnBeforeUnload.ts
-// =====================================================================
-// Pergunta antes de sair da página enquanto há edição não salva -- F5,
-// fechar a aba, e a navegação da barra lateral (que é `<a>`, com recarga).
-// `web/AGENTS.md` §4: "Avisar antes de sair com alteração não salva".
-//
-// ⚠️ O NAVEGADOR ESCREVE A PERGUNTA, não nós: desde 2016 o texto do
-// `returnValue` é ignorado e cada navegador mostra o seu. O que importa é
-// pedir o aviso (`preventDefault`), e só ENQUANTO houver o que perder --
-// ligado sempre, a página perguntaria até para quem não mexeu em nada.
-// =====================================================================
+// Pergunta antes de sair da página enquanto há edição não salva (F5, fechar
+// a aba, links da barra lateral). O texto é do navegador; só se pede o aviso
+// enquanto houver o que perder.
 import { useEffect } from "react";
 
 export function useWarnBeforeUnload(ativo: boolean) {

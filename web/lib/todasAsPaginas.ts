@@ -1,11 +1,6 @@
 /**
- * Junta todas as paginas de uma listagem paginada (o backend tem teto de 100
- * por pagina).
- *
- * Auditoria 11/11: o detalhe da tarefa pedia so a primeira pagina dos
- * comentarios, que e a dos MAIS ANTIGOS -- e a tela mostra o mais novo em
- * cima. Acima de 100 (respostas contam), a recarga sumia justo com os
- * recentes. Dedupe por id: alguem pode comentar entre uma pagina e outra.
+ * Junta todas as páginas de uma listagem paginada (o backend tem teto de 100
+ * por página). Dedupe por id: um item pode entrar entre uma página e outra.
  */
 export async function todasAsPaginas<T extends { id: string }>(
   buscar: (page: number, size: number) => Promise<{ items: T[]; total: number }>,

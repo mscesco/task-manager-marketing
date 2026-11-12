@@ -1,5 +1,4 @@
 "use client";
-// lib/useDocumentTitle.ts
 // Põe na aba o nome que só se sabe depois de carregar (ver `documentTitle.ts`).
 
 import { useEffect } from "react";

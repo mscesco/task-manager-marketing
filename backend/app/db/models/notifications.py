@@ -1,22 +1,9 @@
-"""Model ORM de notificacoes in-app (Spec 018).
+"""Models de notificacao in-app e dos toggles desligados.
 
-notification : eventos pessoais entregues a um destinatario (recipient).
-Tipos iniciais: TASK_ASSIGNED, TASK_COMMENTED. A tabela e generica o
-suficiente para tipos futuros (mencao, prazo) sem rework.
-
-Decisoes (Spec 018):
-  - `type` e String (nao PG enum): tipo novo nao exige ALTER TYPE.
-  - `payload` JSONB carrega snapshot de exibicao (ex.: actor_name,
-    task_title) capturado na EMISSAO -> read vira scan de UMA tabela,
-    barato pro poll do sino (D1).
-  - `task_id`/`comment_id`/`actor_id` SEM FK rigida: a notificacao e um
-    registro historico que sobrevive a task/comentario sumir (D2).
-  - `recipient_id` TEM FK composta (id, workspace_id) -> users: um
-    destinatario invalido nao faz sentido.
-  - sem soft-delete. ⚠️ ESTA LINHA DIZIA "sem updated_at: notificacao nasce e
-    so muda read_at" -- deixou de ser verdade na Spec 053 (fatia C): avisos
-    seguidos do mesmo autor se JUNTAM (payload e `updated_at` mudam) e, quando
-    se anulam, a linha e APAGADA. Ver `NotificationEmitter._juntar`.
+`type` e String (tipo novo sem ALTER TYPE). `payload` guarda um retrato para
+exibir, tirado na emissao, para o sino ler uma tabela so. `task_id`,
+`comment_id` e `actor_id` sem FK: o aviso sobrevive ao alvo sumir. Avisos
+seguidos do mesmo autor se juntam (`NotificationEmitter._juntar`).
 """
 
 from __future__ import annotations
@@ -54,15 +41,14 @@ class Notification(UUIDPrimaryKeyMixin, Base):
             ondelete="CASCADE",
             name="fk_notification_recipient",
         ),
-        # A ordenacao do sino e da pagina "Todas" (auditoria de 11/11, item
-        # 17; migration 0034).
+        # Ordenacao do sino e da pagina "Todas".
         Index(
             "ix_notification_recipient_updated",
             "recipient_id",
             text("updated_at DESC"),
             text("id DESC"),
         ),
-        # COMMENT da TABELA no schema v5 (dict de opcoes vai por ULTIMO).
+        # COMMENT da tabela no banco; o dict de opcoes vai por ultimo.
         {
             "comment": (
                 "Notificacoes in-app pessoais (Spec 018). type via String; "
@@ -98,15 +84,12 @@ class Notification(UUIDPrimaryKeyMixin, Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # Spec 053, fatia C (migration 0027): a ultima mudanca do aviso. Igual a
-    # `created_at` ate uma juncao atualiza-lo. O sino ordena por aqui.
+    # Ultima mudanca do aviso (uma juncao atualiza); o sino ordena por aqui.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # Spec 054 (migration 0028): POR QUE o aviso chegou para quem recebe --
-    # `watcher`, `assignee` e/ou `creator`, gravado no instante do envio (D12).
-    # Vazio = sem papel: tipos pessoais, ou aviso antigo sem papel reconstruido.
-    # ⚠️ Vazio NUNCA e silenciado por toggle de papel (D13).
+    # Por que o aviso chegou (`watcher`, `assignee`, `creator`), gravado no
+    # envio. Vazio = sem papel, e nunca e silenciado por toggle de papel.
     roles: Mapped[list[str]] = mapped_column(
         ARRAY(String(10)),
         server_default=text("'{}'::character varying[]"),
@@ -115,14 +98,8 @@ class Notification(UUIDPrimaryKeyMixin, Base):
 
 
 class NotificationMute(UUIDPrimaryKeyMixin, Base):
-    """Um toggle de notificacao DESLIGADO (Spec 054, §6.1).
-
-    ⚠️ UMA LINHA = DESLIGADO, e a ausencia = ligado. E isso que faz tudo nascer
-    ligado (D11), inclusive tipo de aviso que ainda nao existe, sem linha para
-    ninguem e sem migration.
-
-    `role = "none"` e o toggle de papel unico (reacao; por/tirar como seguidor).
-    So a propria pessoa grava as suas (D15): a rota e `/me`.
+    """Toggle de notificacao desligado: linha = desligado, ausencia = ligado
+    (tipo novo ja nasce ligado). `role = "none"` e o toggle sem papel.
     """
 
     __tablename__ = "notification_mute"

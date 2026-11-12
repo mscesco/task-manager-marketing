@@ -1,5 +1,4 @@
-// components/TextoLegal.tsx
-// A casca de `/privacidade` e `/termos` (Spec 064).
+// A casca de `/privacidade` e `/termos`.
 
 import type { ReactNode } from "react";
 

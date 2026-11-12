@@ -1,10 +1,6 @@
-// lib/teamDashboard.ts
-// A tela inicial do time (Spec 058) -- o que DECIDE, separado do que desenha
-// (a fronteira da Spec 027). Os cards só desenham.
-//
-// ⚠️ SEM `Date`: os dias vêm do servidor como "YYYY-MM-DD", já no fuso da
-// organização, e a aritmética é a do calendário da Base (`baseViews.ts`) --
-// dia é calendário, não instante (web/AGENTS.md §0.1).
+// A tela inicial do time: o que decide, separado do que os cards desenham.
+// Sem `Date`: os dias vêm do servidor como "YYYY-MM-DD" no fuso da
+// organização, e dia é calendário, não instante.
 
 import type { DashboardResponse, DashboardTask } from "./api";
 import { dataDosDias, diaDaSemana, diasDesdeEpoca, diasNoMes } from "./baseViews";
@@ -24,16 +20,9 @@ export type DashboardLayout = {
 };
 
 /**
- * O desenho da tela (Spec 058 §5; o layout em blocos é pedido dela, 14/10, com
- * uma referência de painel).
- *
- * ⚠️ QUEM É GESTOR SE DESCOBRE PELA RESPOSTA, e não por uma segunda regra de
- * permissão na tela: a carga só vem para quem tem `team_workload.read`. Sem
- * ela, a pessoa é tratada como operador -- o que é dela primeiro (D1).
- *
- * ⚠️ SEMPRE QUATRO NÚMEROS EM CIMA: sem a fila (quem não tem
- * `solicitation.read`), o quarto vira "Minhas atrasadas" -- o número que mais
- * importa para quem executa --, e a fileira não fica com um buraco.
+ * O desenho da tela. Quem é gestor se descobre pela resposta (a carga só vem
+ * para quem tem `team_workload.read`). Sempre quatro números em cima: sem a
+ * fila, o quarto vira "Minhas atrasadas".
  */
 export function dashboardLayout(d: DashboardResponse): DashboardLayout {
   const manager = d.workload !== null;
@@ -108,10 +97,9 @@ export function bucketLabel(
     : `${dayMonth(b.start)}–${dayMonth(b.end)}`;
 }
 
-// ------------------------------------------------------------ período (15/10)
-// Pedido dela: escolher a data e TUDO se adaptar a ela -- no estado de hoje
-// (a regra mora no servidor). Aqui só o que a tela decide: os atalhos, andar
-// para trás e para a frente, e o nome do período.
+// ------------------------------------------------------------ período
+// Atalhos, andar para trás e para a frente, e o nome do período; o que muda
+// com a data escolhida é decidido no servidor.
 
 export type Period = { start: string; end: string };
 export type PeriodPreset = "now" | "thisWeek" | "lastWeek" | "nextWeek" | "thisMonth" | "lastMonth";
@@ -156,10 +144,7 @@ export function presetOf(p: Period | null, today: string): PeriodPreset | null {
 
 /**
  * Anda o período inteiro para trás (-1) ou para a frente (+1).
- *
- * ⚠️ MÊS ANDA POR MÊS, e não por 30 dias: outubro para trás é setembro
- * inteiro, e não "2 de setembro a 1 de outubro". O resto anda pelo próprio
- * tamanho (uma semana anda uma semana).
+ * Mês inteiro anda por mês, não por 30 dias; o resto anda pelo próprio tamanho.
  */
 export function shiftPeriod(p: Period, dir: -1 | 1): Period {
   if (isWholeMonth(p)) {
@@ -208,7 +193,7 @@ function pad(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-/** Quantos cabem no card da carga antes do "Ver todos" (§10.5). */
+/** Quantos cabem no card da carga antes do "Ver todos". */
 export const WORKLOAD_PREVIEW = 10;
 
 function epochDay(iso: string): number {

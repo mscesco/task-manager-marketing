@@ -1,35 +1,11 @@
-"""Freios de tentativa: formulario publico, coletor de erros, login e troca
-de senha.
+"""Freios de tentativa: por IP (formulario publico, coletor de erros) e por
+conta (login, troca de senha). Nao e rate limit global.
 
-ESCOPO (consultoria / spec rate-limit):
-    Freio por IP no formulario publico e no coletor de erros, e freio por
-    CONTA no login e na troca de senha. NAO e rate-limit global da app. (O
-    /auth/login e o /auth/refresh tiveram freio por IP ate 21/10 e 16/10 --
-    ver os comentarios no lugar onde eles moravam, la embaixo.)
-
-ESTRATEGIA:
-    - Janela DESLIZANTE (sliding window): conta as tentativas dentro da
-      janela. Evita o "burst de borda" do fixed-window (2x no limiar).
-    - Contagem NO BANCO (`rate_limit_hit`, auditoria de 11/11, item 10). Ate
-      11/11 ela morava na memoria de cada processo, e producao sobe
-      `uvicorn --workers 2`: o limite real era ate o dobro, o corte dependia
-      de qual worker atendia, e todo deploy zerava. A escolha dela foi manter
-      os dois workers (sem fila atras de um export) e contar num lugar so.
-    - ⚠️ O FREIO CONFIRMA (commit) SOZINHO -- excecao a regra "so o Unit of
-      Work faz commit". A tentativa que ele conta e justamente a que FALHA, e
-      a falha desfaz a transacao da requisicao: sem o commit aqui, a senha
-      errada nunca seria registrada. O freio so grava antes de qualquer
-      escrita da requisicao (ou no lugar dela), entao nao confirma nada alheio.
-    - Registrar trava a chave (`pg_advisory_xact_lock`) ate o commit: dois
-      workers no mesmo balde nao contam a mesma vaga duas vezes.
-    - Relogio do banco (`clock_timestamp()`), e nao o de cada processo.
-
-IP REAL ATRAS DO TRAEFIK (decisao da spec, opcao A):
-    A app so e alcancada via Traefik (nao expoe porta no host). O IP do
-    cliente vem do X-Forwarded-For. Pega-se o ULTIMO item da lista, nao o
-    primeiro: o primeiro e controlado pelo cliente (forjavel pra furar o
-    limite rodando IPs falsos); o ultimo e o que o Traefik (borda confiavel)
-    carimba. Sem XFF, cai no request.client.host.
+Janela deslizante contada no banco (`rate_limit_hit`), para valer entre os
+workers. O freio faz commit sozinho, excecao ao Unit of Work: a tentativa que
+ele conta e a que falha, e a falha desfaz a transacao da requisicao. So grava
+antes de qualquer escrita da requisicao. A chave fica travada
+(`pg_advisory_xact_lock`) ate o commit.
 """
 
 from __future__ import annotations
@@ -48,11 +24,7 @@ from app.shared.exceptions.base import RateLimitError
 
 @dataclass(frozen=True, slots=True)
 class RateLimitDecision:
-    """Resultado de uma tentativa contra o limitador.
-
-    allowed     : a tentativa cabe na janela?
-    retry_after : se bloqueada, segundos ate liberar (0 se allowed).
-    """
+    """`retry_after`: segundos ate liberar (0 se `allowed`)."""
 
     allowed: bool
     retry_after: float
@@ -62,10 +34,9 @@ class RateLimiter:
     """Janela deslizante de `max_hits` tentativas por `window_seconds`, por
     chave, num balde (`bucket`) da tabela `rate_limit_hit`.
 
-    `hit` decide e registra no mesmo passo (rotas publicas: toda tentativa
-    conta). O trio `check`/`record`/`reset` separa decidir de registrar, para
-    o freio por CONTA (Spec 030, D5): so FALHA conta, e o acerto zera.
-    Uma tentativa bloqueada NAO e registrada (nao estende a janela).
+    `hit` decide e registra junto (toda tentativa conta). `check`/`record`/
+    `reset` separam as duas coisas para o freio por conta: so falha conta, e
+    o acerto zera. Tentativa bloqueada nao e registrada.
     """
 
     def __init__(self, *, bucket: str, max_hits: int, window_seconds: float) -> None:
@@ -76,7 +47,7 @@ class RateLimiter:
         self._window = float(window_seconds)
 
     async def check(self, session: AsyncSession, key: str) -> RateLimitDecision:
-        """Avalia a `key` SEM registrar tentativa."""
+        """Avalia a `key` sem registrar tentativa."""
         n, idade_do_mais_velho = (
             await session.execute(
                 text(
@@ -103,7 +74,7 @@ class RateLimiter:
         return decision
 
     async def record(self, session: AsyncSession, key: str) -> None:
-        """Registra uma ocorrencia da `key` (no login por conta: uma FALHA)."""
+        """Registra uma ocorrencia da `key` (no login por conta: uma falha)."""
         await self._travar(session, key)
         await self._gravar(session, key)
         await session.commit()
@@ -139,12 +110,8 @@ class RateLimiter:
 
 
 def client_ip(request: Request) -> str:
-    """IP do cliente, confiando no ULTIMO item do X-Forwarded-For.
-
-    Ver docstring do modulo: o ultimo e o que a borda (Traefik) carimba; o
-    primeiro e forjavel pelo cliente. Sem XFF, usa o peer direto. Sem nem
-    isso (cliente desconhecido), cai num rotulo fixo -- todos no mesmo balde,
-    falha fechado (mais restritivo), nao aberto.
+    """IP do cliente: o ultimo item do X-Forwarded-For, que o Traefik carimba
+    (o primeiro e forjavel). Sem nada, todos caem num balde so (fail closed).
     """
     forwarded = request.headers.get("X-Forwarded-For")
     if forwarded:
@@ -157,14 +124,7 @@ def client_ip(request: Request) -> str:
 
 
 def rate_limit(limiter: RateLimiter):
-    """Fabrica de dependency: aplica `limiter` por IP na rota.
-
-    Uso::
-
-        @router.post("/", dependencies=[Depends(rate_limit(public_form_limiter))])
-
-    Lanca RateLimitError (-> 429 + Retry-After) quando o IP estoura.
-    """
+    """Dependency que aplica `limiter` por IP; estourou, 429 com Retry-After."""
 
     async def _guard(request: Request, session: SessionDep) -> None:
         decision = await limiter.hit(session, client_ip(request))
@@ -174,57 +134,32 @@ def rate_limit(limiter: RateLimiter):
     return _guard
 
 
-# Limitadores singleton, um por rota-alvo (baldes separados). Numeros vem da
-# config (env).
-#
-# ⚠️ O `/auth/login` NAO TEM FREIO POR IP DESDE 21/10 (auditoria): contava os
-# ACERTOS, e a instituicao inteira sai por um IP -- a 11a pessoa a entrar no
-# minuto levava 429 com a senha certa. Forca bruta fica com o freio POR CONTA
-# (`account_login_limiter`, abaixo), que so conta falha.
-# ⚠️ O `/auth/refresh` NAO TEM FREIO POR IP DESDE 16/10 (auditoria). A
-# instituicao sai toda pelo MESMO IP (NAT), e cada aba renova a cada 15 min:
-# na chegada da manha, o 11o refresh do minuto levava 429 e o front deslogava
-# gente com sessao valida. E nao ha o que adivinhar ali -- a rota exige um
-# token ASSINADO, sem bcrypt nem senha.
-# Formulario publico de solicitacoes (FazAe): balde proprio, janela mais
-# longa -- envio de formulario e raro por natureza, ao contrario de login.
+# Um balde por rota; numeros em `config.py`. Login e refresh nao tem freio por
+# IP: a instituicao inteira sai por um IP so (NAT), e o freio barrava quem
+# acertava a senha. Forca bruta fica com o freio por conta.
 public_form_limiter = RateLimiter(
     bucket="public_form",
     max_hits=settings.public_form_rate_limit_max,
     window_seconds=settings.public_form_rate_limit_window_seconds,
 )
-# O ENVIO do formulario publico (auditoria de 11/11, item 11): balde proprio,
-# separado da leitura -- ver o bloco em `config.py`.
 public_submit_limiter = RateLimiter(
     bucket="public_submit",
     max_hits=settings.public_submit_rate_limit_max,
     window_seconds=settings.public_submit_rate_limit_window_seconds,
 )
-# Coletor de erros do front: publico, sem auth, e cada requisicao vira LINHA DE
-# LOG. Ver o bloco em `config.py`.
 client_error_limiter = RateLimiter(
     bucket="client_error",
     max_hits=settings.client_error_rate_limit_max,
     window_seconds=settings.client_error_rate_limit_window_seconds,
 )
-# Spec 030 (D5): freio por CONTA no login. Chave = e-mail + workspace, nao
-# IP -- o balde por IP nao ve o atacante que distribui as tentativas por
-# varios enderecos, que e como forca bruta de senha acontece de verdade.
-#
-# Usa o trio check/record/reset (nao `hit`): so FALHA registra, e o acerto
-# zera. Sem isso, quem digita a senha certa dez vezes num dia se trancaria.
-#
-# Janela DESLIZANTE, sem bloqueio permanente: quem souber o e-mail de
-# alguem consegue trancar essa pessoa por, no maximo, a janela. Um bloqueio
-# que so um humano destrava seria pior -- viraria negacao de servico
-# permanente contra qualquer pessoa de e-mail conhecido.
+# Login por conta (e-mail + workspace), via check/record/reset. Sem bloqueio
+# permanente, para nao virar negacao de servico contra e-mail conhecido.
 account_login_limiter = RateLimiter(
     bucket="account_login",
     max_hits=settings.account_login_limit_max,
     window_seconds=settings.account_login_limit_window_seconds,
 )
-# Auditoria de 16/10: o mesmo freio, na SENHA ATUAL da troca de senha (chave =
-# id da pessoa). Balde proprio: errar a senha atual nao tranca o login.
+# Senha atual na troca de senha (chave = id da pessoa); balde proprio, nao tranca o login.
 change_password_limiter = RateLimiter(
     bucket="change_password",
     max_hits=settings.account_login_limit_max,
@@ -233,10 +168,5 @@ change_password_limiter = RateLimiter(
 
 
 def account_key(*, email: str, workspace_slug: str) -> str:
-    """Chave do balde por conta.
-
-    ⚠️ NORMALIZA o e-mail (strip + lower). Sem isso `Fulano@x.com` e
-    `fulano@x.com` caem em baldes diferentes e o freio vira decorativo --
-    basta alternar a caixa das letras para multiplicar o teto.
-    """
+    """Chave do balde por conta, normalizada: trocar a caixa nao abre balde novo."""
     return f"{email.strip().lower()}|{workspace_slug.strip().lower()}"

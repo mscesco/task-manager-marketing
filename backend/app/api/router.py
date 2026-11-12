@@ -1,13 +1,4 @@
-"""Agregador central de rotas da API.
-
-Cada modulo expoe seu proprio APIRouter; este arquivo os
-reune sob o router principal. Quando um novo bounded
-context ganhar rotas, basta incluir o router dele aqui.
-
-Convencao de versionamento: todas as rotas de negocio
-ficam sob /api/v1. Health checks ficam fora do prefixo
-versionado (sao infra, nao API de negocio).
-"""
+"""Agregador de rotas: negocio sob /api/v1, health checks fora do prefixo."""
 
 from __future__ import annotations
 
@@ -58,40 +49,16 @@ api_v1_router.include_router(tasks_router)
 api_v1_router.include_router(boards_router)
 api_v1_router.include_router(collaboration_router)
 api_v1_router.include_router(comment_router)
-# Spec 052, fatia B: links com nome de projeto e de tarefa.
 api_v1_router.include_router(links_router)
-# Spec 056, fatia B: a Base (tabela que a equipe monta).
 api_v1_router.include_router(bases_router)
 api_v1_router.include_router(notifications_router)
-# Spec 054: /me/notification-preferences. Segundo router com prefixo /me
-# (o outro e o de projeto pessoal, no modulo de tarefas).
 api_v1_router.include_router(notification_preferences_router)
-# ⚠️⚠️ O ROUTER DE FORMULARIOS VEM ANTES, E A ORDEM E O CONSERTO DE UM 422 EM
-# PRODUCAO (26/08). O router de solicitacoes tem `GET /solicitacoes/{id}`, e o
-# FastAPI casa rota NA ORDEM DE REGISTRO: com ele primeiro,
-# `GET /solicitacoes/formularios` batia no `{solicitation_id}`, tentava ler
-# "formularios" como UUID e devolvia 422. A tela de formularios abria vazia com
-# "Dados da requisicao invalidos".
-#
-# ⚠️ NAO INVERTA. Rota literal tem de ser declarada ANTES da parametrizada que
-# a engole -- e `tests/integration/test_rotas_de_formulario_http_db.py` existe
-# so para isto: ele bate na URL e exige que ela NAO seja 422.
-#
-# ⚠️ E O ROUTER PUBLICO NAO SOFRE DISSO: `/solicitacoes/publico/formularios`
-# tem dois segmentos depois do prefixo, entao nunca casa com `{id}`, que e de
-# um segmento so. Foi por isso que ele funcionou desde o primeiro dia e o
-# autenticado nao.
-# ⚠️ MESMO PREFIXO (`/solicitacoes`), ROUTER SEPARADO. O de cima tem a rota
-# PUBLICA sem credencial; este exige `solicitation_form.manage` no router
-# inteiro. Misturar os dois faria a dependencia de permissao valer para a rota
-# publica -- ou, pior, alguem a tiraria dali para "consertar" e abriria o CRUD
-# do formulario para o mundo.
+# Formularios antes de solicitacoes: o FastAPI casa na ordem de registro e
+# `GET /solicitacoes/{id}` engoliria `/solicitacoes/formularios` (422).
+# Routers separados no mesmo prefixo porque cada um tem dependencias
+# proprias (permissao de gerenciar formulario; o publico, rate limit sem credencial).
 api_v1_router.include_router(solicitation_forms_router)
 api_v1_router.include_router(solicitations_router)
-# ⚠️ TERCEIRO ROUTER NO MESMO PREFIXO, e o unico SEM CREDENCIAL alem do
-# `POST /publico`. Ele fica separado justamente por isso: a dependencia de
-# permissao do router acima nao pode alcanca-lo, e a de rate limit deste nao
-# pode faltar.
 api_v1_router.include_router(solicitation_forms_public_router)
 api_v1_router.include_router(system_router)
 api_v1_router.include_router(client_errors_router)

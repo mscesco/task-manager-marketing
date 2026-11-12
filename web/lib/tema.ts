@@ -1,15 +1,8 @@
 // Tema claro/escuro/sistema, persistido no localStorage.
 //
-// Contrato com o CSS: o atributo `data-theme` no <html> vale "claro" ou
-// "escuro" -- NUNCA "sistema". "sistema" e uma PREFERENCIA guardada; o valor
-// pintado na tela e sempre resolvido antes de ir pro DOM. O globals.css so
-// conhece [data-theme="escuro"].
-//
-// Contrato com o script bloqueante do layout.tsx: a chave e os valores aqui
-// precisam bater LETRA POR LETRA com os do script inline. Se um mudar e o
-// outro nao, volta o flash branco no carregamento. Por isso as constantes
-// estao exportadas -- o script nao consegue importa-las (roda antes do
-// bundle), mas pelo menos ha um lugar unico pra conferir.
+// `data-theme` no <html> vale "claro" ou "escuro", nunca "sistema" (que é só
+// a preferência guardada). A chave e os valores têm de bater com o script
+// inline do layout.tsx, que roda antes do bundle; senão volta o flash branco.
 
 export type Tema = "claro" | "escuro" | "sistema";
 export type TemaResolvido = "claro" | "escuro";
@@ -30,8 +23,7 @@ export function lerTema(): Tema {
     const v = window.localStorage.getItem(CHAVE_TEMA);
     return ehTema(v) ? v : TEMA_PADRAO;
   } catch {
-    // localStorage pode lancar (modo privado, cookies bloqueados). Tema nao
-    // vale quebrar a pagina -- cai no padrao.
+    // localStorage pode lançar (modo privado, cookies bloqueados).
     return TEMA_PADRAO;
   }
 }

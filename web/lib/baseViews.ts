@@ -1,11 +1,6 @@
-// lib/baseViews.ts
-// As visões da Base (Spec 056, fatia F, §8): filtro, ordenação, colunas
-// visíveis, o quadro e o calendário. Regra pura, testada em
-// `lib/__tests__/baseViews.test.ts`.
-//
-// ⚠️⚠️ FILTRO E ORDENAÇÃO ACONTECEM AQUI, NO NAVEGADOR, com a base inteira
-// carregada (spec §8.1). É o que o teto de 5.000 linhas mantém barato, e o que
-// deixa o ao vivo simples: a linha nova chega e a tela reordena sozinha.
+// As visões da Base: filtro, ordenação, colunas visíveis, quadro e
+// calendário. Filtro e ordenação rodam no navegador com a base inteira
+// carregada (o teto de linhas mantém isso barato).
 
 import type { BaseCellValue, BaseColumn, BaseColumnType, BaseRow, BaseView } from "@/lib/api";
 import { linksDaCelula, nomeDoLink } from "@/lib/baseTable";
@@ -41,8 +36,8 @@ export type ConfigDaVisao = {
   hidden_columns: string[];
   group_by: string | null;
   date_column: string | null;
-  /** Fatia I, "Congelar": a coluna ATÉ a qual a tabela fica presa na rolagem
-   *  horizontal. `null` = só o título. */
+  /** A coluna até a qual a tabela fica presa na rolagem horizontal.
+   *  `null` = só o título. */
   frozen_column: string | null;
 };
 
@@ -82,9 +77,8 @@ export function quantasCongeladas(
   return i < 0 ? Math.min(1, visiveis.length) : i + 1;
 }
 
-/** O `left` de cada coluna presa: a soma das larguras das anteriores. ⚠️ É
- *  por isso que a tabela tem largura FIXA por coluna -- com largura pelo
- *  conteúdo, a segunda coluna presa não saberia onde a primeira acaba. */
+/** O `left` de cada coluna presa: a soma das larguras das anteriores (por
+ *  isso a tabela tem largura fixa por coluna). */
 export function deslocamentos(larguras: readonly number[]): number[] {
   const saida: number[] = [];
   let soma = 0;
@@ -105,20 +99,19 @@ export function larguraDa(coluna: BaseColumn, indice: number): number {
 export const LARGURA_MIN = 60;
 export const LARGURA_MAX = 800;
 
-/** Fatia J: a largura de uma coluna arrastada pela borda (ou mexida pelas
- *  setas). Presa nos limites do servidor, para o arraste nunca terminar num
- *  422 -- a coluna só para de crescer. */
+/** A largura de uma coluna arrastada pela borda (ou pelas setas), presa nos
+ *  limites do servidor para não terminar em 422. */
 export function larguraArrastada(inicial: number, deslocamento: number): number {
   return Math.min(LARGURA_MAX, Math.max(LARGURA_MIN, Math.round(inicial + deslocamento)));
 }
 
-/** Duplo clique na borda (14/10): a maior das larguras pedidas, dentro dos
+/** Duplo clique na borda: a maior das larguras pedidas, dentro dos
  *  limites do servidor. Coluna vazia volta ao mínimo que o cabeçalho pede. */
 export function larguraQueCabe(pedidas: readonly number[]): number {
   return larguraArrastada(0, Math.ceil(Math.max(0, ...pedidas)));
 }
 
-/** Arrastar a coluna (14/10): a ordem nova, levando `id` para o lugar de
+/** Arrastar a coluna: a ordem nova, levando `id` para o lugar de
  *  `alvo`. É o que o servidor faz com as posições (`column.move`): indo para a
  *  direita ela cai DEPOIS do alvo; para a esquerda, ANTES. */
 export function ordemAoArrastar<T extends { id: string }>(
@@ -194,8 +187,8 @@ function idsDe(v: BaseCellValue | undefined): string[] {
   return typeof v === "string" ? [v] : [];
 }
 
-/** O texto em que o filtro procura. No link (fatia J, uma lista) entram o
- *  nome e o endereço de cada um. */
+/** O texto em que o filtro procura. No link (uma lista) entram o nome e o
+ *  endereço de cada um. */
 function texto(v: BaseCellValue | undefined): string {
   if (Array.isArray(v)) {
     return linksDaCelula(v)
@@ -256,9 +249,8 @@ export function passa(coluna: BaseColumn, valor: BaseCellValue | undefined, f: F
 // --------------------------------------------------------------- ordem
 export type NomeDePessoa = (id: string) => string;
 
-/** Compara dois valores da mesma coluna, crescente. ⚠️ VAZIO NÃO ENTRA AQUI:
- *  quem ordena põe os vazios no fim nas DUAS direções -- uma linha sem data
- *  no topo de "mais recentes primeiro" é ruído. */
+/** Compara dois valores da mesma coluna, crescente. Vazio não chega aqui:
+ *  quem ordena põe os vazios no fim nas duas direções. */
 export function comparar(
   coluna: BaseColumn,
   a: BaseCellValue,
@@ -279,8 +271,7 @@ export function comparar(
       return Number(a === true) - Number(b === true);
     case "select":
     case "multi_select": {
-      // Pela ordem das opções na coluna, que é a ordem que a equipe escolheu
-      // (no quadro, a ordem das colunas) -- e não pelo alfabeto.
+      // Pela ordem das opções na coluna, não pelo alfabeto.
       const pos = (v: BaseCellValue) => {
         const id = idsDe(v)[0];
         const i = coluna.options.findIndex((o) => o.id === id);
@@ -353,7 +344,7 @@ export type ColunaDoQuadro = {
 };
 
 /** O quadro: uma coluna por opção, na ordem das opções, mais "Sem valor" no
- *  fim. Opção apagada conta como sem valor (D17). Só seleção ÚNICA agrupa --
+ *  fim. Opção apagada conta como sem valor. Só seleção ÚNICA agrupa --
  *  uma linha com duas etiquetas estaria em duas colunas. */
 export function agruparNoQuadro(linhas: readonly BaseRow[], coluna: BaseColumn): ColunaDoQuadro[] {
   const vivas = new Set(coluna.options.map((o) => o.id));
@@ -381,8 +372,8 @@ export function colunasDeData(colunas: readonly BaseColumn[]): BaseColumn[] {
 
 // --------------------------------------------------------------- calendário
 /** Dia da semana de uma data (0 = domingo), pelo algoritmo de Sakamoto.
- *  ⚠️ SEM `Date`, de propósito (web/AGENTS.md §0.1): a data da célula é só
- *  DIA, e o `Date` a leria à meia-noite UTC -- que em Brasília é o dia anterior. */
+ *  Sem `Date`: ele leria o dia à meia-noite UTC, que em Brasília é o dia
+ *  anterior. */
 export function diaDaSemana(ano: number, mes: number, dia: number): number {
   const t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
   const a = mes < 3 ? ano - 1 : ano;
@@ -426,15 +417,11 @@ export const NOME_DO_MES = [
 ];
 
 // ------------------------------------------------- calendário: a janela
-// Fatia J, pedido dela: *"preciso ser capaz de mudar semana a semana ou mês a
-// mês (…) as vezes eu quero ver as 4 semanas, mas não necessariamente do mesmo
-// mês"*. O calendário deixou de ser "um mês" e virou uma JANELA de semanas
-// inteiras, que anda de 7 em 7 dias ou pula para o mês vizinho. Os dias de
-// fora do mês aparecem (e recebem o arraste) -- era o que faltava para mover
-// um item para 30/09 olhando outubro.
+// O calendário mostra uma janela de semanas inteiras, que anda de 7 em 7 dias
+// ou pula para o mês vizinho; os dias de fora do mês também recebem arraste.
 
 /** Dias corridos desde 1970-01-01, pelo algoritmo de Howard Hinnant
- *  (`days_from_civil`). ⚠️ SEM `Date`, pelo mesmo motivo de `diaDaSemana`. */
+ *  (`days_from_civil`). Sem `Date`, pelo mesmo motivo de `diaDaSemana`. */
 export function diasDesdeEpoca(ano: number, mes: number, dia: number): number {
   const a = mes <= 2 ? ano - 1 : ano;
   const era = Math.floor(a / 400);

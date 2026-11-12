@@ -1,19 +1,6 @@
-// web/lib/teclasFormulario.ts
-// =====================================================================
-// Regras de tecla dentro de um <form> (dominio do front -- Spec 027).
-//
-// PROBLEMA QUE ISTO RESOLVE
-// O HTML tem "submit implicito": Enter em qualquer <input> dentro de um form
-// que tenha botao submit envia o formulario. No modal de criar tarefa isso
-// fazia a tarefa nascer com o que estivesse preenchido no instante do Enter --
-// tipicamente so o titulo. O caso pior era o campo "Buscar pessoa...": a
-// pessoa digitava o nome, apertava Enter esperando SELECIONAR, e o form
-// submetia com assignee_ids vazio. A tarefa nascia sem responsavel, com o
-// mesmo sintoma do bug que a Spec 021 ja tinha atacado pelo outro lado.
-//
-// Estas funcoes sao puras de proposito: o componente pergunta, elas respondem,
-// e o teste cobre a regra sem renderizar nada.
-// =====================================================================
+// Regras de tecla dentro de um <form>. O HTML submete o form com Enter em
+// qualquer <input>; no modal de criar tarefa isso criava a tarefa pela metade
+// (Enter na busca de pessoa esperando selecionar).
 
 /** Elementos em que o Enter tem significado proprio e NAO deve ser bloqueado. */
 const ENTER_E_DO_ELEMENTO = new Set(["TEXTAREA", "BUTTON"]);
@@ -27,8 +14,7 @@ const ENTER_E_DO_ELEMENTO = new Set(["TEXTAREA", "BUTTON"]);
  * - resto    -> true.  input de texto, date, checkbox, select: o Enter ali e
  *               sempre acidente, nunca intencao de salvar.
  *
- * `tagName` vem de `e.target.tagName`, que o DOM devolve em MAIUSCULAS -- mas
- * normalizamos porque jsdom e SVG podem devolver de outro jeito.
+ * Normaliza a caixa: jsdom e SVG podem não devolver em maiúsculas.
  */
 export function deveBloquearEnter(tagName: string | null | undefined): boolean {
   const tag = (tagName ?? "").toUpperCase();
@@ -38,9 +24,6 @@ export function deveBloquearEnter(tagName: string | null | undefined): boolean {
 
 /**
  * Atalho explicito de salvar: Ctrl+Enter (Windows/Linux) ou Cmd+Enter (Mac).
- *
- * Devolve a intencao que o Enter sozinho tinha antes, mas agora de forma
- * deliberada -- quem gostava de "digitar e mandar" nao perde a velocidade.
  */
 export function ehAtalhoDeSalvar(e: {
   key: string;
@@ -53,10 +36,7 @@ export function ehAtalhoDeSalvar(e: {
 /**
  * Enter no campo de busca de pessoa: qual item selecionar?
  *
- * Recebe a lista JA filtrada e ordenada (o componente monta com useMemo) e
- * devolve o id do primeiro, ou null se a busca nao achou ninguem. Trocar um
- * comportamento surpreendente (submete o form) por um inerte (nao faz nada)
- * seria consertar pela metade: o que a pessoa espera do Enter ali e escolher.
+ * Recebe a lista já filtrada e ordenada; devolve o primeiro id, ou null.
  */
 export function primeiroSelecionavel<T extends { id: string }>(
   itens: readonly T[]

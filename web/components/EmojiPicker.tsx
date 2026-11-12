@@ -2,14 +2,10 @@
 import { useState } from "react";
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 
-// Seletor de emoji simples (sem dependencia externa): um botao que abre
-// uma grade de emojis curados. Ao escolher, chama onPick(emoji) -- quem usa
-// decide onde inserir (no TaskDetail, na posicao do cursor do textarea).
-// Emoji ja e texto UTF-8: o backend armazena e renderiza sem mudanca nenhuma;
-// isto e so a conveniencia de inserir pela UI.
+// Seletor de emoji simples: um botão que abre uma grade curada. Ao escolher,
+// chama onPick(emoji); quem usa decide onde inserir.
 
-// Conjunto curado, single-codepoint/bem suportados (evita ZWJ que renderiza
-// torto em alguns sistemas). O suficiente pra "ter a opcao".
+// Só emojis de um codepoint (ZWJ renderiza torto em alguns sistemas).
 const EMOJIS = [
   "😀","😃","😄","😁","😆","😅","😂","🤣","😊","🙂","🙃","😉",
   "😍","🥰","😘","😋","😎","🤩","🥳","😏","😴","🤔","😐","🙄",
@@ -28,9 +24,7 @@ export default function EmojiPicker({
   disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  // ⚠️ `AnchoredPanel` (revisao de 07/10): era `position: absolute` dentro do
-  // fluxo, e uma caixa com rolagem em volta o recortava. O painel fixo vira
-  // para cima sozinho quando falta espaco embaixo, e fecha ao clicar fora.
+  // `AnchoredPanel`: uma caixa com rolagem em volta recortaria um `absolute`.
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     open,
     () => setOpen(false),

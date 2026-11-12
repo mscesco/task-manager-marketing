@@ -1,14 +1,5 @@
-// web/lib/nomeProprio.ts
-// =====================================================================
-// Editar o PRÓPRIO nome, no /perfil (Spec 051, fatia E -- decisão 8).
-//
-// Fronteira da Spec 027: `lib/` decide, a página desenha. A decisão aqui é
-// pequena, e por isso mesmo fácil de espalhar errado pelo JSX: o que conta
-// como "mudou", e o que conta como vazio.
-//
-// ⚠️ O SERVIDOR É QUEM MANDA: ele apara e recusa vazio (422). Isto só evita
-// oferecer "Salvar" para um envio que não muda nada ou que vai voltar com erro.
-// =====================================================================
+// Editar o próprio nome no /perfil. O servidor apara e recusa vazio; isto só
+// evita oferecer "Salvar" para um envio que não muda nada ou volta com erro.
 
 /** Mesmo teto do servidor (`RenameSelfRequest.name`, 255). */
 export const NOME_MAXIMO = 255;

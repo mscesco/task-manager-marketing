@@ -1,30 +1,11 @@
-// lib/historicoDaTarefa.ts
-// O histórico da tarefa virando frase (Spec 055, fatia B).
-//
-// ⚠️ O DADO É CRU, E VELHO. `task_history` é gravado desde a Entrega 4 e nunca
-// foi lido: há eventos de todas as versões dos construtores lá dentro, de antes
-// de a Spec 053 acrescentar `watched`/`unwatched`. Nada aqui pode assumir que o
-// evento tem a forma que o backend de HOJE grava.
-//
-// ⚠️ TODA FRASE TEM RESERVA, e é o que este arquivo mais faz. Quatro coisas
-// faltam com frequência:
-//   - a PESSOA saiu do workspace ou do alcance -> o id não está no mapa;
-//   - a COLUNA foi apagada -> `old_value` aponta para o que não existe;
-//   - o EVENTO é antigo e não tem o campo que a frase queria;
-//   - o TIPO é desconhecido, porque alguém acrescentou um no backend.
-// Em todos, a saída é uma frase genérica que NÃO MENTE ("atualizou a tarefa"),
-// nunca um espaço em branco e nunca um id cru na tela.
-//
-// ⚠️ A FRASE NÃO TRAZ O AUTOR. Quem desenha mostra o nome uma vez por grupo
-// (como no comentário), e repetir "Camila" em cada linha de um gesto que ela
-// fez de uma vez só é ruído.
-//
-// ⚠️ `lib/` DECIDE (Spec 027): a frase, o agrupamento e o que fazer quando
-// falta dado moram aqui, com teste. O componente só desenha.
+// O histórico da tarefa virando frase. `task_history` tem eventos de todas as
+// versões do backend: pessoa fora do mapa, coluna apagada, campo ausente ou
+// tipo desconhecido caem numa frase genérica, nunca em branco nem em id cru.
+// A frase não traz o autor; quem desenha mostra o nome uma vez por grupo.
 
 import { PRIORITY_LABEL, STATUSES } from "./status";
 
-/** Um evento como a API o devolve (Spec 055, fatia A). */
+/** Um evento como a API o devolve. */
 export type EventoDeHistorico = {
   readonly id: string;
   readonly event_type: string;
@@ -43,13 +24,9 @@ export type NomesDoHistorico = {
 };
 
 /**
- * Os eventos de UM gesto, de UMA pessoa.
- *
- * ⚠️ EXISTE PORQUE O RELÓGIO NÃO DESEMPATA (medido na fatia A): `created_at`
- * vem de `func.now()`, constante na transação, então criar uma tarefa grava
- * `created` e `assigned` com o mesmo horário ao milissegundo. Na lista, a
- * ordem entre eles seria arbitrária — agrupar é dizer a verdade sobre o dado
- * em vez de fingir uma sequência que ele não tem. Decisão dela, 30/09.
+ * Os eventos de um gesto, de uma pessoa. `created_at` vem de `func.now()`,
+ * constante na transação, então eventos do mesmo gesto têm o mesmo horário e
+ * não têm ordem entre si.
  */
 export type GrupoDeHistorico = {
   /** `key` do React: o id do primeiro evento do grupo. */
@@ -61,8 +38,8 @@ export type GrupoDeHistorico = {
 
 const ROTULO_DE_STATUS = new Map(STATUSES.map((s) => [s.key as string, s.label]));
 
-/** `YYYY-MM-DD` -> `DD/MM`. ⚠️ Corta a string: `new Date` leria meia-noite UTC
- * e escorregaria um dia (mesma regra de `lib/prazo.ts`). */
+/** `YYYY-MM-DD` -> `DD/MM`. Corta a string: `new Date` leria meia-noite UTC
+ * e escorregaria um dia. */
 function dia(iso: string): string {
   return `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 }
@@ -92,7 +69,7 @@ function pessoaDe(
   nomes: NomesDoHistorico,
 ): string {
   const id = texto(meta(e, chave));
-  // ⚠️ "alguém", e nunca o id: quem saiu do workspace não vira UUID na tela.
+  // Quem saiu do workspace vira "alguém", nunca UUID.
   return (id && nomes.pessoa(id)) || "alguém";
 }
 
@@ -120,8 +97,7 @@ function fraseDeCampo(e: EventoDeHistorico, nomes: NomesDoHistorico): string {
       const antes = de ? nomes.coluna(de) : null;
       const depois = para ? nomes.coluna(para) : null;
       if (antes && depois) return `moveu de ${antes} para ${depois}`;
-      // ⚠️ Coluna apagada: o id não resolve, e a frase encolhe em vez de
-      // mostrar um uuid.
+      // Coluna apagada: a frase encolhe em vez de mostrar o id.
       if (depois) return `moveu para ${depois}`;
       return "moveu de coluna";
     }
@@ -134,19 +110,14 @@ function fraseDeCampo(e: EventoDeHistorico, nomes: NomesDoHistorico): string {
       return `mudou o ${qual}`;
     }
     case "team_id":
-      // ⚠️ SEM NOME DE TIME: o detalhe da tarefa não carrega a lista de times,
-      // e buscá-la só para esta linha seria uma consulta por histórico aberto.
+      // Sem nome: o detalhe da tarefa não carrega a lista de times.
       return "mudou o time da tarefa";
     default:
       return "atualizou a tarefa";
   }
 }
 
-/**
- * Um evento em uma frase, SEM o autor (ver o topo).
- *
- * Nunca devolve string vazia: tipo desconhecido cai em "atualizou a tarefa".
- */
+/** Um evento em uma frase, sem o autor. Nunca devolve string vazia. */
 export function fraseDoEvento(
   e: EventoDeHistorico,
   nomes: NomesDoHistorico,
@@ -172,11 +143,7 @@ export function fraseDoEvento(
       const projetoVelho = texto(meta(e, "old_project_id"));
       const paiNovo = texto(meta(e, "new_parent_task_id"));
       const paiVelho = texto(meta(e, "old_parent_task_id"));
-      // ⚠️ SEM NOME DE PROJETO NEM DE TAREFA MÃE, pelo mesmo motivo do time: a
-      // tela não os tem em mãos. A frase diz O QUE mudou, e a tarefa em si
-      // mostra onde ela está agora.
-      // Spec 062: o `relocate` grava o quadro e conta as subtarefas que foram
-      // junto (`quantas`).
+      // Sem nome de projeto nem de tarefa mãe: a tela não os tem em mãos.
       const quadroNovo = texto(meta(e, "new_board_id"));
       const quadroVelho = texto(meta(e, "old_board_id"));
       if (paiNovo && !paiVelho) return `tornou esta tarefa uma subtarefa${quantas(e)}`;
@@ -208,8 +175,7 @@ export function fraseDoEvento(
         ? "passou a seguir"
         : `pôs ${pessoaDe(e, "target_user_id", nomes)} para seguir`;
     case "unwatched":
-      // ⚠️ Perder o alcance NÃO é "deixou de seguir": a pessoa não desistiu,
-      // ela foi tirada porque a tarefa saiu do alcance dela (Spec 053).
+      // Perder o acesso não é desistir de seguir.
       if (meta(e, "reason") === "lost_access")
         return `${pessoaDe(e, "target_user_id", nomes)} deixou de seguir: perdeu o acesso`;
       return meta(e, "by_self") === true
@@ -228,21 +194,8 @@ const PAR_QUE_SE_ANULA: Record<string, string> = {
 };
 
 /**
- * Tira os pares de seguir/deixar de seguir que se ANULAM (pedido dela, 30/09).
- *
- * ⚠️ O QUE ISTO RESOLVE: o histórico real mostrou oito linhas seguidas de
- * "passou a seguir" / "deixou de seguir" da mesma pessoa, alternando em
- * minutos. É ruído de quem estava experimentando o botão -- não conta nada
- * sobre a tarefa, e empurra para baixo o que conta.
- *
- * Só some o par que se anula de verdade: MESMA pessoa seguida, MESMO autor do
- * gesto, e VIZINHOS na lista. Duas pessoas diferentes, ou um "pôs para seguir"
- * com um "deixou de seguir" no meio de outras coisas, continuam à vista --
- * esconder ali apagaria história.
- *
- * ⚠️ O PAR PARTIDO ENTRE DUAS PÁGINAS SOBREVIVE, e é aceito: a alternativa
- * seria carregar o histórico inteiro para decidir o que mostrar na primeira
- * página.
+ * Tira os pares seguir/deixar de seguir que se anulam: mesma pessoa seguida,
+ * mesmo autor e vizinhos na lista. Par partido entre duas páginas sobrevive.
  */
 export function semParesQueSeAnulam(
   eventos: readonly EventoDeHistorico[],
@@ -304,14 +257,8 @@ export function agruparPorInstante(
 }
 
 /**
- * Tira o "mudou o status" que só REPETE o "moveu" do mesmo gesto.
- *
- * ⚠️ Mover para uma coluna-ponte grava DOIS eventos (`column_id` e
- * `status_changed`), e com as colunas padrão os nomes coincidem: a linha saía
- * "moveu de Planejado para Em Andamento / mudou o status de Planejado para Em
- * Andamento", e ela leu como duplicado (14/10). Quando os nomes DIFEREM (uma
- * coluna "Revisão" que é ponte para Em Andamento), o status diz algo que a
- * coluna não diz, e fica.
+ * Tira o "mudou o status" que só repete o "moveu" do mesmo gesto (coluna-ponte
+ * grava os dois eventos). Se os nomes diferem, o status fica.
  */
 function semStatusEspelhado(frases: readonly string[]): readonly string[] {
   const movimentos = new Set(

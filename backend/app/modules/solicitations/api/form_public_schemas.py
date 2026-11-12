@@ -1,10 +1,7 @@
-"""Schemas da leitura PUBLICA do formulario (Spec 043, fatia B).
+"""Schemas da leitura publica do formulario.
 
-⚠️ ELES SAO MENORES QUE OS AUTENTICADOS DE PROPOSITO, e a diferenca e o
-assunto deste arquivo: `team_id`, `created_by` e `is_published` NAO saem daqui.
-Quem esta de fora nao precisa da estrutura interna de times para preencher um
-pedido, e um schema publico que "aproveita" o autenticado vaza campo por
-descuido -- basta alguem acrescentar um la um dia.
+Menores que os autenticados de proposito: `team_id`, `created_by` e
+`is_published` nao saem daqui. Nao reaproveite os schemas autenticados.
 """
 
 from __future__ import annotations
@@ -20,9 +17,7 @@ class PublicFormResumo(BaseModel):
     slug: str
     title: str
     description: str
-    #: Nome do time dono, para agrupar a lista. ⚠️ O NOME, e nao o id: agrupar
-    #: por "Marketing" e util para quem escolhe; o id nao diz nada a ninguem de
-    #: fora e so serviria para mapear a estrutura interna.
+    #: Nome (e nao o id) do time dono, para agrupar a lista.
     team_name: str
 
 
@@ -36,10 +31,7 @@ class PublicQuestion(BaseModel):
     options: list[str]
     placeholder: str | None
     help: str | None
-    #: ⚠️ O ID DA OUTRA PERGUNTA, e nao o texto dela. A condicional e resolvida
-    #: no cliente comparando com o valor respondido; mandar o texto obrigaria a
-    #: casar por string, que quebra no dia em que alguem corrigir uma virgula
-    #: no enunciado.
+    #: Id da pergunta de que esta depende; o cliente compara com o valor respondido.
     show_if_question_id: uuid.UUID | None
     show_if_value: str | None
 
@@ -49,14 +41,9 @@ class PublicSection(BaseModel):
     title: str
     emoji: str
     sla_text: str | None
-    #: Qual resposta vira o resumo na fila de triagem.
-    #:
-    #: ⚠️ ELE VAI PARA O CLIENTE porque e o cliente que monta o `summary` no
-    #: envio -- o mesmo papel que o `resumoDe` tem hoje no TypeScript. Sem ele,
-    #: a fila mostraria o assunto e mais nada, e quem tria precisaria abrir
-    #: cada solicitacao para saber do que se trata.
+    #: Qual resposta vira o resumo na fila de triagem (o cliente monta o `summary`).
     summary_question_id: uuid.UUID | None
-    #: Spec 059: a pessoa pode preencher a secao mais de uma vez no envio.
+    #: A pessoa pode preencher a secao mais de uma vez no envio.
     repeatable: bool = False
     repeat_label: str | None = None
     questions: list[PublicQuestion] = Field(default_factory=list)
@@ -69,12 +56,7 @@ class PublicFormDetail(BaseModel):
     slug: str
     title: str
     description: str
-    # ⚠️ OS TRES ROTULOS DA IDENTIFICACAO (Spec 043, fatia G). `None` = o
-    # formulario NAO pergunta este campo; texto = pergunta com este nome.
-    #
-    # ⚠️ E ELES SAO PUBLICOS SEM CREDENCIAL, o que esta certo: sao literalmente
-    # o texto que quem preenche vai LER na tela. Nao ha nada a esconder num
-    # rotulo de campo.
+    # Rotulos da identificacao: `None` = o formulario nao pergunta este campo.
     phone_label: str | None = None
     department_label: str | None = None
     polo_label: str | None = None

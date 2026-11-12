@@ -1,20 +1,7 @@
 "use client";
-// components/AtividadeDaTarefa.tsx
-// A aba "Atividade" da coluna lateral do detalhe (Spec 055, fatia C).
-//
-// ⚠️ SÓ DESENHA. Quem vira evento em frase e quem junta os eventos do mesmo
-// gesto é `lib/historicoDaTarefa.ts`, testado isolado — a fronteira da Spec
-// 027. Aqui não há nenhuma regra sobre o que o evento significa.
-//
-// ⚠️ UMA LINHA POR GESTO, e não por evento: criar uma tarefa com responsável
-// grava `created` e `assigned` com o MESMO horário ao milissegundo
-// (`func.now()` é constante na transação), e a ordem entre eles é arbitrária.
-// Agrupar é dizer a verdade sobre o dado em vez de fingir uma sequência.
-// Decisão dela, 30/09.
-//
-// ⚠️ MORA EM `components/`, e não dentro do `TaskDetail`: o arquivo de lá já
-// tem 3.4 mil linhas, e o `include` do vitest cobre `components/**` — aqui
-// isto tem guardião.
+// A aba "Atividade" do detalhe da tarefa. Só desenha: o texto e o agrupamento
+// dos eventos vêm de `lib/historicoDaTarefa.ts`. Uma linha por gesto: eventos
+// da mesma transação têm o mesmo horário e ordem arbitrária.
 
 import { dataHoraCurta } from "@/lib/prazo";
 import {
@@ -39,11 +26,7 @@ export default function AtividadeDaTarefa({
   nomes: NomesDoHistorico;
   carregando: boolean;
   erro: string | null;
-  /**
-   * O "Mostrar mais" falhou. ⚠️ SEPARADO de `erro` (revisão de 08/10): o
-   * mesmo estado trocava a lista inteira pelo aviso, e o que já estava
-   * carregado sumia sem jeito de tentar de novo.
-   */
+  /** O "Mostrar mais" falhou; separado de `erro` para não sumir com a lista já carregada. */
   erroAoCarregarMais?: string | null;
   onCarregarMais: () => void;
 }) {
@@ -55,23 +38,19 @@ export default function AtividadeDaTarefa({
     );
   }
 
-  // ⚠️ FILTRA ANTES DE AGRUPAR: o par que se anula tem de sumir antes, senão
-  // ele contaria como gesto e deixaria um grupo vazio na lista.
+  // Filtra antes de agrupar: o par que se anula não pode virar grupo vazio.
   const grupos = agruparPorInstante(semParesQueSeAnulam(itens), nomes);
   const faltam = total - itens.length;
 
   return (
     <div className="flex flex-col gap-3">
       {grupos.length === 0 && !carregando ? (
-        // ⚠️ Não deveria acontecer -- toda tarefa tem pelo menos o `created`.
-        // O texto existe para o caso de a rota falhar em silêncio, e não para
-        // deixar um painel em branco sem explicação.
+        // Não deveria acontecer: toda tarefa tem o `created`.
         <p className="muted text-sm">Nada registrado ainda.</p>
       ) : (
         <ol className="flex flex-col gap-3">
           {grupos.map((g) => (
-            // Redesign 19/10: a bolinha da linha do tempo a esquerda de cada
-            // gesto. `aria-hidden`: e so marca visual.
+            // Bolinha da linha do tempo; só visual.
             <li key={g.chave} className="flex gap-2.5">
               <span aria-hidden className="mt-2 h-2 w-2 shrink-0 rounded-full bg-border" />
               <span className="flex min-w-0 flex-col gap-0.5">
@@ -112,8 +91,7 @@ export default function AtividadeDaTarefa({
         <button
           type="button"
           className="btn btn-ghost self-start"
-          // ⚠️ Padding inline: o `.btn` do globals.css não está em camada e
-          // vence `px-*`/`py-*` do Tailwind (web/AGENTS.md §11).
+          // Padding inline: o `.btn` do globals.css vence `px-*`/`py-*` do Tailwind.
           style={{ padding: "4px 10px", fontSize: 13 }}
           onClick={onCarregarMais}
         >

@@ -3,12 +3,9 @@
 import { MouseSensor, TouchSensor, useSensor, useSensors } from "@dnd-kit/core";
 
 /**
- * Spec 063: os sensores do arraste de card.
- *
- * ⚠️ MOUSE E TOQUE SEPARADOS, e nao `PointerSensor`. Ele exigia
- * `touch-action: none` no card, e no celular o card ocupa quase toda a coluna:
- * encostar o dedo nele impedia rolar. No toque, arrastar pede TOQUE LONGO; o
- * toque curto abre a tarefa e deslizar rola.
+ * Os sensores do arraste de card. Mouse e toque separados, e não
+ * `PointerSensor`, que exige `touch-action: none` e impediria rolar no
+ * celular. No toque, arrastar pede toque longo.
  */
 export function useSensoresDeArraste() {
   return useSensors(

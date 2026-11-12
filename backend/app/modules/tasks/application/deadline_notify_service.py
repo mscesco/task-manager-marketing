@@ -1,26 +1,14 @@
-"""Varredura de avisos de prazo (Spec 023, Fatia 2).
+"""Varredura de avisos de prazo, fora de contexto de tenant.
 
-Roda FORA de contexto de tenant (igual StaleArchivalService): lista todos os
-workspaces e, por workspace, entra em `tenant_scope` e emite:
+Por workspace, entra em `tenant_scope` e emite:
   - TASK_DUE_SOON  -- task aberta com due_date em [hoje, hoje+2] ainda nao avisada;
   - TASK_OVERDUE   -- task aberta com due_date < hoje, ou hoje com `due_time` ja
-    passada (a mesma regra de `dashboard.is_overdue`), ainda nao avisada.
+    passada (mesma regra de `dashboard.is_overdue`), ainda nao avisada.
 
-Destinatarios (D2): responsaveis ATIVOS da task; se nao houver nenhum ativo, o
-criador -- e so se ele tambem estiver ativo (filtro `is_active` acrescentado em
-12/08; ver `_recipients`).
-Idempotencia (D3): cada task tem due_soon_notified_for / overdue_notified_for
-guardando o due_date ja avisado. So dispara se DIFERE do due_date atual -> troca
-de prazo reabilita sozinho. Apos emitir, grava a coluna.
-
-TIMEZONE (D7): due_date e data pura; "hoje" e a data em America/Sao_Paulo, NAO
-UTC -- perto da meia-noite UTC/BRT divergem e o dia sairia errado.
-
-ISOLAMENTO: commita POR workspace. Um workspace que falha e logado e PULADO.
-
-BEST-EFFORT: a coluna de dedup e gravada apos a emissao independente de a
-notificacao ter tido sucesso (o emitter e best-effort e loga falha alto). Vies
-consciente: at-most-once (perder 1 aviso) e melhor que re-notificar em loop.
+Dedup: due_soon_notified_for / overdue_notified_for guardam o due_date avisado;
+trocar o prazo reabilita o aviso. "Hoje" e a data em America/Sao_Paulo, nao UTC.
+Commita por workspace; um que falha e logado e pulado. A marca e gravada mesmo
+se a notificacao falhar: at-most-once e melhor que re-notificar em loop.
 """
 
 from __future__ import annotations
@@ -44,25 +32,7 @@ from app.modules.tasks.domain.dashboard import workspace_now
 
 logger = get_logger(__name__)
 
-# Espelho SQL de `board_semantics.TERMINAL_SEMANTICS`. Tupla ORDENADA, e nao o
-# frozenset direto: a ordem de um frozenset varia entre execucoes e faria o SQL
-# gerado mudar de forma sem nada ter mudado -- ruim para ler EXPLAIN e pior
-# ainda para diffar log de query lenta.
-#
-# ⚠️ Deriva da MESMA constante do dominio, de proposito. A duplicacao desta
-# fatia e do PREDICADO (terminal primeiro, flag depois), nao da lista: duas
-# listas divergiriam, e a divergencia nao apareceria em lugar nenhum ate
-# alguem reclamar de aviso que nao chegou.
-#
-# ⚠️ O que estava aqui antes era `_STATUS_SEM_AVISO`, com COMPLETED, CANCELLED
-# e BLOCKED cravados. Os dois primeiros saem pela SEMANTICA da coluna; o
-# terceiro sai pela flag `notify_deadline`.
-#
-# ⚠️ A ADR 0030 PROMETEU QUE UM TIME CRIARIA "Aguardando cliente" SEM CODIGO
-# NOVO. Ate 22/08 nao era verdade: esta consulta respeitava a flag e nada a
-# escrevia. Desde a Spec 039 (F9) o LOTE de colunas a escreve
-# (`ColunaParaCriar.notify_deadline`, `ColunaParaAvisar`) -- ver
-# `BoardService.definir_aviso_de_prazo`.
+# Espelho SQL de `TERMINAL_SEMANTICS`, ordenado para o SQL gerado ser estavel.
 _SEMANTICAS_TERMINAIS_SQL: Final = tuple(
     sorted(TERMINAL_SEMANTICS, key=lambda s: s.value)
 )
@@ -75,7 +45,7 @@ class DeadlineNotifyService:
         self._session = session
 
     async def run(self, *, now: datetime) -> dict:
-        """Executa a varredura. `now` (UTC) e convertido pra data local (D7)."""
+        """Executa a varredura. `now` (UTC) e convertido pra data local."""
         agora = workspace_now(now)
         hoje = agora.today
         limite_soon = hoje + timedelta(days=2)
@@ -149,14 +119,8 @@ class DeadlineNotifyService:
         coluna de dedup. Retorna quantas tasks foram notificadas."""
         emitter = NotificationEmitter(self._session)
 
-        # ⚠️ JOIN INTERNO de proposito. `task.column_id` e NOT NULL desde a
-        # `0011`; se um dia voltar a ser nullable, a tarefa sem coluna para de
-        # receber aviso EM SILENCIO -- sem erro, sem linha no log, e o defeito
-        # so aparece como "ninguem foi avisado do prazo daquela tarefa".
-        #
-        # ⚠️ O `workspace_id` entra no ON junto com o `id`. O `id` sozinho ja e
-        # PK e bastaria; o par e o padrao do schema e o que impede que uma
-        # consulta futura, copiada daqui, cruze tenant sem ninguem notar.
+        # Join interno: se `task.column_id` voltar a ser nullable, tarefa sem
+        # coluna para de avisar em silencio.
         base = (
             select(Task)
             .join(
@@ -169,18 +133,14 @@ class DeadlineNotifyService:
             .where(
                 Task.workspace_id == ws_id,
                 Task.due_date.is_not(None),
-                # Espelha `board_semantics.avisa_prazo`, na mesma ordem: o
-                # terminal sai pela SEMANTICA, e so depois a flag decide. Ver o
-                # cabecalho daquele modulo para o motivo (as 136 tarefas).
+                # Espelha `board_semantics.avisa_prazo`: terminal primeiro, depois a flag.
                 BoardColumn.semantic.not_in(_SEMANTICAS_TERMINAIS_SQL),
                 BoardColumn.notify_deadline.is_(True),
                 Task.is_archived.is_(False),
                 Task.deleted_at.is_(None),
             )
         )
-        # A HORA CONTA (auditoria de 21/10): "hoje as 9h" ja passou as 10h, e
-        # e o que o selo do quadro e a tela inicial dizem. Sem isto o aviso de
-        # atraso so saia no dia seguinte.
+        # A hora conta: "hoje as 9h" ja esta atrasada as 10h.
         if overdue:
             stmt = base.where(
                 or_(
@@ -201,11 +161,7 @@ class DeadlineNotifyService:
                 Task.due_soon_notified_for.is_distinct_from(Task.due_date),
             )
 
-        # ⚠️ TRAVA AS LINHAS, PULANDO AS JA TRAVADAS (auditoria de 16/10). A
-        # dedup e "ler a marca e gravar depois": se o n8n refaz o POST por
-        # timeout com o primeiro ainda rodando, as duas execucoes liam as
-        # mesmas tarefas sem marca e o responsavel recebia o aviso em dobro.
-        # Com `SKIP LOCKED` a segunda so ve o que a primeira nao pegou.
+        # SKIP LOCKED: duas execucoes simultaneas (retry do n8n) nao avisam em dobro.
         stmt = stmt.with_for_update(skip_locked=True, of=Task)
         tasks = list((await self._session.execute(stmt)).scalars().all())
         destinatarios = await self._recipients(ws_id=ws_id, tasks=tasks)
@@ -213,7 +169,6 @@ class DeadlineNotifyService:
             overdue=overdue,
             avisos=[AvisoDePrazo(t, *destinatarios[t.id]) for t in tasks],
         )
-        # A marca de "avisado" num UPDATE so (auditoria de 11/11, item 18).
         if tasks:
             marca = Task.overdue_notified_for if overdue else Task.due_soon_notified_for
             await self._session.execute(
@@ -228,50 +183,15 @@ class DeadlineNotifyService:
     async def _recipients(
         self, *, ws_id: uuid.UUID, tasks: list[Task]
     ) -> dict[uuid.UUID, tuple[list[uuid.UUID], str]]:
-        """Por tarefa: responsaveis ATIVOS; se nao houver, o criador se ATIVO.
+        """Por tarefa: responsaveis ativos; se nao houver, o criador se ativo.
 
-        ⚠️ DUAS CONSULTAS PARA O LOTE INTEIRO (auditoria de 11/11, item 18):
-        uma para os responsaveis de todas as tarefas, outra para os criadores
-        das que ficaram sem nenhum. Antes eram uma ou duas POR tarefa.
-
-        Devolve `task.id -> (ids, papel)` -- `assignee` ou `creator` (Spec 054, D12). Os
-        dois caminhos sao limpos, entao o papel sai daqui sem adivinhar.
-        ⚠️ NUNCA `watcher`: aviso de prazo nao vai para seguidor, e a tela de
-        preferencias nao tem esse toggle -- com o papel, estes avisos nunca
-        poderiam ser silenciados.
-
-        ⚠️ O FILTRO `is_active` E O PONTO DESTE METODO, e ele nao existia ate
-        12/08. Sem ele a varredura emitia aviso de prazo para conta desativada:
-        29 notificacoes medidas em producao para gente que ja tinha saido. Elas
-        nao apareciam em lugar nenhum -- o dono da conta nao entra mais, e a
-        tarefa continuava sem dono de fato.
-
-        ⚠️ SAO DOIS CAMINHOS, e os dois filtravam errado:
-          - a lista de responsaveis nao conferia `is_active`;
-          - o fallback `[task.created_by]` devolvia o criador CRU, sem sequer
-            ir ao banco. Criador desativado recebia mesmo assim.
-
-        ⚠️ "TODOS OS RESPONSAVEIS INATIVOS" CAI NO FALLBACK, de proposito.
-        `ids` vazio depois do filtro e tratado como "esta tarefa nao tem
-        responsavel alcancavel", que e a mesma situacao que o fallback D2
-        existe para cobrir. A alternativa -- nao avisar ninguem -- deixaria
-        tarefa com prazo sem dono e sem sinal.
-
-        ⚠️ ZERO DESTINATARIOS AINDA GRAVA A COLUNA DE DEDUP. Se o criador
-        tambem estiver inativo esta lista sai vazia, o emitter nao emite (ele
-        retorna cedo com `alvos` vazio) e `_run_kind` grava
-        `due_soon_notified_for` / `overdue_notified_for` assim mesmo -- o vies
-        at-most-once do cabecalho deste modulo. Consequencia REAL: se alguem
-        ativo for designado depois, a tarefa so volta a avisar quando o
-        `due_date` mudar. Nao e defeito desta entrega; e o preco conhecido do
-        vies, e esta escrito aqui para nao ser redescoberto como surpresa.
+        Devolve `task.id -> (ids, papel)`, papel `assignee` ou `creator` (nunca
+        `watcher`: prazo nao vai para seguidor). Duas consultas para o lote todo.
+        Zero destinatarios ainda grava a marca de dedup: a tarefa so volta a
+        avisar quando o `due_date` mudar.
         """
         if not tasks:
             return {}
-        # ⚠️ O `workspace_id` entra no ON junto com o `id`, igual ao join de
-        # `_run_kind`. O `id` sozinho e PK e bastaria; o par e o padrao do
-        # schema e o que impede que uma copia futura desta consulta cruze
-        # tenant sem ninguem notar.
         stmt = (
             select(TaskAssignment.task_id, TaskAssignment.user_id)
             .join(
@@ -320,9 +240,8 @@ class DeadlineNotifyService:
     async def _resolve_ctx_user(
         self, workspace_id: uuid.UUID
     ) -> uuid.UUID | None:
-        """Um usuario ATIVO do workspace, so pra satisfazer o tenant_scope (o
-        user_id do contexto nao entra na notificacao -- actor e None). None se o
-        workspace nao tem usuario ativo (sera pulado)."""
+        """Um usuario ativo do workspace, so pra satisfazer o tenant_scope (actor
+        da notificacao e None). None se nao ha usuario ativo (workspace pulado)."""
         stmt = (
             select(User.id)
             .where(User.workspace_id == workspace_id, User.is_active.is_(True))

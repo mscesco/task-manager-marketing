@@ -1,22 +1,9 @@
 "use client";
-// components/bases/CalendarioDaBase.tsx
-// A visão de CALENDÁRIO da Base (Spec 056, fatia F, §8): o mês, com cada linha
-// no dia da coluna de data (`date_column`). As sem data numa lista ao lado.
-//
-// ⚠️⚠️ A JANELA É MONTADA SEM `Date` (`diasDaJanela` em `lib/baseViews.ts`): a
-// célula guarda só o DIA, e o `Date` o leria à meia-noite UTC -- que em
-// Brasília é o dia anterior (web/AGENTS.md §0.1). "Hoje" vem de
-// `agoraNoWorkspace`, no fuso do workspace.
-//
-// ⚠️ FATIA J: NÃO É MAIS "UM MÊS", É UMA JANELA DE SEMANAS INTEIRAS, que anda
-// de semana em semana ou de mês em mês. Pedido dela: queria ver quatro semanas
-// que atravessam dois meses, e mover um item para 30/09 olhando outubro. Os
-// dias de fora do mês do título aparecem mais apagados, mas recebem o arraste
-// como qualquer outro.
-//
-// ⚠️ ARRASTAR PARA OUTRO DIA É EDITAR A CÉLULA DE DATA. A alternativa de
-// teclado é a própria célula, na visão de tabela -- o calendário não repete um
-// editor de data em cada linha.
+// Visão de calendário da Base: uma janela de semanas inteiras, com cada linha no dia
+// da coluna de data (`date_column`); as sem data numa lista ao lado.
+// A janela é montada sem `Date` (`diasDaJanela`): a célula guarda só o dia, e `Date`
+// o leria à meia-noite UTC (dia anterior em Brasília). "Hoje" vem de `agoraNoWorkspace`.
+// Arrastar para outro dia edita a célula de data; a alternativa de teclado é a visão de tabela.
 
 import { useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
@@ -78,9 +65,8 @@ export default function CalendarioDaBase({
     </li>
   );
 
-  // ⚠️ Função, e não componente: um componente declarado aqui dentro nasceria
-  // outro a cada render, e o botão clicado perderia o foco -- quem anda de
-  // semana em semana pelo teclado teria de voltar ao botão a cada passo.
+  // Função, e não componente: um componente declarado aqui nasceria outro a cada
+  // render, e o botão clicado perderia o foco.
   const passo = (rotulo: string, icone: ReactNode, para: () => JanelaDoCalendario) => (
     <button
       key={rotulo}

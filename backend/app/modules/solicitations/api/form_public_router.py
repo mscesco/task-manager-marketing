@@ -1,28 +1,8 @@
-"""Leitura PUBLICA do formulario (Spec 043, fatia B).
+"""Leitura publica (sem credencial) dos formularios publicados.
 
-    GET /solicitacoes/publico/formularios?workspace=<slug>
-    GET /solicitacoes/publico/formularios/<slug>?workspace=<slug>
-
-⚠️⚠️ SEM CREDENCIAL, e ate aqui a UNICA rota assim era o `POST /publico`. O
-cabecalho do router de solicitacoes diz isso com todas as letras, e agora sao
-tres. Cada uma delas e superficie exposta ao mundo, entao valem as mesmas
-protecoes:
-
-  - RATE LIMIT, com o mesmo balde do formulario publico. Sem ele, listar
-    formularios vira um jeito barato de sondar a instalacao.
-  - SO PUBLICADO. Rascunho nao aparece na lista NEM responde pela URL --
-    montar um formulario nao pode ser montar em publico.
-  - NENHUM DADO DE TENANT E LIDO SEM O SLUG DO WORKSPACE. O `workspace` vem na
-    query, exatamente como o `POST /publico` ja o recebe no corpo.
-
-⚠️ E 404 GENERICO, SEMPRE. Formulario inexistente, despublicado, apagado ou de
-outro workspace respondem a MESMA coisa -- senao a diferenca entre as
-respostas vira um enumerador de slugs para quem estiver sondando.
-
-⚠️ O QUE ESTA ROTA **NAO** DEVOLVE: nada de `team_id`, `created_by` ou
-`is_published`. Quem esta de fora nao precisa saber a estrutura interna de
-times para preencher um pedido -- e a lista publica ja expoe o suficiente ao
-mostrar que aquele formulario existe.
+Usa o mesmo rate limit do POST /publico, so mostra formulario publicado, exige
+o slug do workspace e responde 404 generico em todo caso de "nao achei" para nao
+virar enumerador de slugs. Nao expoe `team_id`, `created_by` nem `is_published`.
 """
 
 from __future__ import annotations
@@ -51,12 +31,10 @@ async def listar_publicados(
     session: SessionDep,
     workspace: str = Query(min_length=1, max_length=120),
 ) -> list[PublicFormResumo]:
-    """Os formularios publicados do workspace, para a porta de entrada.
+    """Os formularios publicados do workspace.
 
-    ⚠️ WORKSPACE INEXISTENTE DEVOLVE LISTA VAZIA, e nao 404. A pagina publica
-    que consome isto mostra "nenhum formulario disponivel" -- e um 404 aqui
-    diria a quem sonda que aquele slug de workspace nao existe, enquanto outro
-    responderia 200. Vazio e a mesma resposta nos dois casos.
+    Workspace inexistente devolve lista vazia, e nao 404, para nao revelar quais
+    slugs existem.
     """
     return await SolicitationPublicFormService(session).listar(workspace)
 
@@ -69,8 +47,8 @@ async def obter_publicado(
 ) -> PublicFormDetail:
     """Um formulario publicado, com secoes e perguntas.
 
-    404 quando nao existe, nao esta publicado, foi apagado, ou e de outro
-    workspace -- os quatro com a MESMA resposta.
+    404 igual quando nao existe, nao esta publicado, foi apagado ou e de outro
+    workspace.
     """
     return await SolicitationPublicFormService(session).obter(
         workspace_slug=workspace, form_slug=slug

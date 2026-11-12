@@ -1,31 +1,4 @@
-"""Alembic environment -- migrations async.
-
-Pontos importantes desta configuracao:
-
-  - A URL do banco vem de app.core.config.settings (.env),
-    nao do alembic.ini. Uma fonte de verdade.
-
-  - O `target_metadata` e o Base.metadata da aplicacao,
-    com TODOS os models importados -- e o que permite o
-    autogenerate comparar ORM x banco.
-
-  - SOBRE O SCHEMA v5 JA EXISTENTE:
-    O banco task_manager_dev ja foi criado a partir do
-    schema_v5.sql. Para o Alembic NAO tentar recriar tudo,
-    o fluxo correto e:
-        1. gerar a migration inicial (autogenerate);
-        2. revisar -- ela deve sair (quase) vazia se os
-           models batem com o schema;
-        3. aplicar `alembic stamp head` para marcar o banco
-           como ja na versao inicial, SEM rodar DDL.
-    A partir dai, novas migrations evoluem o schema
-    normalmente. Detalhes no README.
-
-  - Objetos que o Alembic nao deve gerenciar (a trigger de
-    imutabilidade, a extensao ltree/pgcrypto) sao filtrados
-    em `include_object`, pois vivem no schema SQL versionado
-    a parte, nao nos models ORM.
-"""
+"""Ambiente do Alembic (migrations async). A URL vem de `settings`, nao do alembic.ini."""
 
 from __future__ import annotations
 
@@ -45,11 +18,8 @@ import app.db.models  # noqa: F401
 
 config = context.config
 
-# ⚠️ A URL NAO PASSA PELO `config` (auditoria de 16/10). Ela era gravada aqui
-# com `set_main_option` so para ser sobrescrita no modo online; o offline le
-# `settings` direto. E o ConfigParser interpreta `%`: uma senha com `%`
-# (caractere especial codificado na URL) derrubava o `alembic upgrade` no
-# meio do deploy, com a API subindo normal.
+# A URL nao passa por `config.set_main_option`: o ConfigParser interpreta `%`
+# e uma senha com `%` derruba o `alembic upgrade`.
 
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
@@ -57,10 +27,7 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 
-# Objetos criados pelo baseline (0001) que NAO tem model ORM e que o
-# autogenerate, se deixado solto, tentaria dropar. Nomes conferidos
-# contra o schema real (Entrega 8): a funcao e a trigger de
-# imutabilidade de task_history, e as extensoes.
+# Objetos do baseline sem model ORM, que o autogenerate tentaria dropar.
 _UNMANAGED_NAMES = frozenset(
     {
         "task_history_immutable",          # funcao
@@ -78,32 +45,11 @@ def include_object(
     reflected: bool,
     compare_to: object | None,
 ) -> bool:
-    """Filtra objetos que o Alembic NAO deve gerenciar.
+    """Filtra o que o Alembic nao gerencia: os nomes acima e os indices que
+    so existem no banco (parciais, GIST), que nenhum model declara.
 
-    Dois filtros, por motivos diferentes:
-
-    1. NOMES do baseline 0001 sem model ORM (a funcao
-       task_history_immutable(), a trigger
-       task_history_no_update_delete, as extensoes ltree/pgcrypto).
-       Sem o filtro, um autogenerate futuro emitiria DROP neles.
-
-    2. INDICES que existem no BANCO e nao no metadata
-       (`reflected and compare_to is None`). O baseline 0001 criou
-       33 indices -- parciais (`WHERE deleted_at IS NULL`), GIST de
-       ltree, e os herdados de 0004/0006 -- que nenhum model declara.
-       Sem o filtro, todo autogenerate nascia com 33 `drop_index`.
-       Indice perdido em producao NAO da erro: da lentidao tres
-       semanas depois, sem ninguem ligar uma coisa na outra.
-
-    ⚠️ O filtro 2 corta nos DOIS sentidos: indice declarado so no
-    ORM tambem para de ser gerado. Indice novo entra por migration
-    escrita a mao, como todos os outros deste repo ja entraram.
-
-    ⚠️ Meta a defender: `alembic revision --autogenerate` contra um
-    banco em `head` tem que sair VAZIO (so `pass`). Enquanto nao
-    sair, o diff nao e revisavel -- e diff nao revisavel e aplicado
-    no escuro. Se voltar a sair sujo, o model divergiu do banco;
-    conserte o model, nao o filtro.
+    O filtro de indice corta nos dois sentidos: indice novo entra por
+    migration escrita a mao. O autogenerate contra `head` deve sair vazio.
     """
     if name in _UNMANAGED_NAMES:
         return False

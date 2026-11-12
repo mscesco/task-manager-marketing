@@ -1,7 +1,6 @@
 "use client";
-// `/notificacoes` -- Spec 053, fatia F. Chega-se pelo "Ver todas" do sino (D26):
-// o menu lateral nao ganha item. A tela inteira mora em
-// `components/TelaDeNotificacoes.tsx`, que tem guardiao.
+// `/notificacoes`: chega-se pelo "Ver todas" do sino. A tela mora em
+// `components/TelaDeNotificacoes.tsx`.
 
 import AppShell from "@/components/AppShell";
 import TelaDeNotificacoes from "@/components/TelaDeNotificacoes";

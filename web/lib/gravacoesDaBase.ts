@@ -1,19 +1,12 @@
-// lib/gravacoesDaBase.ts
-// As gravações de LINHA da Base que ainda não voltaram do servidor (célula,
-// criar, apagar) -- por base.
-//
-// ⚠️ EXISTE POR CAUSA DE DUAS CORRIDAS (revisão de 08/10):
-// 1. Recarga x gravação: um aviso do ao vivo dispara a recarga; se o GET lê o
-//    banco ANTES do PATCH confirmar e responde DEPOIS, a célula que a pessoa
-//    acabou de editar volta ao valor antigo na tela -- e o eco da própria ação
-//    não chega para corrigir. A recarga espera (`haGravando`) e descarta a
-//    resposta se alguma gravação começou no meio (`geracao`).
-// 2. Ctrl+Z x gravação: desfazer logo depois de editar desfazia a ação
-//    ANTERIOR -- a edição ainda nem tinha chegado. O desfazer espera
-//    (`esperarGravacoes`).
-//
-// Estado de módulo, e não de componente: a tabela, o quadro e o calendário
-// gravam por caminhos diferentes, e a página é quem precisa saber.
+// As gravações de linha da Base que ainda não voltaram do servidor, por base.
+// Duas corridas:
+// 1. Recarga x gravação: um GET que lê antes do PATCH e responde depois
+//    voltaria a célula ao valor antigo. A recarga espera (`haGravando`) e
+//    descarta a resposta se uma gravação começou no meio (`geracao`).
+// 2. Ctrl+Z x gravação: desfazer logo depois de editar desfaria a ação
+//    anterior. O desfazer espera (`esperarGravacoes`).
+// Estado de módulo porque tabela, quadro e calendário gravam por caminhos
+// diferentes.
 
 const emCurso = new Map<string, Set<Promise<unknown>>>();
 const geracoes = new Map<string, number>();

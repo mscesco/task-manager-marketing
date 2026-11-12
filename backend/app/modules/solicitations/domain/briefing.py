@@ -1,19 +1,7 @@
-"""O pedido virando TEXTO DE TAREFA (Spec 043, fatia E).
+"""O pedido virando texto de tarefa.
 
-⚠️⚠️ ESTE FORMATO NAO FOI INVENTADO AQUI -- ele e o do botao "Copiar
-briefing", que existe na fila desde a Spec 025. E a prova de que o fluxo real
-era copia-e-cola: copiar, sair da fila, abrir o quadro, criar a tarefa, colar,
-voltar e marcar "tarefa criada". Seis passos, e o ultimo era o que mais se
-esquecia -- dai o filtro "aprovadas sem tarefa" ter valor.
-
-Manter o MESMO texto e deliberado: quem ja se acostumou com a tarefa colada a
-mao encontra exatamente a mesma coisa na criada pelo botao.
-
-⚠️ E HA UMA COPIA DESTE FORMATO NO FRONT (`copiarBriefing`, em
-`app/solicitacoes/page.tsx`), que continua servindo para quem prefere colar em
-outro lugar -- um e-mail, o WhatsApp. Elas podem divergir, e a divergencia e
-barata: o pior caso e um texto copiado ficar diferente de um texto de tarefa.
-Nao vale um request so para copiar.
+Mesmo formato do botao "Copiar briefing" da fila (`copiarBriefing`, em
+`app/solicitacoes/page.tsx`); as duas copias podem divergir sem grande custo.
 """
 
 from __future__ import annotations
@@ -21,27 +9,20 @@ from __future__ import annotations
 from typing import Protocol
 from zoneinfo import ZoneInfo
 
-# O mesmo fuso de `tasks/domain/dashboard.py:TIMEZONE`; repetido aqui para o
-# modulo de dominio das solicitacoes nao importar o de tarefas.
+# Mesmo fuso de `tasks/domain/dashboard.py:TIMEZONE`, sem importar o modulo de tarefas.
 _FUSO = ZoneInfo("America/Sao_Paulo")
 
 
 class _Pedido(Protocol):
-    """O que este modulo precisa de uma solicitacao -- e so isso.
+    """O que este modulo precisa de uma solicitacao.
 
-    ⚠️ PROTOCOL EM VEZ DO MODELO para o teste poder passar um objeto simples,
-    sem banco. As funcoes aqui sao formatacao pura, e amarra-las ao
-    SQLAlchemy faria cada teste delas precisar de um Postgres.
+    Protocol em vez do modelo para o teste passar um objeto simples, sem banco.
     """
 
     category: str
     summary: str
     requester_name: str
     requester_email: str
-    #: ⚠️ OS TRES SAO `str | None` DESDE A FATIA G, e este Protocol MENTIA:
-    #: declarava `str`, o que fez o mypy calar sobre exatamente o defeito que a
-    #: revisao de 31/08 achou -- o f-string abaixo escrevia o literal "None" na
-    #: descricao de uma tarefa que alguem ia ler.
     requester_phone: str | None
     requester_department: str | None
     requester_polo: str | None
@@ -53,13 +34,7 @@ class _Pedido(Protocol):
 
 
 def titulo_da_tarefa(pedido: _Pedido, rotulo: str | None = None) -> str:
-    """`[Categoria] resumo`, cortado no limite do titulo de tarefa.
-
-    ⚠️ O CORTE E EM 255 e nao e capricho: `task.title` e `String(255)` e o
-    `summary` do pedido pode ter ate 500, mais o rotulo entre colchetes. Sem o
-    corte, a criacao explodiria no BANCO -- depois de o pedido ja ter sido
-    aprovado, e com a tarefa meio criada.
-    """
+    """`[Categoria] resumo`, cortado em 255 (`task.title` e `String(255)`)."""
     nome = rotulo or pedido.category
     return f"[{nome}] {pedido.summary}".strip()[:255]
 
@@ -72,20 +47,10 @@ def briefing(pedido: _Pedido, rotulo: str | None = None) -> str:
         if pedido.batch_total > 1
         else ""
     )
-    # ⚠️ NO DIA DE BRASILIA (auditoria de 21/10): `created_at` e UTC, e um
-    # pedido das 21h30 virava "Recebida em" no dia SEGUINTE, para sempre, na
-    # descricao da tarefa.
+    # `created_at` e UTC; a data mostrada e a de Brasilia.
     recebida = pedido.created_at.astimezone(_FUSO).strftime("%d/%m/%Y")
 
-    # ⚠️⚠️ NADA DE f-STRING COM CAMPO OPCIONAL AQUI. `f"{None}"` produz o
-    # literal **"None"**, e este briefing vira a DESCRICAO de uma tarefa no
-    # quadro -- alguem le "Solicitante: Maria · maria@x · None" e "Área: None ·
-    # Polo: None" enquanto tenta fazer o trabalho.
-    #
-    # Achado pela revisao de 31/08. Ele passou por dois motivos somados: o
-    # `Protocol` acima declarava os tres como `str` (o mypy calou), e TODAS as
-    # fixtures de teste preenchiam os cinco campos -- o caso `None` nunca era
-    # exercitado. Os dois foram corrigidos junto com isto.
+    # Sem f-string com campo opcional: `f"{None}"` escreveria "None" na tarefa.
     contato = " · ".join(
         p
         for p in (
@@ -95,8 +60,7 @@ def briefing(pedido: _Pedido, rotulo: str | None = None) -> str:
         )
         if p
     )
-    # ⚠️ A LINHA INTEIRA SOME quando o formulario nao pergunta nenhum dos dois.
-    # "Área:  · Polo: " vazio e pior que a ausencia: parece campo perdido.
+    # A linha some inteira quando o formulario nao pergunta nenhum dos dois.
     lugar = " · ".join(
         f"{rotulo_do_campo}: {valor}"
         for rotulo_do_campo, valor in (
@@ -113,10 +77,6 @@ def briefing(pedido: _Pedido, rotulo: str | None = None) -> str:
         f"Protocolo: {protocolo}{de_varias} · Recebida em {recebida}",
         "",
     ]
-    # ⚠️ AS RESPOSTAS SAO O RETRATO DO DIA (`{label, value}`), com o TEXTO da
-    # pergunta. E por isso que a tarefa continua legivel mesmo depois de alguem
-    # editar o formulario -- ela carrega o que foi perguntado, e nao um
-    # ponteiro para o que se pergunta hoje.
     for resposta in pedido.answers:
         linhas.append(str(resposta.get("label", "")))
         linhas.append(str(resposta.get("value", "")))

@@ -7,25 +7,9 @@ import type { Metadata } from "next";
 import { APP_NAME } from "@/lib/documentTitle";
 
 /**
- * Raleway, familia unica (Spec 039, F0). Escolhida pela Camila em 19/08/2026
- * comparando as pecas reais do produto nos tamanhos desta spec.
- *
- * ⚠️ `local` E NAO `next/font/google`, e o motivo e o DEPLOY. As duas portas
- * hospedam a fonte no proprio dominio, mas a do Google BAIXA durante o
- * `next build` -- e o build roda na VPS, dentro do roteiro de deploy. Isso
- * poria uma dependencia de rede externa dentro do deploy, um modo de falha
- * novo num roteiro que hoje nao tem nenhum.
- *
- * ⚠️ VARIABLE FONT, um arquivo para os 9 pesos (`weight: "100 900"`). A
- * hierarquia desta spec e feita por PESO, porque nao ha segunda familia -- ver
- * a tabela em `web/specs/039-redesenho-de-layout/spec.md` §5.2.
- *
- * ⚠️ SEM ITALICO de proposito: existe (`Raleway-Italic-VariableFont`), mas
- * dobraria o carregamento e o produto quase nao usa. Entra se faltar.
- *
- * ⚠️ `display: "swap"` + as metricas de fallback que o `next/font` gera
- * sozinho sao o que evita CLS: o texto aparece na hora com a fonte de sistema
- * e troca sem empurrar o layout.
+ * Raleway, variable font (um arquivo para os 9 pesos), sem itálico.
+ * `local` e não `next/font/google`: a do Google baixa durante o `next build`,
+ * que roda na VPS, e poria uma dependência de rede externa no deploy.
  */
 const raleway = localFont({
   src: "./fonts/Raleway-Variable.woff2",
@@ -44,12 +28,8 @@ const raleway = localFont({
 });
 
 export const metadata: Metadata = {
-  // ⚠️ `template` + `default` (revisão de títulos, 21/09): cada rota declara só
-  // o PRÓPRIO nome, no `layout.tsx` dela, e este modelo acrescenta o produto.
-  // Antes havia um título só, e as vinte rotas se chamavam igual na aba.
-  //
-  // ⚠️ O MESMO MODELO está em `lib/documentTitle.ts`, para as telas cujo nome
-  // só se sabe depois de carregar. As duas peças têm de produzir a mesma frase.
+  // Cada rota declara só o próprio nome no `layout.tsx` dela; o modelo acrescenta
+  // o produto. O mesmo modelo está em `lib/documentTitle.ts`: têm de coincidir.
   title: {
     template: `%s · ${APP_NAME}`,
     default: APP_NAME,
@@ -59,25 +39,15 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // `suppressHydrationWarning`: o script abaixo poe `data-theme` no <html>
-    // antes de o React hidratar, e o React avisava da diferenca a cada pagina.
-    // Vale so para os atributos DESTA tag, nao para os filhos.
+    // `suppressHydrationWarning`: o script abaixo põe `data-theme` no <html> antes
+    // de o React hidratar. Vale só para os atributos desta tag.
     <html lang="pt-BR" className={raleway.variable} suppressHydrationWarning>
       <head>
         {/*
-          Aplica o tema ANTES da primeira pintura. Sem isto a pagina nasce
-          clara e vira escura quando o React monta -- e como a navegacao do
-          app e por <a href> (recarga total), esse flash branco apareceria a
-          CADA troca de pagina, nao so uma vez.
-
-          E o unico dangerouslySetInnerHTML do projeto. O conteudo e string
-          literal fixa, escrita aqui: nao entra dado de usuario, de API nem
-          de URL, entao nao ha superficie de injecao. Precisa ser inline e
-          sincrono -- um <script src> ou um useEffect rodariam tarde demais.
-
-          A chave e os valores tem que bater com lib/tema.ts ("tm_theme",
-          "claro"/"escuro"/"sistema"). try/catch porque localStorage lanca em
-          modo privado com cookies bloqueados, e tema nao vale quebrar a pagina.
+          Aplica o tema antes da primeira pintura; sem isto cada navegação (recarga
+          total) piscaria em claro. Precisa ser inline e síncrono. A chave e os
+          valores têm de bater com lib/tema.ts; try/catch porque localStorage lança
+          em modo privado.
         */}
         <script
           dangerouslySetInnerHTML={{

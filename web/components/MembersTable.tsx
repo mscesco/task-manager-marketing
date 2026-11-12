@@ -36,7 +36,6 @@ export default function MembersTable({
       <div className="overflow-x-auto rounded-lg border border-border bg-surface">
         <table className="w-full border-collapse text-sm">
           <caption className="muted border-b border-border px-3 py-2 text-left text-xs">
-            {/* Diz o total; quem filtra passa "N de M". */}
             {count ??
               `${rows.length} ${rows.length === 1 ? "pessoa" : "pessoas"}`}
           </caption>

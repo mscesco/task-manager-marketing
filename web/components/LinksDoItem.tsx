@@ -1,15 +1,7 @@
 "use client";
-// components/LinksDoItem.tsx
-// Os links com nome de um projeto ou de uma tarefa, como botões (Spec 052, B).
-//
-// ⚠️ O NOME É O QUE APARECE, e o endereço fica no `title` -- é o pedido dela:
-// *"quando confirmar aparecer somente o nome como hiperlink"*. O endereço do
-// Drive tem 80 caracteres e não diz nada a quem lê.
-//
-// ⚠️ `<a>` DE VERDADE, em aba nova e com `rel="noopener noreferrer"`: abre com
-// clique do meio e Ctrl+clique (web/AGENTS.md §5), e a aba nova não ganha
-// acesso a esta. O servidor só grava `http`/`https`, então `href` nunca é
-// `javascript:`.
+// Os links com nome de um projeto ou de uma tarefa, como botões: aparece o nome,
+// o endereço fica no `title`. O servidor só grava `http`/`https`, então `href`
+// nunca é `javascript:`.
 
 import { Link2 } from "lucide-react";
 import type { LinkItem } from "@/lib/api";

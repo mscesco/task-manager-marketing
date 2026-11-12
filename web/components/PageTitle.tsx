@@ -1,25 +1,11 @@
 import type { ReactNode } from "react";
 
 /**
- * O `<h1>` das telas internas -- 26px / 800 (Spec 039, F1).
- *
- * ⚠️ UM LUGAR SÓ PARA O TÍTULO DA TELA (revisão de títulos, 21/09). Ele era
- * escrito três vezes: no `PageHeader` (Tailwind) e duas vezes no `Board`
- * (estilo inline, uma por ramo do modo de edição) -- três cópias do mesmo
- * tamanho, que divergiriam no primeiro ajuste.
- *
- * ⚠️ O QUE MORA DENTRO DELE VIRA O NOME DO TÍTULO para o leitor de tela. Botão
- * aqui dentro empresta o nome dele ao título; menu, lista ou formulário aqui
- * dentro viram PARTE do título (e `<div>` dentro de `<h1>` é HTML inválido).
- * Ações ficam AO LADO, não dentro -- é o que o `titleAddon` do `PageHeader` e o
- * `SeletorDeQuadro` fazem.
- *
- * As telas públicas e de conta (login, trocar senha, formulário de
- * solicitação) têm título menor de propósito, num cartão, e não usam este.
+ * O `<h1>` das telas internas. Tudo dentro dele vira o nome do título para o
+ * leitor de tela: ações ficam ao lado, não dentro.
  */
 export default function PageTitle({ children }: { children: ReactNode }) {
   return (
-    // Redesign (fatia 4): 30px, como no canvas das telas. Era 26 (Spec 039).
     <h1 className="m-0 text-[30px] font-extrabold leading-[1.1] tracking-[-0.02em]">
       {children}
     </h1>

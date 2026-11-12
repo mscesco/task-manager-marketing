@@ -2,8 +2,7 @@ import type { CSSProperties } from "react";
 import { corAvatar, iniciais } from "@/lib/people";
 
 /**
- * Avatar circular com iniciais (Spec 018 / Fatia A3).
- * Substitui 6 avatares inline (TaskCard, TaskDetail ×4, membros).
+ * Avatar circular com iniciais.
  *
  * - `name`   deriva as iniciais; ausente/vazio → "?"
  * - `id`     deriva a cor de fundo via corAvatar(id)

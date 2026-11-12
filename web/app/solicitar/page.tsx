@@ -1,20 +1,7 @@
 "use client";
-// /solicitar -- a PORTA de entrada publica (Spec 043, fatia B).
-//
-// ⚠️ ELA DEIXOU DE SER O FORMULÁRIO E VIROU O CAMINHO ATÉ ELE. Até aqui esta
-// rota desenhava o formulário do Marketing, lido de `lib/solicitacaoForm.ts`.
-// Agora os formulários moram no banco, cada time pode ter os seus, e esta
-// página resolve qual mostrar.
-//
-// ⚠️⚠️ COM UM FORMULÁRIO SÓ, ELA ABRE DIRETO -- e isso não é atalho, é
-// preservar o que já está divulgado. O link `/solicitar` está no ar hoje e
-// leva ao formulário; transformá-lo numa lista de um item só acrescentaria um
-// clique para todo mundo que já o usa, sem dar nada em troca. A lista aparece
-// quando ela passa a existir de verdade, com dois ou mais.
-//
-// A decisão da Camila foi "os dois" -- lista E URL por formulário. Isto é
-// exatamente isso: a lista quando há o que listar, e `/solicitar/<slug>`
-// sempre, para divulgação direta.
+// /solicitar: a porta de entrada pública. Com um formulário só, abre direto
+// (o link já divulgado continua levando a ele); com dois ou mais, lista.
+// Cada formulário tem também `/solicitar/<slug>`.
 
 import { useEffect, useState } from "react";
 
@@ -63,9 +50,7 @@ export default function SolicitarPage() {
   }
 
   if (formularios.length === 0) {
-    // ⚠️ VAZIO NÃO É ERRO. Pode ser um workspace que ainda não publicou nada --
-    // e o texto de falha mandaria a pessoa esperar por algo que não vai
-    // aparecer sozinho.
+    // Vazio não é erro: pode ser um workspace que ainda não publicou nada.
     return (
       <MolduraPublica>
         <AvisoPublico
@@ -78,20 +63,14 @@ export default function SolicitarPage() {
 
   if (formularios.length === 1) {
     return (
-      // ⚠️ `<MolduraPublica>` AQUI TAMBEM. Os outros quatro ramos deste arquivo já
-      // envolvem, e este não envolvia: enquanto o formulário carrega -- ou se
-      // ele der 404/500 --, o texto e a caixa de aviso ficavam soltos no fundo
-      // padrão do navegador, sem o fundo e o respiro do produto. A rota irmã
-      // `/solicitar/[slug]` já fazia certo.
+      // `<MolduraPublica>` aqui também: o carregamento e o erro do formulário aparecem dentro dela.
       <MolduraPublica>
         <FormularioPublico slug={formularios[0].slug} />
       </MolduraPublica>
     );
   }
 
-  // ⚠️ AGRUPADO POR TIME, e o nome do time vem da API justamente para isto.
-  // Com dois times pedindo coisas diferentes, "Arte" e "Acesso" soltos na
-  // mesma lista não dizem a quem cada um pertence.
+  // Agrupado por time: "Arte" e "Acesso" soltos não dizem a quem pertencem.
   const porTime = new Map<string, FormularioPublicoResumo[]>();
   for (const f of formularios) {
     const atual = porTime.get(f.team_name) ?? [];
@@ -133,15 +112,8 @@ export default function SolicitarPage() {
 }
 
 /**
- * Um cartão de formulário público.
- *
- * ⚠️ VIROU COMPONENTE em 10/09 pelo mesmo motivo das outras superfícies: o
- * anel duro do `.tappable:hover` saiu do CSS global e deu lugar ao contorno
- * DESENHADO, e gancho não se chama dentro de um `.map()`.
- *
- * ⚠️ `radius` 12, igual ao `borderRadius` de baixo. Os dois têm de andar
- * juntos: o contorno é um `<path>` em pixels, e um raio diferente do CSS passa
- * o traço por dentro ou por fora do canto.
+ * Um cartão de formulário público. `radius` 12 tem de bater com o
+ * `borderRadius` de baixo: o contorno é um `<path>` em pixels.
  */
 function CartaoDeFormulario({
   f,
@@ -154,7 +126,7 @@ function CartaoDeFormulario({
       href={`/solicitar/${f.slug}`}
       {...target}
       style={{
-        // ⚠️ `relative` é o que faz o contorno medir ESTE cartão.
+        // `relative`: o contorno mede este cartão.
         position: "relative",
         cursor: "pointer",
         display: "block",

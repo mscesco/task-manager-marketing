@@ -2,21 +2,12 @@
 # =====================================================
 # entrypoint.sh - inicializacao do container do backend
 # -----------------------------------------------------
-# Este entrypoint SO sobe o uvicorn. Ele IGNORA qualquer
-# argumento passado ao container (nao ha `exec "$@"`):
-# `docker compose run api <comando>` sobe um servidor,
-# nao roda o comando. Comandos avulsos precisam de
-# `--entrypoint ""` (ver DEPLOY.md).
-# Em DESENVOLVIMENTO, o docker-compose sobrescreve o
-# command com --reload e as migrations sao manuais.
+# So sobe o uvicorn e ignora argumentos: comando avulso precisa de
+# `--entrypoint ""` (ver DEPLOY.md). No dev, o compose usa --reload.
 # =====================================================
 set -euo pipefail
 
-# Entrega 8 (ADR 0022): migration NAO roda mais automatica no boot.
-# Era faca apontada pra producao a cada restart -- e o dia do colapso do
-# baseline e exatamente o dia em que banco e arvore ficam dessincronizados.
-# Migration agora e passo MANUAL de deploy (o --entrypoint "" e obrigatorio,
-# senao este script engole o comando e sobe outro servidor):
+# Migration nao roda no boot; e passo manual de deploy:
 #     docker compose -f docker-compose.prod.yml run --rm --entrypoint "" api \
 #         alembic upgrade head
 echo "[entrypoint] Iniciando servidor (migrations sao passo manual de deploy)..."

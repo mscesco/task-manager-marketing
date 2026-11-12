@@ -1,39 +1,33 @@
-"""O diario de acoes da Base (Spec 056, §9, D27) -- a parte que GRAVA.
+"""O diario de acoes da Base: a parte que grava.
 
-⚠️⚠️ A BASE NAO GUARDA COPIAS DE SI MESMA. Guarda o que cada pessoa fez, com o
-minimo para fazer o contrario -- e "o contrario" precisa do valor de ANTES: o
-contrario de "Status virou Cancelado" e "Status virou Publicado". A ideia e
-dela (06/10). Dezenas de bytes por edicao; a rotina diaria apaga o que passou
-de 1 dia.
+A base nao guarda copias de si mesma; guarda o que cada pessoa fez, com o
+valor de antes, o minimo para fazer o contrario.
 
-Os `kind` e o que cada `payload` carrega (a tabela da spec §9.2):
+Os `kind` e o que cada `payload` carrega:
 
     cell.update     {"cells": [{"row", "col", "before", "after"}]}
     row.create      {"row"}
     row.delete      {"row"}
     column.create   {"column"}
     column.update   {"column", "before": {campos}, "after": {campos}}
-                    -- nome, posicao, largura e OPCOES (criar, renomear,
-                       recolorir e reordenar opcao cabem aqui)
-    rows.import     {"rows": [ids], "columns": [ids]} -- a planilha importada
-                    (Spec 057): o desfazer marca as linhas e as colunas novas
-    column.move     {"column", "from", "to"} -- arrastar a coluna (14/10); as do
-                    caminho andam uma casa, e o desfazer anda de volta
+                    -- nome, posicao, largura e opcoes
+    rows.import     {"rows": [ids], "columns": [ids]} -- linhas e colunas
+                    criadas pela planilha importada
+    column.move     {"column", "from", "to"} -- as do caminho andam uma casa
     column.retype   {"column", "before": {"type", "options"},
                      "after": {"type", "options"}, "values": {linha: valor}}
     column.delete   {"column"}
     column.title    {"from", "to"} -- a coluna principal passou de "from" para
-                    "to" (Spec 061): as duas trocam tipo e posicao, e o
-                    desfazer troca de volta
+                    "to": as duas trocam tipo e posicao
     option.delete   {"column", "option"}
     view.create     {"view", "data"}
     view.update     {"view", "before", "after"}
     view.delete     {"view", "data"}
 
-⚠️ `None` em "before"/"after" de celula = celula vazia (a chave ausente).
+`None` em "before"/"after" de celula = celula vazia (a chave ausente).
 
-Acao nova apaga o que a pessoa tinha DESFEITO naquela base: refazer so existe
-enquanto ela nao fez nada depois de desfazer, como em qualquer editor.
+Acao nova apaga o que a pessoa tinha desfeito naquela base, como em qualquer
+editor.
 """
 
 from __future__ import annotations
@@ -49,8 +43,7 @@ from app.db.models.bases import BaseChange
 from app.modules.bases.infrastructure.base_repository import BaseChangeRepository
 from app.modules.bases.infrastructure.live import publicar
 
-#: O verbo que DESFAZER (e refazer) cada acao exige, conferido de novo na hora
-#: (spec §9.4): quem perdeu o verbo entre agir e desfazer nao desfaz.
+#: O verbo que desfazer (e refazer) cada acao exige, conferido de novo na hora.
 VERB_OF_KIND: dict[str, str] = {
     "cell.update": "base_row.update",
     "row.create": "base_row.create",
@@ -78,10 +71,8 @@ async def record(
     repo = BaseChangeRepository(session)
     actor = require_tenant().user_id
     await repo.drop_undone(base_id, actor)
-    # ⚠️ O HORARIO VEM DAQUI, e nao do `now()` do banco (14/10): o `now()` e
-    # o da TRANSACAO, e duas acoes no mesmo pedido (ou num teste) empatavam --
-    # a pilha desempatava pelo uuid, ao acaso, e o Ctrl+Z podia desfazer a
-    # acao errada.
+    # Horario do Python, nao `now()` do banco: o `now()` e o da transacao, e
+    # duas acoes no mesmo pedido empatariam na ordem da pilha de desfazer.
     repo.add(
         BaseChange(
             base_id=base_id,
@@ -92,8 +83,7 @@ async def record(
         )
     )
     await session.flush()
-    # Fatia G: toda acao do diario e tambem um aviso ao vivo -- e sai no MESMO
-    # commit. Um lugar so, para nenhuma acao esquecer de avisar.
+    # Toda acao do diario e tambem um aviso ao vivo, no mesmo commit.
     await publicar(session, base_id, kind, actor)
 
 

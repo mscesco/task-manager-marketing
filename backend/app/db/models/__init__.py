@@ -1,11 +1,5 @@
-"""Registro central dos models ORM.
-
-Importar este pacote garante que TODOS os models sejam
-registrados no `Base.metadata`. Isso e essencial para o
-Alembic enxergar o schema completo no autogenerate.
-
-Sempre que um novo model for criado, adicione-o aqui.
-"""
+"""Importa todos os models para o `Base.metadata` (o Alembic depende disso).
+Model novo entra aqui."""
 
 from __future__ import annotations
 
@@ -53,10 +47,10 @@ __all__ = [  # noqa: RUF022 -- agrupado por assunto, de proposito
     # Operacional
     "Project",
     "Task",
-    # Quadro (Spec 035)
+    # Quadro
     "Board",
     "BoardColumn",
-    # Base (Spec 056)
+    # Base
     "BaseTable",
     "BaseColumn",
     "BaseRow",
@@ -73,7 +67,7 @@ __all__ = [  # noqa: RUF022 -- agrupado por assunto, de proposito
     # Notificacoes
     "Notification",
     "NotificationMute",
-    # Freios de tentativa (auditoria 11/11)
+    # Freios de tentativa
     "RateLimitHit",
     # Solicitacoes (formulario publico)
     "Solicitation",

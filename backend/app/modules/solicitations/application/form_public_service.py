@@ -1,15 +1,8 @@
-"""Leitura do formulario para quem NAO tem login (Spec 043, fatia B).
+"""Leitura do formulario para quem nao tem login.
 
-⚠️⚠️ ESTE SERVICO NAO USA O `BaseRepository`, E ISSO E DELIBERADO. O
-`_base_select` dele chama `require_tenant()`, que ESTOURA sem contexto -- e
-aqui nao ha usuario nenhum. O mesmo desenho ja existe no `insert_public` do
-`repository.py`: caminho publico resolve o workspace pelo SLUG, explicitamente,
-e nunca le dado de tenant sem ele.
-
-⚠️ POR ISSO TODA CONSULTA DAQUI CARREGA `workspace_id` NO WHERE, escrito a mao.
-Nao ha rede de seguranca automatica neste caminho -- se alguem esquecer o
-filtro, o formulario de outro cliente sai pela porta publica, e nenhum teste de
-tenant existente pegaria isso.
+Nao usa `BaseRepository` (o `require_tenant()` dele estoura sem contexto): o
+workspace vem do slug e toda consulta daqui precisa de `workspace_id` no WHERE,
+escrito a mao. Sem esse filtro, formulario de outro cliente vaza pela porta publica.
 """
 
 from __future__ import annotations
@@ -48,8 +41,7 @@ class SolicitationPublicFormService:
     async def listar(self, workspace_slug: str) -> list[PublicFormResumo]:
         """Os publicados, com o nome do time, em ordem de titulo.
 
-        ⚠️ WORKSPACE INEXISTENTE DEVOLVE LISTA VAZIA -- ver o router. Nao e
-        tolerancia a erro: e nao dar resposta diferente para quem sonda slugs.
+        Workspace inexistente devolve lista vazia, para nao revelar slugs.
         """
         ws_id = await self._workspace_id(workspace_slug)
         if ws_id is None:
@@ -91,10 +83,7 @@ class SolicitationPublicFormService:
     ) -> PublicFormDetail:
         """Um formulario publicado, com secoes e perguntas vivas.
 
-        ⚠️ 404 GENERICO PARA OS QUATRO CASOS (nao existe, despublicado,
-        apagado, de outro workspace). Respostas diferentes viram um enumerador
-        de slugs -- e o `EntityNotFoundError` deste projeto ja e generico na
-        borda.
+        404 generico para nao existe, despublicado, apagado ou de outro workspace.
         """
         ws_id = await self._workspace_id(workspace_slug)
         if ws_id is None:
@@ -169,9 +158,6 @@ class SolicitationPublicFormService:
             slug=form.slug,
             title=form.title,
             description=form.description,
-            # ⚠️ OS ROTULOS DA IDENTIFICACAO (Spec 043, fatia G). Sem eles a
-            # porta publica desenharia os cinco campos fixos de sempre -- que
-            # era exatamente o defeito: "Polo" aparecia num formulario de TI.
             phone_label=form.phone_label,
             department_label=form.department_label,
             polo_label=form.polo_label,

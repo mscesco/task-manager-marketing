@@ -1,13 +1,7 @@
 "use client";
-// components/ResumoDoProjeto.tsx
-// A tela inicial do projeto (redesign, 21/10 -- a prancha "Projeto"): os
-// números, as tarefas em aberto por coluna, quem está no projeto e os
-// detalhes. O quadro continua a um clique ("Ver no quadro", na página).
-//
-// ⚠️ LÊ AS TAREFAS DE TOPO (`root_only`), como o quadro: os contadores de
-// subtarefa vêm prontos em `subtask_*`, e as pessoas em
-// `subtree_assignee_ids`. Falhar aqui não derruba a página -- o resumo avisa
-// e o resto continua.
+// A tela inicial do projeto: números, tarefas em aberto por coluna, quem está no
+// projeto e detalhes. Lê só as tarefas de topo (`root_only`): os contadores de
+// subtarefa vêm em `subtask_*` e as pessoas em `subtree_assignee_ids`.
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";

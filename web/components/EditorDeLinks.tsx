@@ -1,14 +1,7 @@
 "use client";
-// components/EditorDeLinks.tsx
-// Editar a lista de links com nome de um projeto ou tarefa (Spec 052, fatia B).
-//
-// ⚠️ CONTROLADO: quem usa guarda o rascunho e decide quando salvar -- o
-// painel do projeto e o modal da tarefa salvam os links JUNTO com o resto do
-// formulário, num botão só. Um "salvar links" separado seria um segundo botão
-// de salvar no mesmo formulário.
-//
-// Toda regra (o que é válido, completar https://, reordenar) mora em
-// `lib/links.ts`, testada. Aqui só desenha.
+// Editar a lista de links com nome de um projeto ou tarefa. Controlado: quem
+// usa guarda o rascunho e salva junto com o resto do formulário. As regras
+// moram em `lib/links.ts`.
 
 import { ArrowDown, ArrowUp, Plus, X } from "lucide-react";
 import {
@@ -32,11 +25,7 @@ export default function EditorDeLinks({
   valor: RascunhoLink[];
   onChange: (novo: RascunhoLink[]) => void;
   desabilitado?: boolean;
-  /**
-   * ⚠️ OBRIGATÓRIA: os erros só aparecem depois de tentar salvar (web/AGENTS.md
-   * §4, "validar depois"). Marcar em vermelho a linha que a pessoa acabou de
-   * criar, antes de ela digitar, é acusar sem motivo.
-   */
+  /** Os erros só aparecem depois de tentar salvar. */
   mostrarErros: boolean;
   /** Ver `errosDosLinks`: a célula da Base aceita link sem nome. */
   nomeOpcional?: boolean;

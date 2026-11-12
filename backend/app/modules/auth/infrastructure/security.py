@@ -1,14 +1,7 @@
-"""Primitivas de seguranca: hashing de senha e JWT.
+"""Primitivas de seguranca: hashing de senha e JWT (sem FastAPI, sem banco).
 
-Este modulo e PURO -- nao conhece FastAPI, nao toca no
-banco. So criptografia e tokens. Fica facil de testar e de
-reaproveitar (ex. em um worker que precise validar token).
-
-JWT: a foundation emite DOIS tipos de token desde o inicio:
-    - access  : curto (minutos). Vai em toda requisicao.
-    - refresh : longo (dias). So serve para obter novo access.
-Cada token carrega um claim `type` -- um access token NUNCA
-e aceito onde se espera refresh, e vice-versa.
+Dois tipos de token, distinguidos pelo claim `type`: access (curto) e
+refresh (longo, so serve para obter novo access).
 """
 
 from __future__ import annotations
@@ -25,10 +18,8 @@ import jwt
 from app.core.config import settings
 from app.shared.exceptions.base import AuthenticationError
 
-#: O bcrypt so le os primeiros 72 BYTES da senha. O `passlib` cortava calado;
-#: o corte agora e explicito, e por isso hash antigo e novo concordam. (E o
-#: `bcrypt` 5 passou a RECUSAR senha maior -- cortar aqui e o que deixa subir
-#: de versao sem a senha longa de alguem virar 500.)
+#: O bcrypt so le os primeiros 72 bytes, e o `bcrypt` 5 recusa senha maior:
+#: cortar aqui mantem os hashes antigos validos e evita 500 em senha longa.
 _BCRYPT_MAX_BYTES = 72
 
 
@@ -45,13 +36,7 @@ class TokenType(StrEnum):
 # Senhas
 # --------------------------------------------------------
 def hash_password(plain_password: str) -> str:
-    """Gera o hash bcrypt (`$2b$`, custo 12) de uma senha em texto puro.
-
-    ⚠️ `bcrypt` DIRETO DESDE 16/10, e nao mais o `passlib` (sem manutencao
-    desde 2020, e que prendia o `bcrypt` em 4.0.1). Mesmo formato e mesmo
-    custo: os hashes gravados pelo `passlib` continuam valendo -- ha teste
-    com um hash gerado por ele (`tests/test_foundation.py`).
-    """
+    """Gera o hash bcrypt (`$2b$`, custo 12), compativel com os do `passlib`."""
     return bcrypt.hashpw(_senha_em_bytes(plain_password), bcrypt.gensalt()).decode("ascii")
 
 
@@ -63,21 +48,16 @@ def verify_password(plain_password: str, password_hash: str) -> bool:
         return False
 
 
-# Alfabeto sem caracteres ambiguos (sem 0/O, 1/l/I) -- a provisoria
-# e lida e digitada por humano na entrega manual (ADR 0019/0021).
+# Sem caracteres ambiguos (0/O, 1/l/I): a provisoria e digitada por humano.
 _TEMP_PASSWORD_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
-#: 14 chars sobre 56 simbolos => log2(56)*14 ~= 81 bits. Aumentado para
-#: 18 chars => ~104 bits, acima do piso de 96 bits exigido na spec.
+#: 18 chars sobre 56 simbolos => ~104 bits, acima do piso de 96.
 _TEMP_PASSWORD_LENGTH = 18
 
 
 def generate_temporary_password() -> str:
-    """Gera uma senha provisoria aleatoria de alta entropia (~104 bits).
+    """Gera uma senha provisoria aleatoria (~104 bits, via `secrets`).
 
-    Usa `secrets` (CSPRNG), nunca `random`. Alfabeto sem caracteres
-    ambiguos. Retorna o claro -- quem chama hasheia com hash_password e
-    devolve o claro UMA vez na resposta (ADR 0021). O claro nunca e
-    persistido.
+    O claro e devolvido uma vez na resposta e nunca persistido.
     """
     return "".join(
         secrets.choice(_TEMP_PASSWORD_ALPHABET)
@@ -98,14 +78,8 @@ def _create_token(
 ) -> str:
     """Monta e assina um JWT.
 
-    Claims padrao:
-        sub  : id do usuario
-        ws   : id do workspace (tenant) -- usado pelo middleware
-        type : access | refresh
-        iat  : emitido em
-        exp  : expira em
-        jti  : id unico do token (emitido, ainda sem uso -- ver Spec 030 D4)
-        tv   : token_version do usuario no momento da emissao (Spec 030)
+    Claims: sub (usuario), ws (workspace), type, iat, exp, jti (ainda sem uso)
+    e, via extra_claims, tv (token_version na emissao).
     """
     now = datetime.now(UTC)
     payload: dict[str, Any] = {
@@ -126,11 +100,7 @@ def _create_token(
 def create_access_token(
     *, user_id: uuid.UUID, workspace_id: uuid.UUID, token_version: int = 0
 ) -> str:
-    """Cria um access token (curta duracao).
-
-    `token_version` grava o claim `tv` (Spec 030). Quem confere e quem tem a
-    linha do usuario em maos -- ver app.modules.auth.api.dependencies.
-    """
+    """Cria um access token (curta duracao), com o claim `tv`."""
     return _create_token(
         subject=user_id,
         workspace_id=workspace_id,
@@ -154,12 +124,7 @@ def create_refresh_token(
 
 
 def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
-    """Decodifica e valida um JWT.
-
-    Verifica assinatura, expiracao e o claim `type`. Qualquer
-    falha vira AuthenticationError -- a camada de API traduz
-    para HTTP 401.
-    """
+    """Valida assinatura, expiracao e `type`; qualquer falha vira 401."""
     try:
         payload: dict[str, Any] = jwt.decode(
             token,
@@ -179,12 +144,9 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
 
 
 def token_version_of(payload: dict[str, Any]) -> int:
-    """Le o claim `tv` de um payload ja decodificado (Spec 030).
+    """Le o claim `tv` de um payload ja decodificado.
 
-    ⚠️ AUSENTE => 0, NUNCA erro. Todo token emitido ANTES do deploy da Spec
-    030 nao tem este claim, e precisa continuar valendo -- as contas ativas
-    estao logadas neste momento. Trocar isto por `payload["tv"]` desloga o
-    workspace inteiro no instante do deploy.
+    Ausente vale 0, nunca erro: tokens antigos sem o claim continuam validos.
     """
     valor = payload.get("tv", 0)
     return valor if isinstance(valor, int) else 0

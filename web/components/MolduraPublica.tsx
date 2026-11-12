@@ -1,11 +1,5 @@
-// components/MolduraPublica.tsx
-// A moldura das paginas PUBLICAS de solicitacao (`/solicitar`,
-// `/solicitar/<slug>`) e o aviso que vira a pagina quando algo da errado.
-//
-// ⚠️ ERAM TRES MOLDURAS E DOIS AVISOS (revisao de 07/10): `Casca` em
-// `app/solicitar/page.tsx` e em `FormularioSolicitacao.tsx`, inline no
-// `[slug]/page.tsx`, e `Aviso` em `app/solicitar/page.tsx` e em
-// `CarregaFormularioPublico.tsx` -- iguais a menos da largura.
+// A moldura das paginas publicas de solicitacao (`/solicitar`, `/solicitar/<slug>`)
+// e o aviso que vira a pagina quando algo da errado.
 
 import type { ReactNode } from "react";
 
@@ -21,7 +15,7 @@ export function MolduraPublica({ children }: { children: ReactNode }) {
   );
 }
 
-/** Spec 064. Aba nova para não tirar a pessoa do formulário ou do login. */
+/** Aba nova para não tirar a pessoa do formulário ou do login. */
 export function LinksLegais({ className = "" }: { className?: string }) {
   // `!`: o `a { text-decoration: none }` do globals.css nao tem camada e venceria.
   const estilo = "inline-flex min-h-6 items-center underline!";
@@ -59,9 +53,7 @@ export function AvisoPublico({
         estreito ? "mx-auto max-w-[560px]" : ""
       }`}
     >
-      {/* ⚠️ `<h1>`, E NÃO `<strong>` (revisão de títulos, 21/09): este aviso É a
-          página quando algo deu errado, e com `<strong>` ela ficava sem título
-          nenhum -- justo para quem chegou por um link quebrado. */}
+      {/* `<h1>`: este aviso é a página inteira, que sem ele ficaria sem título. */}
       <h1 className="m-0 mb-1.5 text-[16px] font-bold">{titulo}</h1>
       <p className="muted m-0 text-[14px] leading-normal">{texto}</p>
     </div>

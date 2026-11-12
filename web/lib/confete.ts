@@ -1,23 +1,13 @@
-// lib/confete.ts
-// O confete de concluir uma tarefa (pedido dela, 21/10, com a referência do
-// motion.dev): uma explosão curta de partículas que sai DE ONDE o gesto
-// aconteceu -- a caixinha da subtarefa, o card arrastado, o seletor de coluna
-// -- e não da tela inteira.
-//
-// ⚠️ IMPERATIVO DE PROPÓSITO: quem conclui é um `onDragEnd`, um `onChange` ou
-// um `await updateTask`, em três componentes diferentes. Um componente de
-// React com estado em cada um deles seria três vezes o mesmo código; aqui o
-// chamador só diz de onde.
-//
-// ⚠️ SÓ `transform` E `opacity` (§7 do `web/AGENTS.md`), e nada acontece com
-// `prefers-reduced-motion` -- a conclusão em si não depende do confete.
+// O confete de concluir uma tarefa: uma explosão curta que sai de onde o
+// gesto aconteceu. Imperativo porque quem conclui está em três componentes
+// diferentes. Só `transform` e `opacity`, e nada com `prefers-reduced-motion`.
 
 import { animate } from "motion";
 
 /** Quantas partículas por explosão. */
 export const CONFETE_PARTICULAS = 22;
 
-/** As cores de apoio do redesign; os tokens mudam por tema. */
+/** As cores de apoio; os tokens mudam por tema. */
 const CORES = ["var(--accent)", "var(--teal)", "var(--amber)", "var(--violet)", "var(--danger)"];
 
 export type Ponto = { x: number; y: number };

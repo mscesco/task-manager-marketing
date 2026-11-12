@@ -1,6 +1,5 @@
 "use client";
-// Modal de CRIAR (sem `duplicarDe`) e DUPLICAR (com `duplicarDe`) tarefa.
-// Editar é no `TaskDetail`. O time não aparece: quem define é o quadro.
+// Modal de criar (sem `duplicarDe`) e duplicar (com `duplicarDe`) tarefa; editar é no `TaskDetail`.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
 import { Plus, X } from "lucide-react";
@@ -94,22 +93,14 @@ export default function TaskModal({
   onClose: () => void;
   onSaved: (task: Task) => void;
   defaultProjectId?: string | null; // criar dentro deste projeto
-  /**
-   * Time da tarefa nova, decidido pelo quadro (`lib/escopoTarefa.ts`).
-   * `null` = esta tela não cria do zero, só duplica. Obrigatória para o `tsc`
-   * apontar todo chamador.
-   */
+  /** Time da tarefa nova, decidido pelo quadro; `null` = só duplica. */
   newTaskTeam: NewTaskTeam | null;
   /** Quadro onde a tarefa de topo nasce; `null` = Quadro geral. */
   defaultBoardId?: string | null;
-  /**
-   * Nome do quadro para o cabeçalho (`null` = não mostra). Vem do chamador: o
-   * modal não tem a lista de quadros.
-   */
+  /** Nome do quadro para o cabeçalho (`null` = não mostra). */
   nomeDoQuadro?: string | null;
   // Presente => modo DUPLICAR, pré-preenchido daqui.
   duplicarDe?: Task | null;
-  // Filhas diretas da origem, para o rótulo da caixa de subtarefas.
   filhosDaOrigem?: Task[];
 }) {
   const duplicando = !!duplicarDe;
@@ -126,14 +117,11 @@ export default function TaskModal({
   const [tentouSalvarLinks, setTentouSalvarLinks] = useState(false);
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
-  // Opcional: não entra em `motivoNaoCria`.
   const [startDate, setStartDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Seletor de projeto só ao criar no quadro geral. Em quadro próprio
-  // (`internal`) a tarefa nasce interna; na cópia herda o projeto da origem.
-  // Usa `internal`, não `teamId`: no quadro geral da raiz há time e há seletor.
+  // Seletor de projeto só ao criar no quadro geral; testa `internal`, não `teamId` (o quadro geral da raiz tem time).
   const mostrarSeletorProjeto =
     !duplicando && !defaultProjectId && !newTaskTeam?.internal;
   const [projetos, setProjetos] = useState<Project[]>([]);
@@ -144,24 +132,18 @@ export default function TaskModal({
   // Time raiz: distingue tarefa geral de tarefa interna de subtime.
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  // Seguidores na criação: nascem vazios, seleção local até o "Criar".
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [buscaSeg, setBuscaSeg] = useState("");
   const [invalidSeg, setInvalidSeg] = useState<Set<string>>(new Set());
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
-  // Caixa "levar subtarefas" da duplicação.
   const [levarSubtarefas, setLevarSubtarefas] = useState(true);
   // Passo 2 da duplicação: responsáveis de cada subtarefa que não pode herdar.
   const [escolhasSub, setEscolhasSub] = useState<Record<string, string[]>>({});
   const avisar = useAvisar();
   const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
   const [abertoResp, setAbertoResp] = useState(false);
-  /**
-   * Posição do painel de responsáveis, em coordenadas de viewport. Precisa ser
-   * `fixed`: o card do modal tem overflow e recortaria um `absolute`. Só escapa
-   * do recorte enquanto o card não tiver `transform`, `filter` ou `contain`.
-   * Sem portal, para manter o clique-fora e o foco.
-   */
+  // Painel de responsáveis em `fixed`: o card tem overflow e recortaria um `absolute`.
+  // Deixa de funcionar se o card ganhar `transform`, `filter` ou `contain`.
   const [posResp, setPosResp] = useState<{
     top: number;
     left: number;
@@ -184,7 +166,6 @@ export default function TaskModal({
     const paraCima = espacoAbaixo < 220 && espacoAcima > espacoAbaixo;
     const maxAltura = Math.max(160, Math.min(360, paraCima ? espacoAcima : espacoAbaixo));
     setPosResp({
-      // Preso na janela: perto da borda direita o painel sairia da tela.
       left: Math.max(
         MARGEM,
         Math.min(r.left, window.innerWidth - LARGURA - MARGEM),
@@ -207,7 +188,6 @@ export default function TaskModal({
     };
   }, [abertoResp, medirResp]);
 
-  // Limpa sempre que abre (o modo duplicar pre-preenche depois, ver abaixo).
   useEffect(() => {
     if (!open) return;
     textoInicial.current = { title: "", description: "" };
@@ -234,8 +214,6 @@ export default function TaskModal({
     setTentouSalvarLinks(false);
   }, [open]);
 
-  // Projetos do seletor, recortados pelo time. Aqui `teamId` é a raiz: o
-  // seletor só aparece quando `internal` é falso.
   useEffect(() => {
     if (!open || !mostrarSeletorProjeto) return;
     listProjects({ size: 100, teamId: newTaskTeam?.teamId ?? null })
@@ -243,7 +221,6 @@ export default function TaskModal({
       .catch(() => {});
   }, [open, mostrarSeletorProjeto, newTaskTeam?.teamId]);
 
-  // Carrega membros pro seletor de responsaveis.
   useEffect(() => {
     if (!open) return;
     listMembers()
@@ -256,14 +233,12 @@ export default function TaskModal({
       setRootResolvido(true);
       return;
     }
-    // Falha => segue null, e ninguém é escondido.
     getRootTeamId()
       .then(setRootTeamId)
       .catch((e) => console.error("TaskModal: time indefinido", e))
       .finally(() => setRootResolvido(true));
   }, [open, newTaskTeam?.teamId]);
 
-  // Esc fecha (quando aberto e nao salvando).
   useEffect(() => {
     if (!open) return;
     function onKey(e: KeyboardEvent) {
@@ -275,24 +250,16 @@ export default function TaskModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, saving]);
 
-  // Fecha o picker de responsaveis ao clicar fora (padrao EmojiPicker/detalhe).
   useFecharAoClicarForaDe(respWrapRef, abertoResp, () => setAbertoResp(false));
 
-  // Bloqueio do botão: exige título, responsável e prazo; o motivo vai no `title`.
   const motivoBloqueio = motivoNaoCria({ titulo: title, assigneeIds, dueDate });
 
-  // Quem alcança o time da tarefa nova vem do backend, pela mesma regra da
-  // designação. `timeDaTarefaNova` espelha o pin do `createTask`; `rootTeamId`
-  // só entra em `/quadro` sem time na URL. `null` = carregando ou falhou, não
-  // esconde ninguém.
+  // Quem alcança o time da tarefa nova (backend). `null` = carregando ou falhou: não esconde ninguém.
   const timeAlvo = timeDaTarefaNova(newTaskTeam?.teamId ?? null, rootTeamId);
   const [alcancamTime, setAlcancamTime] = useState<Set<string> | null>(null);
-  // `alcancamTime === null` é "carregando" ou "falhou"; esta flag separa os dois
-  // para o pré-preenchimento esperar um e seguir no outro.
+  // Separa "carregando" de "falhou" para o pré-preenchimento esperar só o primeiro.
   const [alcanceResolvido, setAlcanceResolvido] = useState(false);
   const [membrosResolvidos, setMembrosResolvidos] = useState(false);
-  // `rootTeamId` também vem da rede: sem esta flag, o primeiro render
-  // pré-preencheria sem o alcance.
   const [rootResolvido, setRootResolvido] = useState(false);
 
   useEffect(() => {
@@ -301,10 +268,9 @@ export default function TaskModal({
       setAlcanceResolvido(false);
       return;
     }
-    // Ainda nao sabemos qual e o time alvo: NAO e "resolvido por ausencia".
+    // Time alvo ainda desconhecido: não conta como resolvido.
     if (!rootResolvido) return;
     if (!timeAlvo) {
-      // Raiz conhecida e mesmo assim sem time alvo: nao ha o que buscar.
       setAlcancamTime(null);
       setAlcanceResolvido(true);
       return;
@@ -338,9 +304,7 @@ export default function TaskModal({
     return fora;
   }, [alcancamTime, membros]);
 
-  // Pré-preenchimento da duplicação. Aplica UMA vez (guarda de `ref`): as
-  // dependências mudam depois de aberto e sobrescreveriam o que a pessoa digitou.
-  // Espera as duas buscas resolverem para não marcar quem não alcança.
+  // Pré-preenchimento da duplicação, uma vez só (ref): reaplicar sobrescreveria o que a pessoa digitou.
   // `filhosDaOrigem` fica fora das dependências: o chamador passa array novo a cada render.
   const permitidosNaCopia = useMemo(
     () =>
@@ -368,7 +332,6 @@ export default function TaskModal({
         priority: duplicarDe.priority,
         assignee_ids: duplicarDe.assignee_ids ?? [],
       },
-      // Membros carregados (sem inativos) menos quem não alcança.
       permitidosNaCopia,
       []
     );
@@ -376,7 +339,6 @@ export default function TaskModal({
     setTitle(v.title);
     setDescription(v.description);
     setPriority(v.priority);
-    // As duas datas ficam vazias. Ver lib/duplicacaoTarefa.
     setDueDate(v.dueDate);
     setAssigneeIds(v.assigneeIds);
     copiaPrePreenchida.current = duplicarDe.id;
@@ -431,8 +393,7 @@ export default function TaskModal({
     [filhosDaOrigem]
   );
 
-  // Passo 2 da duplicação (regra em lib/duplicacaoSubtarefas). Só fica correto
-  // depois que `membros` e `alcancamTime` chegam: antes disso tudo aparece pendente.
+  // Passo 2 da duplicação: antes de `membros` e `alcancamTime` chegarem, tudo aparece pendente.
   const linhasSub = useMemo(
     () => linhasDasSubtarefas(filhosDaOrigem, permitidosNaCopia),
     [filhosDaOrigem, permitidosNaCopia]
@@ -448,13 +409,11 @@ export default function TaskModal({
       ? motivoNaoDuplicar(linhasSub, escolhasSub, puladasSub)
       : null;
 
-  // Trocar de origem zera as decisões.
   useEffect(() => {
     setEscolhasSub({});
     setPuladasSub(new Set());
   }, [duplicarDe?.id, open]);
 
-  // A trava do passo 2 usa o mesmo caminho do `motivoBloqueio` (o `title` do botão).
   const motivoFinal = motivoBloqueio ?? travaDasSubtarefas;
   const podeSalvarTudo = motivoFinal === null;
 
@@ -474,7 +433,6 @@ export default function TaskModal({
     setAssigneeIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
-    // Corrigiu: tira a marca vermelha desse id.
     setInvalidIds((prev) => {
       if (!prev.has(id)) return prev;
       const next = new Set(prev);
@@ -501,7 +459,7 @@ export default function TaskModal({
       setErro(impedimento);
       return;
     }
-    // Links validam antes de qualquer escrita. Na cópia os links vão pelo servidor.
+    // Links validam antes de qualquer escrita.
     if (!duplicando) {
       setTentouSalvarLinks(true);
       if (temErro(errosDosLinks(rascunhoLinks))) {
@@ -519,18 +477,16 @@ export default function TaskModal({
     try {
       let saved: Task;
       if (duplicando && duplicarDe) {
-        // `duplicateTask`: a subárvore nasce numa transação só. Sem `due_date` de propósito.
+        // Sem `due_date` de propósito.
         const copia = await duplicateTask(duplicarDe.id, {
           title: t,
           description: description.trim(),
           priority,
           project_id: duplicarDe.project_id,
-          // Cópia de subtarefa nasce irmã, sob o mesmo pai.
           parent_task_id: duplicarDe.parent_task_id,
           team_id: duplicarDe.team_id,
           assignee_ids: assigneeIds,
           include_subtasks: levarSubtarefas,
-          // Quem não pode herdar já foi resolvido no passo 2, antes do POST.
           ...(levarSubtarefas
             ? payloadDasSubtarefas(linhasSub, escolhasSub, puladasSub)
             : {}),
@@ -565,11 +521,9 @@ export default function TaskModal({
           due_date: dueDate || null,
           // O `createTask` monta o corpo campo a campo: campo novo precisa da linha lá também.
           start_date: startDate || null,
-          // Sem hora na criação; a hora fica no detalhe.
           due_time: null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
-          // Mesma armadilha do `start_date`.
           watcher_ids: watcherIds,
           // O mesmo time que o seletor de responsável usou; divergir gera 422.
           team_id: newTaskTeam?.teamId ?? null,
@@ -605,7 +559,6 @@ export default function TaskModal({
             "Essas pessoas não alcançam o time desta tarefa — remova-as para criar."
         );
       } else if (invalidos?.length) {
-        // Marca os recusados em vermelho, mantem o resto da selecao.
         setInvalidIds(new Set(invalidos));
         const nomes = invalidos
           .map((id) => membros.find((m) => m.id === id)?.name ?? "alguem")
@@ -657,7 +610,6 @@ export default function TaskModal({
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
             {duplicando ? "Duplicar tarefa" : "Nova tarefa"}
-            {/* Só na criação: a cópia nasce no quadro da origem. */}
             {!duplicando && nomeDoQuadro && (
               <span
                 className="muted"
@@ -700,7 +652,6 @@ export default function TaskModal({
           />
         </div>
 
-        {/* Na cópia o servidor copia os links da original. */}
         {duplicando ? (
           <p className="muted text-xs">Os links da tarefa original vão junto na cópia.</p>
         ) : (
@@ -847,11 +798,9 @@ export default function TaskModal({
               {abertoResp && (
                 <div
                   style={{
-                    // `fixed`: ver `posResp`.
                     position: "fixed",
                     top: posResp?.top ?? 0,
                     left: posResp?.left ?? 0,
-                    // Folga: o card não abre contexto de empilhamento hoje.
                     zIndex: 70,
                     width: posResp?.largura ?? 300,
                     maxWidth: "calc(100vw - 24px)",
@@ -878,8 +827,7 @@ export default function TaskModal({
                       setBuscaResp("");
                     }}
                   />
-                  {/* "Selecionar todos" e "Limpar": só na criação, onde a seleção é local
-                      até o "Criar". "Todos" = os visíveis na busca (o rótulo leva o número). */}
+                  {/* "Todos" = os visíveis na busca. */}
                   {!duplicando && (
                     <div
                       style={{
@@ -907,7 +855,6 @@ export default function TaskModal({
                           Selecionar todos ({membrosFiltrados.length})
                         </button>
                       )}
-                      {/* Só com alguém escolhido. */}
                       {assigneeIds.length > 0 && (
                         <button
                           type="button"
@@ -970,7 +917,6 @@ export default function TaskModal({
           )}
         </div>
 
-        {/* Seguidores na criação; a cópia não leva seguidores. */}
         {!duplicando && (
           <div className="field">
             <label className="label">
@@ -1006,7 +952,6 @@ export default function TaskModal({
               padding: "10px 12px",
             }}
           >
-            {/* Sem filha viva, a caixa não aparece. */}
             {rotuloCaixaSubtarefas(subtarefasVivas) !== null && (
               <>
                 <label
@@ -1021,7 +966,6 @@ export default function TaskModal({
                   {rotuloCaixaSubtarefas(subtarefasVivas)}
                 </label>
 
-                {/* Passo 2: aparece só quando há o que decidir. */}
                 {mostrarPasso2 && (
                   <div
                     style={{

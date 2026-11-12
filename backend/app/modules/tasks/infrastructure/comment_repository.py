@@ -1,14 +1,4 @@
-"""Repository de comentarios (Entrega 14).
-
-Comment tem workspace_id -> herda BaseRepository (queries ja escopadas por
-tenant e por soft-delete). Metodos especificos:
-    - list_for_task: pagina do thread, created_at ASC (desempate por id), aplicando a regra
-      de exibicao do tombstone (D5) no proprio SELECT, pra `total` e `items`
-      nao divergirem;
-    - add: insere (flush no service);
-    - soft_delete_for_task_subtree: cascata da delecao de task (D11),
-      EXCECAO AUTORIZADA ao _base_select (raw SQL, linhagem ADR 0003/0005).
-"""
+"""Repository de comentarios."""
 
 from __future__ import annotations
 
@@ -32,9 +22,8 @@ class CommentRepository(BaseRepository[Comment]):
     ) -> tuple[list[Comment], int]:
         """Comentarios visiveis da task, created_at ASC (desempate por id), paginado.
 
-        Visivel = ativo OU (apagado e com ao menos uma replica ATIVA) -- o
-        tombstone (D5). A condicao mora no SELECT pra `total` casar com o que
-        de fato volta (senao paginacao mente). Retorna (itens_da_pagina, total).
+        Visivel = ativo OU (apagado e com replica ativa). A condicao fica no
+        SELECT para `total` casar com os itens. Retorna (itens_da_pagina, total).
         """
         reply = aliased(Comment)
         tem_replica_ativa = (
@@ -69,13 +58,9 @@ class CommentRepository(BaseRepository[Comment]):
         return comment
 
     async def soft_delete_for_task_subtree(self, *, task_path: str) -> int:
-        """Soft-delete dos comentarios de TODAS as tasks da subtree (D11).
+        """Soft-delete dos comentarios de todas as tasks da subtree (raw SQL, por tenant).
 
-        EXCECAO AUTORIZADA (mesma linhagem do soft_delete_subtree de task,
-        ADR 0003/0005): raw SQL, escopado por tenant. Casa pelo `path` ltree
-        da subtree -- nao depende de deleted_at das tasks (elas ja foram
-        marcadas). NAO entra no cascade_count (esse conta so tarefas-filhas).
-        Retorna o nº de comentarios afetados.
+        Casa pelo `path` ltree, sem depender do deleted_at das tasks. Retorna o nº afetado.
         """
         tenant = require_tenant()
         result = await self.session.execute(

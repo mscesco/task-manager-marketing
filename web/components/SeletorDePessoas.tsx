@@ -1,23 +1,8 @@
 "use client";
-// components/SeletorDePessoas.tsx
-// Uma linha de pessoas (pílulas com avatar) + o `+` que abre a busca com
-// caixas. Spec 053, fatia D: nasce para "Seguidores" -- no detalhe da tarefa e
-// no modal de criar.
-//
-// ⚠️ ELE DESENHA, e so. Quem decide a lista oferecida e `lib/seguidores.ts`;
-// quem grava (na hora, no detalhe; no "Criar", no modal) e quem chama, pelo
-// `onAlternar`.
-//
-// ⚠️ O PAINEL E `position: fixed`, e nao `absolute`, pela licao do modal de
-// criar (22/08): o card do modal tem `overflowY: auto` e RECORTA filho absoluto
-// -- com o campo perto do rodape, o painel abria cortado. `fixed` escapa do
-// recorte enquanto nenhum ancestral tiver `transform`, `filter` ou `contain`.
-// A medicao (e a virada para cima quando nao cabe embaixo) nao roda em jsdom:
-// e conferencia de olho, na tela.
-//
-// ⚠️ A linha de "Responsaveis" do detalhe e do modal NAO usa este componente
-// ainda -- tem a mesma forma, com estilo inline e regras proprias (obrigatorio,
-// "Selecionar todos"). Juntar as duas e trabalho a parte.
+// Linha de pessoas (pílulas com avatar) + o `+` que abre a busca com caixas.
+// Só desenha: a lista oferecida vem de `lib/seguidores.ts` e quem grava é quem chama (`onAlternar`).
+// O painel é `position: fixed` para escapar do `overflowY: auto` do modal; vale enquanto
+// nenhum ancestral tiver `transform`, `filter` ou `contain`.
 
 import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -86,8 +71,7 @@ export default function SeletorDePessoas({
     });
   }, []);
 
-  // ⚠️ `scroll` COM CAPTURE: quem rola e o card do modal, e rolagem de elemento
-  // nao sobe ate o `window`.
+  // `scroll` com capture: quem rola é o card do modal, e isso não sobe até o `window`.
   useEffect(() => {
     if (!aberto) return;
     medir();
@@ -160,9 +144,7 @@ export default function SeletorDePessoas({
           role="dialog"
           aria-label={rotuloDoBotao}
           className="fixed z-[70] rounded-lg border border-border bg-surface p-2 shadow-card"
-          // ⚠️ Posicao e altura sao MEDIDAS em tempo de execucao -- e a excecao
-          // documentada ao "estilo nao nasce inline" (valor de runtime).
-          // Enquanto nao mediu, fica invisivel: desenhar em 0,0 e pular e pior.
+          // Posição e altura medidas em runtime (por isso inline); invisível até medir.
           style={{
             top: pos?.top ?? 0,
             left: pos?.left ?? 0,
@@ -177,8 +159,7 @@ export default function SeletorDePessoas({
             value={busca}
             autoFocus
             onChange={(e) => onBusca(e.target.value)}
-            // Enter ESCOLHE a primeira da lista, e nao envia formulario nenhum
-            // (a mesma licao do seletor de responsaveis do modal).
+            // Enter escolhe a primeira da lista, sem enviar formulário.
             onKeyDown={(e) => {
               if (e.key !== "Enter") return;
               e.preventDefault();

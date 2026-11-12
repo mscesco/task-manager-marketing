@@ -1,17 +1,7 @@
 "use client";
-// components/bases/useGravarCelula.ts
-// Gravar UMA célula da Base -- a tabela, o quadro e o calendário gravam pelo
-// mesmo caminho (Spec 056, fatias E e F).
-//
-// ⚠️ OTIMISTA: a tela muda na hora e VOLTA se o servidor recusar, com o
-// motivo num aviso. A linha que o servidor devolve substitui a local -- é ela
-// que tem a `version` nova. Três cópias disto seriam três jeitos de divergir.
-//
-// ⚠️ DUAS EDIÇÕES NA MESMA LINHA EM VOO (Tab e digitar de novo; revisão de
-// 08/10): a resposta mais velha pode chegar por último. Por isso ela só
-// substitui a linha se a `version` não andar para trás, e o erro desfaz SÓ a
-// própria célula -- voltar a linha inteira apagava a outra edição, que deu
-// certo.
+// Grava uma célula da Base (tabela, quadro e calendário usam este caminho).
+// Otimista: a tela muda na hora e volta se o servidor recusar. A linha devolvida só
+// substitui a local se a `version` não andar para trás, e o erro desfaz só a própria célula.
 
 import { useCallback } from "react";
 import { useAvisar } from "@/components/Toasts";
@@ -43,7 +33,7 @@ export function useGravarCelula(
       } catch (e) {
         // Só volta se a linha ainda é a que esta edição viu: uma edição
         // posterior que já deu certo trouxe `version` nova, e desfazê-la
-        // deixaria a tela com um valor que não existe no banco (21/10).
+        // deixaria a tela com um valor que não existe no banco.
         onLinhas((ls) =>
           ls.map((l) =>
             l.id === linha.id && l.version === linha.version

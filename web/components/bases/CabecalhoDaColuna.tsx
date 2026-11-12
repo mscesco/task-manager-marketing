@@ -1,25 +1,13 @@
 "use client";
-// components/bases/CabecalhoDaColuna.tsx
-// O cabeçalho de uma coluna da Base, como o do Notion (Spec 056, fatia I,
-// pedido dela em 07/10 com o print do menu "Data"):
-//
-//   *"Tudo é clicável, nada de ter que clicar em 3 pontos pra editar"*
-//
-// O CABEÇALHO INTEIRO É O BOTÃO. Ele abre o menu da coluna: o nome editável no
-// topo, e embaixo Editar propriedade ›, Alterar tipo ›, Usar como coluna
-// principal (Spec 061, só em texto), Filtrar, Ordenar ›,
-// Congelar, Ocultar, Inserir à esquerda/direita, Duplicar e Excluir. As setas
-// "›" abrem SUBMENU AO LADO (escolha dela), no `AnchoredPanel` com `aoLado`.
-//
-// ⚠️ CADA ITEM PERGUNTA O SEU CADEADO, vindo do servidor:
-//   coluna (nome, tipo, opções)      -> can_update_column
-//   inserir, duplicar                -> can_create_column
-//   excluir coluna, apagar opção     -> can_delete_column
-//   filtrar, ordenar, congelar, ocultar -> can_update_view (a visão é de todos)
+// Cabeçalho de uma coluna da Base: o cabeçalho inteiro é o botão que abre o menu da coluna
+// (nome editável, propriedade, tipo, coluna principal, filtrar, ordenar, congelar, ocultar,
+// inserir, duplicar, excluir). Itens com "›" abrem submenu ao lado (`AnchoredPanel` com `aoLado`).
+// Cada item segue o seu cadeado do servidor:
+//   coluna (nome, tipo, opções)         -> can_update_column
+//   inserir, duplicar                   -> can_create_column
+//   excluir coluna, apagar opção        -> can_delete_column
+//   filtrar, ordenar, congelar, ocultar -> can_update_view
 // Quem não pode nada vê só o nome, sem botão.
-//
-// ⚠️ "Calcular", "Agrupar" na tabela, "Quebrar texto" e "Acesso à propriedade"
-// ficaram de fora desta fatia, por decisão dela (07/10).
 
 import { useRef, useState, type MutableRefObject, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -109,11 +97,7 @@ export default function CabecalhoDaColuna({
   /** Coluna nova (inserir, duplicar) ou coluna principal trocada. A página
    *  recarrega -- as outras andaram. */
   onCriou: () => void;
-  /**
-   * Mover a coluna uma casa (14/10) -- a alternativa de TECLADO ao arrastar o
-   * cabeçalho (web/AGENTS.md: todo arraste tem um caminho sem mouse). Lado
-   * ausente = não dá para ir (a ponta, ou o título do lado).
-   */
+  /** Mover a coluna uma casa (alternativa de teclado ao arraste). Lado ausente = não dá para ir. */
   moverPara?: { esquerda?: () => void; direita?: () => void };
 }) {
   const avisar = useAvisar();
@@ -191,8 +175,7 @@ export default function CabecalhoDaColuna({
       onCriou();
     }, "Não consegui duplicar a coluna.");
 
-  // ⚠️ SÓ TEXTO (decisão dela, Spec 061): o título dos cards é texto. Sem
-  // confirmação: nenhum valor se perde, e o Ctrl+Z troca de volta.
+  // Só coluna de texto vira principal; sem confirmação, o Ctrl+Z troca de volta.
   const tornarPrincipal = () =>
     rodar(async () => {
       await makeBaseColumnTitle(baseId, coluna.id);
@@ -525,10 +508,9 @@ function ItemComSub({
   );
 }
 
-/** ⚠️ O submenu NÃO pode ser filho do painel principal na árvore do DOM: o
- *  principal tem `will-change: transform`, e isso faz o `fixed` de dentro ser
- *  posicionado pela caixa dele, e não pela janela. Por isso ele vai para o
- *  `body` -- e o `subRef` é o que diz ao principal que ali é "dentro". */
+/** O submenu não pode ser filho do painel principal no DOM: o `will-change: transform`
+ *  dele faria o `fixed` ser posicionado pela caixa do painel. Vai para o `body`, e o
+ *  `subRef` diz ao principal que ali é "dentro". */
 function SubmenuNoPortal({
   subRef,
   children,

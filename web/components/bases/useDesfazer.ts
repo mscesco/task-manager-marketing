@@ -1,15 +1,8 @@
 "use client";
-// components/bases/useDesfazer.ts
-// O Ctrl+Z e o refazer da Base na tela (Spec 056, fatia H). QUANDO o atalho
-// vale e QUE aviso mostrar é de `lib/baseDesfazer.ts` (puro, testado); aqui é
-// só escutar a tecla, chamar o servidor e recarregar.
-//
-// ⚠️ ANTES DE DESFAZER, GRAVA O QUE ESTÁ PENDENTE (`antes`): a visão grava com
-// 600 ms de atraso, e um Ctrl+Z logo depois de mexer num filtro desfaria a
-// ação ANTERIOR -- a do filtro ainda nem chegou ao servidor.
-//
-// ⚠️ UM DE CADA VEZ: segurar o Ctrl+Z dispara a tecla em repetição, e dez
-// pedidos em paralelo desfariam dez ações sem a pessoa ver nenhuma.
+// Ctrl+Z e refazer da Base: escuta a tecla, chama o servidor e recarrega. Quando o
+// atalho vale e que aviso mostrar fica em `lib/baseDesfazer.ts`.
+// Antes de desfazer, grava o pendente (`antes`): a visão grava com 600 ms de atraso.
+// Um pedido por vez: segurar o Ctrl+Z repete a tecla.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useAvisar } from "@/components/Toasts";

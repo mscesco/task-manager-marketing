@@ -1,25 +1,11 @@
-// web/lib/useSairDoBloco.ts
-// =====================================================================
-// "Saiu do bloco em edição" -- clicou fora dele, ou levou o foco (Tab) para
-// fora dele. Usado pela descrição e pelos links da tarefa, que SALVAM ao sair
-// (Spec 052, fatia D; o gesto do Trello que ela pediu).
+// "Saiu do bloco em edição": clicou fora ou levou o foco (Tab) para fora.
+// Usado pela descrição e pelos links da tarefa, que salvam ao sair.
 //
-// ⚠️ POR QUE NÃO O `onBlur` DO CAMPO. O bloco tem mais de um foco possível
-// (o texto, "Salvar", "Cancelar", as setas dos links). Um blur do campo para
-// "Cancelar" não é sair -- e no Safari clicar num botão NÃO lhe dá foco, então
-// o `relatedTarget` chega `null` e "Cancelar" salvaria antes de cancelar.
-//
-// Por isso são dois sinais, e nenhum deles depende de o botão receber foco:
-//   - `mousedown` no documento, FORA do bloco (o clique);
-//   - `focusout` do bloco com destino conhecido FORA dele (o Tab).
-// `focusout` com destino `null` (trocar de janela, clicar em área sem foco)
-// NÃO conta -- o clique já foi contado pelo `mousedown`, e trocar de janela
-// não é desistir nem confirmar.
-//
-// ⚠️ OS DOIS PODEM DISPARAR NO MESMO GESTO (clicar num campo de fora gera os
-// dois). Quem usa precisa ser idempotente -- os componentes guardam "já
-// confirmei" numa ref.
-// =====================================================================
+// Não usa `onBlur` do campo: o bloco tem vários focos, e no Safari clicar num
+// botão não lhe dá foco (o `relatedTarget` chega `null`, e "Cancelar"
+// salvaria). Sinais: `mousedown` fora do bloco e `focusout` com destino
+// conhecido fora dele; destino `null` não conta. Os dois podem disparar no
+// mesmo gesto, então quem usa tem de ser idempotente.
 import { useEffect, useRef, type RefObject } from "react";
 
 export function useSairDoBloco(

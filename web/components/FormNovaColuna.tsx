@@ -10,28 +10,14 @@ import { CORES_DE_COLUNA, semanticaTerminal } from "@/lib/coluna";
 const TIPOS: ColumnSemantic[] = ["OPEN", "IN_PROGRESS", "DONE", "CANCELLED"];
 
 /**
- * Teto do nome de coluna.
- *
- * ⚠️ 60, E NAO OS 120 DO BANCO (18/08). O `String(120)` de `board_column.name`
- * protege o Postgres; este numero protege o cabecalho de atropelar a coluna
- * vizinha. Espelha `BoardService.NOME_DE_COLUNA_MAX` -- se mudar la, mude aqui.
- * Ate 18/08 este valor era 120 e o comentario dizia "teto do backend", o que
- * fazia parecer que os dois numeros TINHAM de ser o mesmo. Nao tem.
+ * Teto do nome de coluna. 60, não os 120 do banco: protege o cabeçalho de
+ * atropelar a vizinha. Espelha `BoardService.NOME_DE_COLUNA_MAX`.
  */
 const MAX_NOME = 60;
 
 /**
- * A sobreposição de criar coluna (Spec 036, fatia 6c-2).
- *
- * ⚠️ SEM CAMPO DE COR, e isso é decisão de 13/08. Hoje a cor sai de
- * `_cor_por_rotacao` sobre os 8 tokens do tema, com contraste já conferido;
- * aceitar cor livre exige schema novo, validação e a decisão paleta × hex --
- * e o `plan.md` registra que "cor livre e contraste AA" não é validado. Virou
- * fatia própria.
- *
- * ⚠️ A COLUNA NÃO NASCE AQUI. Ela entra no RASCUNHO e só existe no servidor
- * quando a pessoa concluir a edição. É o que permite apagar outra coluna
- * mandando as tarefas para esta -- que é a razão de ser do lote.
+ * A sobreposição de criar coluna. A coluna entra no rascunho e só existe no
+ * servidor ao concluir a edição.
  */
 export default function FormNovaColuna({
   onCriar,
@@ -40,7 +26,7 @@ export default function FormNovaColuna({
   onCriar: (
     nome: string,
     semantica: ColumnSemantic,
-    /** Spec 039 (F9). ⚠️ `undefined` = não escolheu; a rotação do backend decide. */
+    /** `undefined` = não escolheu; a rotação do backend decide. */
     cor: string | undefined,
     avisaPrazo: boolean,
   ) => void;
@@ -48,17 +34,13 @@ export default function FormNovaColuna({
 }) {
   const [nome, setNome] = useState("");
   const [semantica, setSemantica] = useState<ColumnSemantic>("IN_PROGRESS");
-  // Spec 039 (F9). ⚠️ `undefined` E UM ESTADO LEGÍTIMO, e não "ainda não
-  // carregou": é "deixa a rotação escolher", que é como toda coluna nasceu até
-  // hoje. Por isso o formulário abre com NENHUM tento marcado.
+  // `undefined` é legítimo: "deixa a rotação escolher". Abre sem tento marcado.
   const [cor, setCor] = useState<string | undefined>(undefined);
   const [avisaPrazo, setAvisaPrazo] = useState(true);
   const caixaRef = useRef<HTMLDivElement | null>(null);
   const nomeRef = useRef<HTMLInputElement | null>(null);
 
-  // ⚠️ FOCO NO PRIMEIRO CAMPO, e não na caixa. `role="dialog"` num bloco que só
-  // aparece na árvore não anuncia nada sozinho, e aqui há um campo óbvio para
-  // começar -- levar o foco a ele diz o que fazer sem texto nenhum.
+  // Foco no primeiro campo.
   useEffect(() => {
     nomeRef.current?.focus();
   }, []);
@@ -67,9 +49,7 @@ export default function FormNovaColuna({
   const podeCriar = limpo.length > 0 && limpo.length <= MAX_NOME;
 
   return (
-    // ⚠️ SÓ O CLIQUE NO PRÓPRIO FUNDO FECHA (`onFundo`, ver `CaixaDeDialogo`):
-    // soltar o botão fora depois de selecionar texto no campo não joga fora o
-    // que a pessoa digitou.
+    // Só o clique no próprio fundo fecha (ver `CaixaDeDialogo`).
     <CaixaDeDialogo
       ariaLabel="Criar coluna"
       largura={380}
@@ -92,9 +72,7 @@ export default function FormNovaColuna({
             maxLength={MAX_NOME}
             onChange={(e) => setNome(e.target.value)}
             onKeyDown={(e) => {
-              // ⚠️ ENTER CRIA, mas só quando dá para criar. Sem a condição, o
-              // Enter num campo vazio fecharia o formulário sem fazer nada e
-              // pareceria que a coluna foi criada.
+              // Enter só cria quando dá para criar; num campo vazio pareceria criado.
               if (e.key === "Enter" && podeCriar) {
                 e.preventDefault();
                 onCriar(limpo, semantica, cor, avisaPrazo);
@@ -119,33 +97,17 @@ export default function FormNovaColuna({
               </option>
             ))}
           </select>
-          {/* ⚠️ "NÃO MUDA DEPOIS" E NÃO "IMUTÁVEL". No formulário de criação
-              nada é imutável ainda -- a frase só faz sentido olhando para o
-              futuro. E o MOTIVO importa: criar é seguro porque a coluna nasce
-              vazia; editar mudaria o significado de tarefas existentes em
-              silêncio. */}
+          {/* Criar é seguro porque a coluna nasce vazia; editar o tipo mudaria
+              tarefas existentes em silêncio. */}
           <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
             O tipo não muda depois. Ele decide o que acontece com as tarefas que
             entram aqui.
           </div>
         </div>
 
-        {/* ---- Cor (Spec 039, F9) --------------------------------------
-            ⚠️ OITO TENTOS, E NÃO UMA RODA RGB. Decisão da Camila em 22/08:
-            "os 8 tokens agora, roda depois". Os tokens são os MESMOS que o
-            backend já usava em rotação -- a mudança é a pessoa escolher em vez
-            de receber o próximo da fila.
-
-            ⚠️ E NÃO É LIMITAÇÃO DE PREGUIÇA: token inverte no tema escuro e
-            hex não. Um roxo escolhido no claro sumiria no fundo escuro, e foi
-            por isso que a Spec 031 (C1a) tirou os hex do produto. A roda RGB
-            é fatia própria porque ela obriga a derivar a cor do TEXTO por
-            luminância, e nada no front faz essa derivação ainda.
-
-            ⚠️ "AUTOMÁTICA" É UMA OPÇÃO DE VERDADE, e vem primeiro: ela manda
-            `undefined` e deixa a rotação do backend decidir, que é o
-            comportamento de sempre. Sem ela, quem só quer uma coluna nova
-            seria obrigado a ter opinião sobre cor. */}
+        {/* ---- Cor ----
+            Oito tokens, não hex: token inverte no tema escuro. "Automática"
+            manda `undefined` e deixa a rotação do backend decidir. */}
         <div className="field" style={{ marginTop: 14 }}>
           <span className="label" id="nova-coluna-cor">
             Cor
@@ -186,18 +148,13 @@ export default function FormNovaColuna({
                 role="radio"
                 aria-checked={cor === token}
                 onClick={() => setCor(token)}
-                // ⚠️ O RÓTULO ACESSÍVEL É O NÚMERO, e não o nome do token.
-                // "var(--status-external-dot)" lido em voz alta não é cor
-                // nenhuma, e os nomes internos ("external", "blocked") são do
-                // status de onde o token veio, não da cor que ele pinta --
-                // chamar de "Aprovação externa" ensinaria errado.
+                // O rótulo acessível é o número: o nome do token não descreve a cor.
                 aria-label={`Cor ${i + 1}`}
                 title={`Cor ${i + 1}`}
                 style={{
                   width: 28, height: 28, borderRadius: 999, cursor: "pointer",
                   background: token,
-                  // O anel de escolha fica FORA da bolinha (box-shadow, e não
-                  // border), senão a cor encolheria ao ser escolhida.
+                  // Anel com box-shadow, não border, para a cor não encolher.
                   border: "1px solid var(--border)",
                   boxShadow:
                     cor === token
@@ -209,18 +166,9 @@ export default function FormNovaColuna({
           </div>
         </div>
 
-        {/* ---- Cobrar prazo (Spec 039, §7.3) ---------------------------
-            ⚠️ O RÓTULO NÃO É `notify_deadline`, e isso é decisão escrita: é
-            "Cobrar prazo nesta coluna", com as consequências ao lado. Sem o
-            texto, alguém desmarca para tirar vermelho da tela e silencia
-            notificação sem saber -- e o backend não guarda histórico de quem
-            desligou.
-
-            ⚠️ ESCONDIDA EM COLUNA TERMINAL (§7.3, item 3). Em Concluído e
-            Cancelado a flag é ignorada pelo backend; mostrar um controle
-            inerte seria mentira de interface. Ela some junto com o estado --
-            se a pessoa desmarcar e depois trocar o tipo para Concluído, o
-            valor guardado deixa de ter efeito, e é isso mesmo. */}
+        {/* ---- Cobrar prazo ----
+            Rótulo por extenso com as consequências: desmarcar silencia
+            notificação. Some em coluna terminal, onde o backend ignora a flag. */}
         {!semanticaTerminal(semantica) && (
           <div className="field" style={{ marginTop: 14 }}>
             <label

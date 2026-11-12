@@ -15,28 +15,10 @@ import {
   type Task,
 } from "@/lib/api";
 
-// Rota CANONICA de uma tarefa: /tarefa/<id>.
-//
-// Por que ela existe: abrir uma tarefa no quadro nao mudava a URL, entao nao
-// havia endereco pra compartilhar. O deep-link que ja existia
-// (/minhas-tarefas?task=<id>) so funciona pra quem tem a tarefa na PROPRIA
-// lista de atribuicoes -- mandar aquele link pra outra pessoa cai no aviso
-// "essa tarefa nao esta na sua lista". Esta rota nao depende de lista
-// nenhuma: busca a tarefa por id.
-//
-// Ela CONVIVE com o modal (decisao de produto): clicar num card no quadro
-// segue abrindo o modal, rapido e sem sair da pagina. Esta rota e o destino
-// de link compartilhado. O mesmo componente (TaskDetail) serve os dois, via
-// prop `modo` -- aqui "pagina" (sem scrim, sem Esc).
-//
-// Permissao: quem valida e o backend (task_visible). Sem acesso -> 404, que
-// e o mesmo retorno de "nao existe" (de proposito: nao vaza a existencia da
-// tarefa). Por isso a mensagem cobre os dois casos.
-//
-// ⚠️ O "bug E6" (ADR 0002) FECHOU na Spec 037 (E5). Ele era a incoerencia
-// entre lista e detalhe: a tarefa fora da lente aparecia em /minhas-tarefas
-// e dava 404 aqui. Agora ela nao aparece na lista, e o 404 daqui passou a
-// ser a resposta certa e coerente -- "sem alcance, sem tarefa" (ADR 0038).
+// Rota canônica de uma tarefa: /tarefa/<id>, o destino de link compartilhado.
+// Convive com o modal do quadro; o mesmo TaskDetail serve os dois, via `modo`
+// ("pagina": sem scrim, sem Esc). Sem acesso o backend responde 404, igual a
+// "não existe", por isso a mensagem cobre os dois casos.
 
 const CAP_FILHOS = 100; // limite do backend; mesmo cap do detalhe no quadro
 
@@ -67,21 +49,16 @@ function Tarefa() {
   const [projectNames, setProjectNames] = useState<Map<string, string>>(
     new Map()
   );
-  // Spec 031 (C13/C14): conjuntos de EXCLUSAO do seletor. Os mapas acima ficam
-  // completos (resolvem nome de quem/do que ja esta na tarefa); estes so tiram
-  // da lista de escolha -- projeto pessoal como destino some a tarefa do quadro
-  // dos outros, e membro desativado nao deve receber tarefa nova.
+  // Só tiram da lista de escolha; os mapas acima ficam completos. Projeto
+  // pessoal como destino sumiria a tarefa dos outros; desativado não recebe tarefa.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
-  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
-  // proprio detalhe, e o modal so cria e duplica.
+  // Tarefa sendo duplicada (o modal desta tela só duplica).
   const [duplicando, setDuplicando] = useState<Task | null>(null);
 
-  // Contexto que nao depende do id (nomes de pessoa e de projeto). listMembers
-  // tem cache de modulo; listAllProjects nao, mas roda uma vez por navegacao.
-  // Falha aqui NAO derruba a pagina: sem o nome, o detalhe degrada sozinho.
+  // Contexto que não depende do id (nomes de pessoa e de projeto). Falha aqui
+  // não derruba a página: sem o nome, o detalhe degrada sozinho.
   useEffect(() => {
     let vivo = true;
     listMembers()
@@ -92,10 +69,7 @@ function Tarefa() {
       })
       .catch(() => {});
     listAllProjects({
-      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
-      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
-      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
-      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      // Só rotula (id -> título para o selo de projeto); não recorta por time.
       teamId: null,
     })
       .then((r) => {
@@ -108,11 +82,8 @@ function Tarefa() {
     };
   }, []);
 
-  // ⚠️ EXTRAIDO DO EFEITO em 05/08. A busca dos filhos precisou virar funcao
-  // porque o arquivar passou a CASCATEAR: arquivar esta tarefa arquiva a
-  // subarvore inteira no banco, e a checklist desta pagina continuaria
-  // desenhando subtarefa ativa que ja nao esta mais. `vivo` entra como funcao
-  // para a guarda de corrida continuar valendo quando a chamada vem do efeito.
+  // Função, não só efeito: arquivar cascateia para a subárvore e a checklist
+  // precisa recarregar. `vivo` mantém a guarda de corrida quando vem do efeito.
   const recarregarFilhos = useCallback(
     (alvoId: string, vivo: () => boolean = () => true) => {
       listTasks({ parent_task_id: alvoId, size: CAP_FILHOS })
@@ -166,8 +137,7 @@ function Tarefa() {
             if (vivo) setPai(p);
           })
           .catch(() => {
-            // Pai inacessivel (lente ou E6): a tarefa continua utilizavel,
-            // so fica sem o botao "voltar para <pai>".
+            // Pai inacessível: a tarefa continua utilizável, só sem o "voltar".
             if (vivo) setPai(null);
           });
       }
@@ -240,10 +210,8 @@ function Tarefa() {
         members={members}
         projects={projectNames}
         pai={pai}
-        // ⚠️ Esta rota NAO pede `include_archived` no `listTasks` que carrega
-        // `filhos`, entao nao ha arquivada ali pra esconder ou mostrar.
-        // `false` explicito em vez de default: a prop e obrigatoria justamente
-        // pra esta decisao aparecer na chamada.
+        // Esta rota não pede `include_archived` para `filhos`: não há arquivada a
+        // esconder. `false` explícito porque a prop é obrigatória.
         mostrarArquivadas={false}
         membrosInativos={membrosInativos}
         // "Voltar" so aparece quando o pai foi carregado de fato -- e leva pra
@@ -256,14 +224,12 @@ function Tarefa() {
         onClose={() => router.push("/quadro")}
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={aoMudarResponsaveis}
-        // Subtarefa vira NAVEGACAO: ganha endereco proprio, compartilhavel em
-        // qualquer profundidade (era o ganho principal sobre a pilha de modal).
+        // Subtarefa vira navegação: endereço próprio, compartilhável em qualquer profundidade.
         onAbrirSubtarefa={(sub) => router.push(`/tarefa/${sub.id}`)}
         onSubtaskUpsert={aoUpsertFilho}
         onTaskMoved={(t) => {
           setTask((prev) => (prev ? mesclar(prev, t) : t));
-          // Cascata de arquivamento (05/08): as filhas mudaram no banco e nao
-          // vieram na resposta. Sem esta recarga a checklist fica velha.
+          // Cascata de arquivamento: as filhas mudaram no banco e não vieram na resposta.
           recarregarFilhos(t.id);
         }}
         onExcluir={() => {
@@ -283,8 +249,7 @@ function Tarefa() {
         }}
         onSaved={(t) => {
           if (duplicando) {
-            // ⚠️ A copia e outra tarefa: mesclar no `task` da pagina
-            // sobrescreveria a ORIGEM com os dados da copia. Aqui so navega.
+            // A cópia é outra tarefa: mesclar no `task` sobrescreveria a origem. Só navega.
             setDuplicando(null);
             router.push(`/tarefa/${t.id}`);
             return;

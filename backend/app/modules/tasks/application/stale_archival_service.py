@@ -1,13 +1,7 @@
-"""Orquestracao da varredura de auto-arquivamento (Spec 013, Fatia 2).
+"""Varredura de auto-arquivamento em todos os workspaces.
 
-Roda FORA de contexto de tenant: lista todos os workspaces e resolve o admin
-de cada um direto pela sessao (mesmo padrao do MembershipRepository, que opera
-pre-contexto). Por workspace, entra em `tenant_scope` e chama
-TaskService.archive_stale.
-
-ISOLAMENTO: commita POR workspace. Um workspace que falha (ex. sem admin, ou
-erro de banco pontual) e registrado e PULADO -- nao derruba os demais nem
-desfaz o que ja arquivou nos anteriores.
+Roda fora de contexto de tenant; por workspace entra em `tenant_scope` e chama
+TaskService.archive_stale. Commita por workspace: o que falha e pulado.
 """
 
 from __future__ import annotations
@@ -84,14 +78,7 @@ class StaleArchivalService:
         """Um usuario ADMIN ATIVO do workspace, escolha deterministica.
 
         Ordena por (created_at, id) -> estavel quando ha mais de um admin.
-        None se o workspace nao tem admin ativo (sera pulado).
-
-        ⚠️ `users.org_role` e a unica fonte. Ate 19/10/2026 havia um fallback
-        para o vinculo ADMIN em `user_team` (anterior a Spec 045); a migration
-        0031 tirou o valor do tipo do banco. Sem admin de organizacao ativo, o
-        job PULA o workspace -- sem erro e sem tela, entao quem desativar o
-        ultimo admin para o arquivamento automatico (a trava do ultimo admin,
-        no `MemberService`, existe para isso nao acontecer).
+        None se o workspace nao tem admin ativo (sera pulado, sem erro).
         """
         stmt = (
             select(User.id)

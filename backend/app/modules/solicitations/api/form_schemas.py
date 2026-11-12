@@ -1,11 +1,7 @@
-"""Schemas do formulario de solicitacao (Spec 043, fatia A).
+"""Schemas do formulario de solicitacao.
 
-⚠️ SEM `@model_validator` E SEM `Field(pattern=...)` EM NENHUM DELES. Regra de
-request neste projeto NAO mora no Pydantic: o `_validation_error_handler` poe
-`exc.errors()` cru no envelope, e o `ctx` de um validador custom carrega o
-objeto `ValueError`, que o `json.dumps` do Starlette recusa -- sai **500, nao
-422** (medido em 10/08). Slug, tipo de pergunta e opcoes sao recusados no
-`SolicitationFormService`, com `ValidationError` de dominio.
+Sem `@model_validator` nem `Field(pattern=...)`: validador custom aqui vira 500
+em vez de 422. Slug, tipo e opcoes sao recusados no `SolicitationFormService`.
 """
 
 from __future__ import annotations
@@ -15,17 +11,14 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-#: Opcoes de uma pergunta (auditoria de 21/10): a lista vai SEM LOGIN no
-#: formulario publico, entao tem teto -- 200 opcoes de ate 120 caracteres.
+#: Opcoes de uma pergunta; vao sem login no formulario publico, entao tem teto.
 Opcoes = list[Annotated[str, Field(max_length=120)]]
 
 
 class FormCreateRequest(BaseModel):
     """Corpo de `POST /solicitacoes/formularios`.
 
-    ⚠️ `is_published` NAO ENTRA, e a ausencia e a regra: formulario nasce
-    vazio, e publicado na criacao ele seria uma porta que nao pergunta nada.
-    Ver `SolicitationFormService.criar_formulario`.
+    Sem `is_published`: formulario nasce vazio e despublicado.
     """
 
     team_id: uuid.UUID
@@ -35,26 +28,13 @@ class FormCreateRequest(BaseModel):
 
 
 class FormUpdateRequest(BaseModel):
-    """⚠️ `team_id` NAO ENTRA. Mudar o time e mudar QUEM TRIA -- inclusive as
-    solicitacoes que ja chegaram, porque a fila as encontra pelo time do
-    formulario. Operacao de visibilidade disfarcada de edicao, mesmo motivo
-    pelo qual `BoardRenameRequest` recusa o campo."""
+    """Sem `team_id`: mudar o time mudaria quem tria, inclusive os pedidos ja recebidos."""
 
     title: str | None = Field(default=None, max_length=120)
     description: str | None = Field(default=None, max_length=4000)
     slug: str | None = Field(default=None, max_length=60)
-    #: Rotulos da identificacao: `null` DESLIGA o campo, texto liga e renomeia.
-    #:
-    #: ⚠⚠ AQUI `null` SIGNIFICA "DESLIGUE", e nao "nao mexa" -- o oposto
-    #: dos campos acima. Quem distingue os dois e o `model_fields_set` do
-    #: Pydantic, que sabe quais chaves vieram no corpo; o router so aplica o
-    #: que foi enviado.
-    #:
-    #: Tentei antes com uma SENTINELA (um valor "impossivel" como default) e
-    #: foi um erro em dois niveis: o valor escolhido gravou um caractere de
-    #: controle literal no arquivo-fonte, e mesmo corrigido ele seria um texto
-    #: que alguem um dia conseguiria digitar. `model_fields_set` e a resposta
-    #: que o Pydantic ja dava.
+    #: Rotulos da identificacao: aqui `null` desliga o campo (e nao "nao mexa").
+    #: O router distingue pelo `model_fields_set`.
     phone_label: str | None = Field(default=None, max_length=60)
     department_label: str | None = Field(default=None, max_length=60)
     polo_label: str | None = Field(default=None, max_length=60)
@@ -68,14 +48,13 @@ class SectionCreateRequest(BaseModel):
     slug: str = Field(max_length=60)
     title: str = Field(max_length=120)
     emoji: str = Field(default="", max_length=16)
-    #: ⚠️ TEXTO LIVRE, e nao numero de dias -- o formulario de hoje diz coisas
-    #: como "5 dias uteis apos aprovacao" e "prazo em definicao".
+    #: Texto livre (ex.: "5 dias uteis apos aprovacao"), nao numero de dias.
     sla_text: str | None = Field(default=None, max_length=200)
 
 
 class QuestionCreateRequest(BaseModel):
     label: str = Field(max_length=300)
-    #: Um dos `QuestionKind`. A recusa e do dominio -- ver o topo do modulo.
+    #: Um dos `QuestionKind`; a recusa e do servico.
     kind: str = Field(max_length=20)
     required: bool = False
     options: Opcoes = Field(default_factory=list, max_length=200)
@@ -86,18 +65,14 @@ class QuestionCreateRequest(BaseModel):
 class SectionUpdateRequest(BaseModel):
     """Corpo de `PATCH /solicitacoes/secoes/{id}`.
 
-    ⚠️ **NAO TEM `slug`, E A AUSENCIA E A REGRA.** O slug da secao viaja
-    gravado em cada pedido (`solicitation_item.category`) e e por ele que a
-    fila descobre a categoria. Troca-lo deixaria todo pedido antigo aparecendo
-    como texto cru, sem titulo e sem emoji -- sem erro nenhum. Titulo e emoji
-    podem mudar justamente porque NAO sao gravados. O motivo inteiro esta em
-    `SolicitationFormService.editar_secao`.
+    Sem `slug`: ele fica gravado em cada pedido e e por ele que a fila acha a
+    categoria. Ver `SolicitationFormService.editar_secao`.
     """
 
     title: str | None = Field(default=None, max_length=120)
     emoji: str | None = Field(default=None, max_length=16)
     sla_text: str | None = Field(default=None, max_length=200)
-    #: Spec 059: a pessoa preenche a secao mais de uma vez no envio.
+    #: A pessoa preenche a secao mais de uma vez no envio.
     repeatable: bool | None = None
     #: "+ Adicionar outro <repeat_label>". Texto vazio limpa (volta ao titulo).
     repeat_label: str | None = Field(default=None, max_length=60)
@@ -106,19 +81,14 @@ class SectionUpdateRequest(BaseModel):
 class ResumoRequest(BaseModel):
     """Corpo de `POST /solicitacoes/secoes/{id}/resumo`.
 
-    ⚠️ ROTA PROPRIA E NAO CAMPO DO `PATCH`: limpar o resumo e mandar `null`, e
-    num PATCH `null` se confunde com "nao mexe neste campo".
+    Rota propria porque limpar e mandar `null`, que num PATCH significa "nao mexe".
     """
 
     question_id: uuid.UUID | None = None
 
 
 class QuestionUpdateRequest(BaseModel):
-    """Corpo de `PATCH /solicitacoes/perguntas/{id}`.
-
-    ⚠️ `options=None` E "NAO MEXE", e nao "esvazia". Quem so quis corrigir uma
-    vírgula no titulo nao pode perder a lista de alternativas por omissao.
-    """
+    """Corpo de `PATCH /solicitacoes/perguntas/{id}`. `options=None` e "nao mexe"."""
 
     label: str | None = Field(default=None, max_length=300)
     kind: str | None = Field(default=None, max_length=20)
@@ -131,9 +101,7 @@ class QuestionUpdateRequest(BaseModel):
 class CondicionalRequest(BaseModel):
     """Corpo de `POST /solicitacoes/perguntas/{id}/condicional`.
 
-    ⚠️ OS DOIS CAMPOS ANDAM JUNTOS: `alvo_id=None` desliga a condicional, e
-    qualquer alvo exige o `valor` que o dispara. Deixa-los num `PATCH` faria
-    "desligar" e "nao mexer" virarem o mesmo corpo.
+    `alvo_id=None` desliga a condicional; qualquer alvo exige o `valor` que a dispara.
     """
 
     alvo_id: uuid.UUID | None = None
@@ -143,10 +111,7 @@ class CondicionalRequest(BaseModel):
 class OrdemRequest(BaseModel):
     """Corpo das duas rotas de reordenacao.
 
-    ⚠️ A LISTA E O CONJUNTO INTEIRO, e o servico recusa se faltar ou sobrar
-    um id. Aceitar lista parcial deixaria uma aba velha, aberta desde antes de
-    alguem criar uma secao, sobrescrever a ordem com um mundo que nao existe
-    mais.
+    A lista e o conjunto inteiro; o servico recusa se faltar ou sobrar id.
     """
 
     ids: list[uuid.UUID]
@@ -192,18 +157,13 @@ class FormResponse(BaseModel):
     title: str
     description: str
     is_published: bool
-    #: `None` = o formulario nao pergunta este campo (Spec 043, fatia G).
+    #: `None` = o formulario nao pergunta este campo.
     phone_label: str | None = None
     department_label: str | None = None
     polo_label: str | None = None
 
 
 class FormDetailResponse(FormResponse):
-    """O formulario com a arvore montada.
-
-    ⚠️ ANINHADO, e nao lista plana com `section_id`: quem monta a tela precisa
-    da arvore, e devolver plano faria cada cliente reagrupar -- o primeiro que
-    agrupasse errado desenharia pergunta na secao errada, sem erro nenhum.
-    """
+    """O formulario com a arvore de secoes e perguntas aninhada."""
 
     sections: list[SectionResponse] = Field(default_factory=list)

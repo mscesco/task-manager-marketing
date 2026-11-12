@@ -1,36 +1,7 @@
 "use client";
-// components/Loading.tsx
-// Os três pontinhos que pulam — Spec 047, revisão de 10/09.
-//
-// ⚠️⚠️ ELES SUBSTITUEM TODO "Carregando…" DO PRODUTO, a pedido da Camila, com
-// o exemplo do motion na mão. Antes era texto solto, e texto de espera tem um
-// problema conhecido: parado, ele não distingue "ainda estou buscando" de
-// "travou". O movimento distingue.
-//
-// ⚠️ TRÊS TAMANHOS, e não um: o mesmo componente aparece numa TELA INTEIRA
-// (checando a sessão), num BLOCO (a tabela ainda não chegou) e numa LINHA
-// (dentro de uma gaveta, ao lado de um rótulo). Pontos de 20px como no exemplo
-// ficariam maiores que o texto ao lado no terceiro caso.
-//
-// ⚠️ `staggerChildren` NEGATIVO com `staggerDirection: -1`, como no exemplo
-// dela: é o que faz a onda correr do último ponto para o primeiro. Trocar o
-// sinal inverte o sentido; tirar, faz os três pularem juntos — e aí não é
-// onda, é pisca-pisca.
-//
-// ⚠️ `repeatType: "mirror"` e não `"loop"`: com `loop`, o ponto volta ao chão
-// de um quadro para o outro (teleporte). Com `mirror`, ele DESCE, que é o que
-// completa o pulo.
-//
-// ⚠️ ACESSIBILIDADE: `role="status"` + `aria-label`, porque a animação sozinha
-// não diz nada a quem usa leitor de tela — e o texto que existia antes dizia.
-// Os pontos ficam `aria-hidden`.
-//
-// ⚠️ `prefers-reduced-motion` já é honrado pelo bloco global do `globals.css`
-// e pelo próprio motion: quem pede menos movimento vê três pontos parados,
-// que ainda leem como "espere".
-//
-// ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
-// `include` do vitest.
+// Os três pontinhos que pulam, em três tamanhos (linha, bloco, tela).
+// `staggerChildren` negativo com `staggerDirection: -1` faz a onda correr do último ao primeiro;
+// `repeatType: "mirror"` faz o ponto descer em vez de teleportar ao chão.
 
 import { motion, type Variants } from "motion/react";
 
@@ -56,24 +27,9 @@ export default function Loading({
 }) {
   const { ponto, pulo } = MEDIDAS[tamanho];
 
-  // ⚠️⚠️ O CENTRO É VERTICAL TAMBÉM, e não era: *"em algumas telas ela aparece
-  // no centro superior, eu quero no centro centro da área em que é chamada"*.
-  // O `justifyContent: center` de baixo só resolvia a horizontal; na vertical o
-  // contêiner tinha a altura dos pontos, então ele pousava onde o fluxo o
-  // deixasse — encostado no topo da área.
-  //
-  // ⚠️ E A CORREÇÃO MORA AQUI, não nos 20 lugares que chamam: o `bloco` é
-  // SEMPRE "o conteúdo desta área ainda não chegou" (`if (!items) return
-  // <Loading />`), então a centragem é propriedade dele. Corrigir por fora
-  // exigiria lembrar em cada tela nova — que é como este defeito nasceu.
-  //
-  // ⚠️ `linha` NÃO ganha altura: ele vive ao lado de um rótulo dentro de uma
-  // gaveta, e reservar meia tela ali empurraria o painel inteiro.
-  // `tela` também não: quem o usa é o `LoadingScreen`, que já centra em 100vh.
-
-  // ⚠️ AS VARIANTES DEPENDEM DO TAMANHO, então nascem aqui dentro e não em
-  // constante de módulo: uma constante fixaria o pulo de 30px do exemplo em
-  // todos os três casos.
+  // O `bloco` centra também na vertical: ele é sempre "o conteúdo desta área ainda não chegou".
+  // `linha` e `tela` não ganham altura (`LoadingScreen` já centra em 100vh).
+  // As variantes dependem do tamanho, por isso nascem aqui dentro.
   const dot: Variants = {
     jump: {
       y: pulo,
@@ -97,9 +53,7 @@ export default function Loading({
         alignItems: "center",
         justifyContent: "center",
         gap: ponto * 0.6,
-        // ⚠️ ALTURA RESERVADA: sem ela, o contêiner tem a altura do ponto e o
-        // pulo transborda para cima, empurrando o que estiver acima. Com o
-        // espaço reservado, nada em volta se mexe.
+        // Altura reservada: sem ela o pulo transborda e empurra o que está acima.
         minHeight: ponto - pulo + ponto,
       }}
     >
@@ -123,10 +77,7 @@ export default function Loading({
 
   if (tamanho !== "bloco") return pontos;
 
-  // ⚠️ `45vh` e não `100%`: o `<main>` do `AppShell` é um bloco comum, então
-  // `height: 100%` aqui resolveria para a altura do conteúdo — que é zero,
-  // porque o conteúdo é justamente o que não chegou. A medida relativa à
-  // JANELA é a única que centra sem pedir que todo ancestral vire flex.
+  // `45vh` e não `100%`: o `<main>` do `AppShell` não é flex, e 100% daria a altura do conteúdo (zero).
   return (
     <div
       style={{ display: "grid", placeItems: "center", minHeight: "45vh" }}
@@ -137,17 +88,9 @@ export default function Loading({
 }
 
 /**
- * O esqueleto (redesign 19/10): a FORMA da tela que vem, no lugar dos pontos.
- *
- * ⚠️ SÓ ONDE A FORMA É ÓBVIA: um quadro são colunas de cards; uma lista são
- * linhas. Onde não é (a sessão, uma gaveta), o `Loading` de cima continua.
- *
- * ⚠️ O mesmo `role="status"` + `aria-label` dos pontos: os testes do quadro
- * procuram a espera pelo nome, e o leitor de tela também. `aria-busy` diz que a
- * região ainda vai mudar. As barras são decoração (`aria-hidden`).
- *
- * O brilho mora na classe `.skeleton` do `globals.css` (1,4s em `--ease-io`,
- * só `transform`); quem pede menos movimento vê as barras paradas.
+ * O esqueleto: a forma da tela que vem (colunas de cards, linhas), onde ela é óbvia.
+ * Mesmo `role="status"` + `aria-label` dos pontos: os testes procuram a espera pelo nome.
+ * O brilho mora na classe `.skeleton` do `globals.css`.
  */
 export function Esqueleto({
   forma,

@@ -1,12 +1,8 @@
-"""Casos de uso da Base (Spec 056) -- base e coluna (fatia B).
+"""Casos de uso da Base: base e coluna.
 
-⚠️⚠️ TODA PERGUNTA E `has_permission_in(verbo, time_da_base)`, e nenhuma e
-sobre papel ou lente (spec §5.1). E a primeira coisa do sistema que LE por
-verbo (`base.read`); tarefa e projeto ainda leem pela lente. Se um dia os
-verbos deixarem de vir do mapa de papeis e passarem a vir de concessoes por
-pessoa, este arquivo nao muda.
+Toda pergunta e `has_permission_in(verbo, time_da_base)`, nunca papel ou lente.
 
-As respostas, na ordem em que acontecem (spec §5.3 e §5.8):
+As respostas, na ordem em que acontecem:
 
     sem o verbo em lugar nenhum    -> 403, no portao da rota
     base que a pessoa nao le       -> 404 (403 confirmaria que ela existe)
@@ -17,13 +13,13 @@ Casos de uso:
     BaseService.list_visible       -- as bases que a pessoa le
     BaseService.get_detail         -- base + colunas + visoes
     BaseService.create             -- nasce com a coluna de titulo e a visao
-                                      padrao (D2)
-    BaseService.update             -- nome e texto do topo (D15, D19)
+                                      padrao
+    BaseService.update             -- nome e texto do topo
     BaseService.create_column
-    BaseService.update_column      -- inclusive trocar o tipo (D18, D24)
-    BaseService.make_title         -- troca a coluna principal (Spec 061)
+    BaseService.update_column      -- inclusive trocar o tipo
+    BaseService.make_title         -- troca a coluna principal
     BaseService.delete_column
-    BaseService.delete_option      -- esvazia as celulas (D17)
+    BaseService.delete_option      -- esvazia as celulas
 """
 
 from __future__ import annotations
@@ -64,7 +60,7 @@ logger = get_logger(__name__)
 
 
 def column_snapshot(coluna: BaseColumn) -> dict[str, Any]:
-    """O que o diario guarda de uma coluna, antes e depois (spec §9.2): tudo o
+    """O que o diario guarda de uma coluna, antes e depois: tudo o
     que `update_column` muda. As opcoes inteiras, inclusive as marcadas."""
     return {
         "name": coluna.name,
@@ -75,7 +71,7 @@ def column_snapshot(coluna: BaseColumn) -> dict[str, Any]:
     }
 
 def troca_principal(titulo: BaseColumn, texto: BaseColumn) -> None:
-    """`texto` vira o titulo e `titulo` vira texto, trocando de lugar (Spec 061).
+    """`texto` vira o titulo e `titulo` vira texto, trocando de lugar.
     A troca e o proprio inverso: o desfazer chama com os papeis trocados."""
     titulo.type, texto.type = "text", "title"
     titulo.position, texto.position = texto.position, titulo.position
@@ -83,14 +79,13 @@ def troca_principal(titulo: BaseColumn, texto: BaseColumn) -> None:
     texto.version += 1
 
 
-#: Os nomes com que a base nasce (D2). Sao DADOS, e nao rotulo de tela: a
-#: equipe renomeia como quiser.
+#: Os nomes com que a base nasce. Sao dados, nao rotulo de tela: a equipe renomeia.
 TITLE_COLUMN_NAME = "Título"
 DEFAULT_VIEW_NAME = "Tabela"
 
 WIDTH_MIN, WIDTH_MAX = 60, 800
 
-#: D5: a base excluida volta por 10 dias. Depois, a rotina diaria a apaga.
+#: A base excluida volta por 10 dias. Depois, a rotina diaria a apaga.
 RESTORE_WINDOW = timedelta(days=10)
 
 
@@ -112,15 +107,14 @@ class CreateBaseCommand:
 
 @dataclass(frozen=True, slots=True)
 class UpdateColumnCommand:
-    """PATCH: campo `None` = nao mexer. `options` e a lista VIVA inteira."""
+    """PATCH: campo `None` = nao mexer. `options` e a lista viva inteira."""
 
     name: str | None = None
     type: str | None = None
     options: list[dict[str, Any]] | None = None
     position: int | None = None
     width: int | None = None
-    #: Quais campos vieram no corpo -- `width` pode vir `null` de proposito
-    #: (voltar a largura padrao).
+    #: Quais campos vieram no corpo: `width` `null` = voltar a largura padrao.
     fields_set: frozenset[str] = field(default_factory=frozenset)
 
 
@@ -134,13 +128,7 @@ class BaseService:
 
     # ------------------------------------------------------------ leitura
     async def list_visible(self) -> list[BaseTable]:
-        """As bases dos times onde a pessoa tem `base.read` (spec §5.5).
-
-        ⚠️ `teams_with_permission`, e NAO a lente: para quem e gerente no
-        Marketing e operador no Comercial as duas respostas coincidem hoje,
-        mas e a pergunta do verbo que continua certa no dia em que `base.read`
-        puder ser desligado para alguem.
-        """
+        """As bases dos times onde a pessoa tem `base.read`."""
         times = require_tenant().teams_with_permission("base.read")
         return await self._bases.list_in_teams(times)
 
@@ -150,12 +138,12 @@ class BaseService:
 
     # ------------------------------------------------------------ base
     async def create(self, command: CreateBaseCommand) -> BaseDetail:
-        """Cria a base, ja com a coluna de titulo e a visao de tabela (D2).
+        """Cria a base, ja com a coluna de titulo e a visao de tabela.
 
         Erros:
-            ValidationError (422)   -- nome vazio; time inexistente; SUBTIME (D6).
-            AuthorizationError (403) -- sem `base.create` NAQUELE time. O time
-              nao e segredo (a pessoa o escolheu numa lista), entao nao e 404.
+            ValidationError (422)   -- nome vazio; time inexistente; subtime.
+            AuthorizationError (403) -- sem `base.create` naquele time (o time
+              nao e segredo, entao nao e 404).
         """
         name = clean_name(command.name)
         tenant = require_tenant()
@@ -165,9 +153,7 @@ class BaseService:
                 "Time informado nao existe neste workspace.",
                 details={"field": "team_id"},
             )
-        # ⚠️ ANTES do verbo, de proposito: o supervisor do SEO TEM `base.create`
-        # no SEO (o escopo de execucao inclui o time do vinculo), e sem esta
-        # ordem a resposta para "criar no SEO" seria 201 numa base de subtime.
+        # Antes do verbo: quem esta num subtime tem `base.create` nele.
         if no.parent_team_id is not None:
             raise ValidationError(
                 "A base pertence ao time principal, e nao a um subtime.",
@@ -214,8 +200,7 @@ class BaseService:
         name: str | None = None,
         description: str | None = None,
     ) -> BaseDetail:
-        """Nome e texto do topo (D15). Quem pode criar edita TODAS as bases da
-        arvore, nao so as suas (D19) -- nao existe dono de base."""
+        """Nome e texto do topo. Nao existe dono de base: vale o verbo no time."""
         base = await self._visible(base_id)
         self._exigir("base.update", base.team_id)
         if name is not None:
@@ -227,12 +212,8 @@ class BaseService:
         return await self._detail(base)
 
     async def delete(self, base_id: uuid.UUID) -> BaseTable:
-        """Exclui a base (D5): fica `RESTORE_WINDOW` recuperavel, e a rotina
-        diaria a apaga de vez depois.
-
-        ⚠️ A CONFIRMACAO DIGITANDO O NOME (D26) E DA TELA. O servidor nao a
-        repete: ela protege contra o clique errado, e quem chama a API ja
-        escolheu o id. O que protege contra o resto e o prazo de restaurar.
+        """Exclui a base: fica `RESTORE_WINDOW` recuperavel, e a rotina diaria a
+        apaga de vez depois. A confirmacao digitando o nome e so da tela.
         """
         base = await self._visible(base_id)
         self._exigir("base.delete", base.team_id)
@@ -245,17 +226,13 @@ class BaseService:
         return base
 
     async def list_trash(self) -> list[BaseTable]:
-        """As excluidas que a pessoa pode RESTAURAR, ainda no prazo.
-
-        ⚠️ `base.restore`, e nao `base.read`: a lixeira e de quem desfaz o
-        estrago. Hoje os dois grupos coincidem com quem cria (D4).
-        """
+        """As excluidas que a pessoa pode restaurar (`base.restore`), ainda no prazo."""
         times = require_tenant().teams_with_permission("base.restore")
         desde = datetime.now(UTC) - RESTORE_WINDOW
         return await self._bases.list_deleted_in_teams(times, desde)
 
     async def restore(self, base_id: uuid.UUID) -> BaseDetail:
-        """Devolve a base excluida, com tudo o que tinha (D4, D5).
+        """Devolve a base excluida, com tudo o que tinha.
 
         Erros:
             404 -- nao existe, ou a pessoa nao le o time dela.
@@ -295,8 +272,7 @@ class BaseService:
         options: list[dict[str, Any]] | None = None,
         position: int | None = None,
     ) -> BaseColumn:
-        """Cria a coluna no fim -- ou NA POSICAO dada (fatia I: "Inserir a
-        esquerda/direita"), empurrando as de la em diante uma casa."""
+        """Cria a coluna no fim, ou na posicao dada empurrando as de la em diante."""
         base = await self._visible(base_id)
         self._exigir("base_column.create", base.team_id)
         check_new_type(type)
@@ -316,13 +292,9 @@ class BaseService:
         return coluna
 
     async def duplicate_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
-        """Copia a coluna -- nome, tipo, opcoes E OS VALORES de toda linha -- logo
-        a direita dela (fatia I). Uma acao so no diario: o Ctrl+Z apaga a copia.
-
-        ⚠️ AS OPCOES MANTEM OS IDS. O id de opcao e unico DENTRO da coluna, e a
-        celula guarda o id: com os mesmos ids, os valores copiam sem traducao.
-
-        ⚠️ O TITULO NAO SE DUPLICA: ha um so por base (D2).
+        """Copia a coluna (nome, tipo, opcoes e os valores de toda linha) logo a
+        direita dela. As opcoes mantem os ids (unicos dentro da coluna), entao os
+        valores copiam sem traducao. O titulo nao se duplica.
         """
         base = await self._visible(base_id)
         self._exigir("base_column.create", base.team_id)
@@ -350,8 +322,8 @@ class BaseService:
 
     async def _abrir_posicao(self, base_id: uuid.UUID, position: int | None) -> int:
         """A posicao da coluna nova: o fim, ou `position` com as de la em diante
-        empurradas uma casa. ⚠️ Empurra as APAGADAS tambem: o desfazer as devolve
-        ao lugar delas, e sem isso voltariam empatadas com a nova."""
+        empurradas uma casa. Empurra as apagadas tambem, para o desfazer nao as
+        devolver empatadas com a nova."""
         fim = await self._columns.next_position(base_id)
         if position is None or position >= fim:
             return fim
@@ -363,12 +335,10 @@ class BaseService:
     async def update_column(
         self, base_id: uuid.UUID, column_id: uuid.UUID, command: UpdateColumnCommand
     ) -> BaseColumn:
-        """Renomear, reordenar, largura, opcoes e TROCAR O TIPO (D24: o mesmo
-        verbo de editar coluna).
+        """Renomear, reordenar, largura, opcoes e trocar o tipo.
 
-        ⚠️⚠️ TROCAR O TIPO ZERA A COLUNA (D18), em toda linha. Os valores de
-        antes vao para o diario (`column.retype`), e o Ctrl+Z de 1 dia os
-        devolve (D27) -- se ninguem tiver preenchido a coluna nesse meio tempo.
+        Trocar o tipo zera a coluna em toda linha; os valores de antes vao para
+        o diario (`column.retype`), e o Ctrl+Z os devolve.
         """
         base = await self._visible(base_id)
         self._exigir("base_column.update", base.team_id)
@@ -384,9 +354,8 @@ class BaseService:
                 raise ValidationError(
                     "Posicao comeca em 1.", details={"field": "position"}
                 )
-            # ⚠️ MOVER E ACAO PROPRIA NO DIARIO (`column.move`): o desfazer
-            # precisa andar com as vizinhas de volta, e o snapshot da coluna
-            # so conhece a posicao dela.
+            # Mover e acao propria no diario (`column.move`): o desfazer anda
+            # com as vizinhas, e o snapshot so conhece a posicao desta.
             movida = (coluna.position, command.position)
             await self._columns.move(base.id, coluna, command.position)
         if "width" in command.fields_set:
@@ -441,8 +410,7 @@ class BaseService:
                 {
                     "column": str(coluna.id),
                     "before": antes,
-                    # A posicao do "depois" e a de ANTES: quem andou foi o
-                    # `column.move`, e o desfazer deste nao mexe nela.
+                    # A posicao fica a de antes: quem andou foi o `column.move`.
                     "after": {**depois, "position": antes["position"]},
                 },
             )
@@ -456,19 +424,9 @@ class BaseService:
         return coluna
 
     async def make_title(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
-        """Faz de uma coluna de TEXTO a coluna principal (Spec 061, pedido dela
-        em 16/10): ela vira o titulo, e o titulo de antes vira texto.
-
-        ⚠️ OS VALORES NAO MUDAM: titulo e texto guardam a mesma string, entao a
-        troca e so de tipo -- nenhuma celula se perde, e o diario guarda so os
-        dois ids.
-
-        ⚠️ AS DUAS TROCAM DE LUGAR: a tabela prende o titulo na primeira
-        posicao (rolagem, arrastar), entao a nova vai para o lugar do titulo e
-        o antigo vai para o lugar dela.
-
-        ⚠️ SO TEXTO (decisao dela): data, selecao ou numero como titulo pediria
-        uma regra para o card que ninguem pediu. Ja ser o titulo nao e erro.
+        """Faz de uma coluna de texto a coluna principal; o titulo de antes vira
+        texto. Titulo e texto guardam a mesma string, entao so o tipo muda. As
+        duas trocam de lugar, porque a tabela prende o titulo na primeira posicao.
         """
         base = await self._visible(base_id)
         self._exigir("base_column.update", base.team_id)
@@ -495,8 +453,8 @@ class BaseService:
         return nova
 
     async def delete_column(self, base_id: uuid.UUID, column_id: uuid.UUID) -> BaseColumn:
-        """Marca a coluna como apagada. Os valores FICAM nas linhas: o desfazer
-        (fatia C) so tira a marca, e a rotina diaria (fatia D) limpa de vez."""
+        """Marca a coluna como apagada. Os valores ficam nas linhas: o desfazer so
+        tira a marca, e a rotina diaria limpa de vez."""
         base = await self._visible(base_id)
         self._exigir("base_column.delete", base.team_id)
         coluna = await self._coluna(base.id, column_id)
@@ -517,7 +475,7 @@ class BaseService:
     async def delete_option(
         self, base_id: uuid.UUID, column_id: uuid.UUID, option_id: str
     ) -> BaseColumn:
-        """Marca a opcao como apagada (D17). As celulas guardam o id e passam a
+        """Marca a opcao como apagada. As celulas guardam o id e passam a
         aparecer vazias; o desfazer devolve tudo."""
         base = await self._visible(base_id)
         self._exigir("base_column.delete", base.team_id)

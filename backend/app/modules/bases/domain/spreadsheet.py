@@ -1,12 +1,8 @@
-"""Planilha <-> Base (Spec 057, 15/10) -- ler o arquivo e converter valores.
+"""Planilha <-> Base: ler o arquivo e converter valores. Puro, sem banco.
 
-Puro, sem banco: o que e uma data, um numero ou uma caixinha numa planilha
-brasileira, e qual tipo de coluna uma coluna do arquivo PARECE ser. Quem sabe
-de opcoes e de pessoas (que dependem do banco) e o `import_service`.
-
-⚠️ AS DUAS FORMAS DE ARQUIVO CHEGAM DIFERENTES: o Excel ja traz tipo (data e
-`datetime`, numero e `float`); o CSV traz SO texto. Por isso todo conversor
-aceita os dois -- e texto no formato brasileiro (`14/10/2026`, `1.234,5`).
+O Excel ja traz tipo (`datetime`, `float`); o CSV traz so texto. Por isso todo
+conversor aceita os dois, e texto no formato brasileiro (`14/10/2026`, `1.234,5`).
+Opcoes e pessoas ficam com o `import_service`.
 """
 
 from __future__ import annotations
@@ -30,14 +26,11 @@ MAX_FILE_BYTES = 5 * 1024 * 1024
 PREVIEW_ROWS = 20
 #: Colunas lidas do arquivo -- o mesmo teto do mapeamento (`_ImportColumn.index`).
 MAX_COLUMNS = 500
-#: Linhas lidas do arquivo CONTANDO AS EM BRANCO. ⚠️ O Excel guarda linha so
-#: formatada como linha: sem este teto, uma planilha "vazia" de 1 milhao de
-#: linhas prende o processo por minutos antes de qualquer conferencia.
+#: Linhas lidas contando as em branco: o Excel guarda linha so formatada como
+#: linha, e uma planilha "vazia" de 1 milhao de linhas prenderia o processo.
 MAX_RAW_ROWS = 50_000
-#: Separador de varios valores numa celula (selecao multipla, pessoa).
-#: ⚠️ A VIRGULA TAMBEM (15/10): o Google Planilhas copia e exporta os chips de
-#: selecao multipla como "Formulario, Import, Site" -- sem ela, tudo virava UMA
-#: opcao com o texto inteiro.
+#: Separador de varios valores numa celula. A virgula entra porque o Google
+#: Planilhas exporta os chips de selecao multipla como "A, B, C".
 MULTI_SEP = re.compile(r"\s*[;,\n]\s*")
 
 #: Primeiro caractere que faz o Excel ler a celula como formula.
@@ -69,9 +62,8 @@ def read_table(
     """O arquivo como cabecalho + linhas. `header_row` e 1-based (a linha do
     cabecalho; as de cima sao ignoradas -- planilha com titulo em cima).
 
-    `max_rows`: mais linhas com conteudo do que isso e recusa ANTES de ler o
-    resto do arquivo. ⚠️ E CPU pura (o openpyxl leva segundos numa planilha
-    grande): quem chama de rota async roda isto em `asyncio.to_thread`."""
+    `max_rows`: mais linhas com conteudo do que isso e recusa antes de ler o
+    resto. E CPU pura: quem chama de rota async usa `asyncio.to_thread`."""
     if len(content) > MAX_FILE_BYTES:
         raise ValidationError("O arquivo passa de 5 MB.", details={"field": "file"})
     if header_row < 1:
@@ -143,8 +135,7 @@ def _ler_xlsx(
     nomes = list(wb.sheetnames)
     escolhida = sheet if sheet in nomes else nomes[0]
     ws = wb[escolhida]
-    # ⚠️ `max_col` COMPLETA a linha ate ele: com o teto puro, toda planilha
-    # viria com 500 colunas. A largura de verdade, limitada pelo teto.
+    # `max_col` completa a linha ate ele: usa a largura real, limitada pelo teto.
     largura = min(ws.max_column or MAX_COLUMNS, MAX_COLUMNS)
 
     def linhas() -> Iterator[list[Any]]:
@@ -158,11 +149,8 @@ def _ler_xlsx(
 
 
 def _ler_csv(content: bytes) -> Iterator[list[Any]]:
-    # ⚠️ utf-8 (com ou sem BOM) primeiro. Depois cp1252, que e o que o Excel em
-    # portugues grava: travessao, aspas curvas e "€" sao letras nele e
-    # caracteres de controle no latin-1 -- e o latin-1 nunca falha, entao o
-    # texto entrava estragado sem aviso. latin-1 fica de ultima rede (o cp1252
-    # recusa 5 bytes que o latin-1 aceita).
+    # cp1252 (o que o Excel em portugues grava) antes de latin-1: o latin-1
+    # nunca falha e estragaria travessao e aspas curvas sem aviso.
     for codificacao in ("utf-8-sig", "cp1252", "latin-1"):
         try:
             texto = content.decode(codificacao)
@@ -187,7 +175,7 @@ def _vazio(v: Any) -> bool:
 
 
 class ConversionError(Exception):
-    """Um valor que nao serve para o tipo -- vira erro DA LINHA na previa."""
+    """Um valor que nao serve para o tipo: vira erro da linha na previa."""
 
 
 def to_text(v: Any) -> str | None:
@@ -198,8 +186,7 @@ def to_text(v: Any) -> str | None:
     if isinstance(v, datetime | date):
         return to_date(v)  # data numa coluna de texto sai como a tela mostra
     s = str(v).strip()
-    # O apostrofo que o EXPORT poe na frente de `= + - @` (para o Excel nao ler
-    # como formula) sai na volta: exportar e importar da o mesmo.
+    # O apostrofo que o export poe na frente de `= + - @` sai na volta.
     if len(s) > 1 and s[0] == "'" and s[1] in FORMULA_START:
         return s[1:]
     return s
@@ -215,12 +202,8 @@ def to_number(v: Any) -> int | float | None:
             raise ConversionError("Numero invalido.")
         return int(v) if isinstance(v, float) and v.is_integer() else v
     s = str(v).strip().replace("R$", "").replace("%", "").replace(" ", "")
-    # "1.234,5" (pt-BR) e "1,234.56" (en-US, o que o Sheets em ingles exporta):
-    # com os DOIS separadores, o que aparece por ULTIMO e o decimal (auditoria
-    # de 21/10 -- tratar toda virgula como decimal fazia "1,234.56" virar 1,23).
-    # So virgula: decimal pt-BR.
-    # ⚠️ E "1.200" SEM virgula e MIL E DUZENTOS, e nao 1,2 (o teste pegou):
-    # ponto seguido de grupos de 3 digitos e separador de milhar.
+    # Com os dois separadores, o ultimo e o decimal ("1.234,5" ou "1,234.56").
+    # So virgula: decimal pt-BR. "1.200" sem virgula e mil e duzentos.
     if "," in s and "." in s:
         decimal = "," if s.rfind(",") > s.rfind(".") else "."
         milhar = "." if decimal == "," else ","
@@ -265,9 +248,7 @@ def to_date(v: Any) -> str | None:
 
 
 def to_checkbox(v: Any) -> bool | None:
-    # ⚠️ `_vazio`, e nao `is None`: no CSV a celula em branco chega como "",
-    # que esta em `_NAO` -- importar de volta uma exportacao enchia de "Nao"
-    # tudo o que estava vazio (auditoria de 21/10).
+    # `_vazio`, e nao `is None`: no CSV a celula em branco chega como "", que esta em `_NAO`.
     if _vazio(v):
         return None
     if isinstance(v, bool):
@@ -290,7 +271,7 @@ def split_many(v: Any) -> list[str]:
 
 
 def to_links(v: Any) -> list[dict[str, str]] | None:
-    # ⚠️ Link NAO separa por virgula: ela aparece dentro de URL.
+    # Link nao separa por virgula: ela aparece dentro de URL.
     if _vazio(v):
         return None
     partes = [p for p in re.split(r"[;\s]+", str(v).strip()) if p]
@@ -301,8 +282,7 @@ def to_links(v: Any) -> list[dict[str, str]] | None:
 
 
 def suggest_type(values: list[Any]) -> str:
-    """O tipo que a coluna do arquivo PARECE ter -- so uma sugestao: a pessoa
-    escolhe no assistente."""
+    """O tipo que a coluna do arquivo parece ter; a pessoa escolhe no assistente."""
     cheios = [v for v in values if not _vazio(v)]
     if not cheios:
         return "text"
@@ -327,8 +307,7 @@ def suggest_type(values: list[Any]) -> str:
     if all(re.match(r"^https?://", t) for t in textos):
         return "link"
     if any(MULTI_SEP.search(t) for t in textos):
-        # Só parece seleção múltipla se as PARTES são curtas e se repetem
-        # (chips), e não frases com vírgula.
+        # Seleção múltipla só se as partes são curtas e se repetem (não frases).
         partes = [p for t in textos for p in split_many(t)]
         distintas = {p.casefold() for p in partes}
         if len(distintas) <= 30 and sum(map(len, partes)) / max(1, len(partes)) <= 25:

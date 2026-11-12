@@ -1,32 +1,7 @@
-"""Provisionamento de workspace -- caso de uso permanente.
+"""Provisionamento de workspace: cria, atomicamente, workspace + time raiz +
+admin + quadro geral. Acionado por `scripts/provision_workspace.py`.
 
-ESTE E O CASO DE USO REAL, nao um script descartavel.
-
-Provisionar um workspace e a operacao de "dar vida" a uma
-empresa nova no sistema: cria, de forma ATOMICA, o
-workspace + sua primeira equipe + seu primeiro usuario
-admin + o quadro geral do time raiz. E uma operacao
-administrativa rara -- nao um signup publico.
-
-QUEM ACIONA este service pode mudar ao longo do tempo:
-    - hoje: um script de linha de comando
-      (scripts/provision_workspace.py) -- gatilho fino;
-    - amanha: um painel administrativo interno, ou um
-      webhook de um sistema de billing.
-A REGRA (este service) e a mesma sempre. So o gatilho muda.
-
-Por que NAO usa o BaseRepository (parcialmente):
-    O provisionamento roda ANTES de existir qualquer tenant
-    -- ele esta justamente criando o primeiro. Logo nao ha
-    TenantContext nos primeiros passos, e o BaseRepository
-    (que o exige) nao se aplica para workspace/team/user/
-    user_team. Este service escreve direto na sessao para
-    esses.
-
-    ⚠️ ATE 10/09 HAVIA UM `tenant_scope` EFEMERO AQUI, aberto para
-    reaproveitar `ProjectService.create_personal_for` -- o projeto
-    pessoal do admin (ADR 0001). O projeto pessoal saiu do produto, e
-    com ele o unico passo do provisionamento que precisava de tenant.
+Roda antes de existir tenant, entao escreve direto na sessao.
 """
 
 from __future__ import annotations
@@ -54,11 +29,7 @@ _SLUG_REGEX = re.compile(r"^[a-z0-9-]+$")
 
 @dataclass(frozen=True, slots=True)
 class ProvisionWorkspaceCommand:
-    """Dados de entrada do provisionamento.
-
-    Frozen: um comando e um valor imutavel, nao um formulario
-    mutavel. Validacoes de formato acontecem no service.
-    """
+    """Dados de entrada do provisionamento (validados no service)."""
 
     workspace_name: str
     workspace_slug: str
@@ -89,30 +60,19 @@ class WorkspaceProvisioningService:
     ) -> ProvisionWorkspaceResult:
         """Cria workspace + equipe inicial + admin + quadro geral.
 
-        Tudo numa unica transacao: ou as cinco linhas (workspace,
-        team, users, user_team, board) sao gravadas, ou nenhuma. Quem
-        chama este service e responsavel pelo commit (Unit of Work ou
-        session_scope).
-
-        Erros possiveis:
-            ValidationError -- slug/e-mail mal formado.
-            ConflictError   -- slug de workspace ja existe.
+        Numa transacao so; o commit e de quem chama.
         """
         self._validate(command)
 
-        # Slug de workspace e unico globalmente (UNIQUE no schema).
         await self._ensure_workspace_slug_free(command.workspace_slug)
 
-        # 1. Workspace -- a raiz do tenant.
         workspace = Workspace(
             name=command.workspace_name,
             slug=command.workspace_slug,
         )
         self._session.add(workspace)
-        # flush: precisamos do workspace.id para as FKs abaixo.
         await self._session.flush()
 
-        # 2. Equipe inicial.
         team = Team(
             workspace_id=workspace.id,
             name=command.initial_team_name,
@@ -121,7 +81,6 @@ class WorkspaceProvisioningService:
         )
         self._session.add(team)
 
-        # 3. Usuario admin.
         admin = User(
             workspace_id=workspace.id,
             name=command.admin_name,
@@ -129,33 +88,18 @@ class WorkspaceProvisioningService:
             email=command.admin_email.strip().lower(),
             password_hash=hash_password(command.admin_password),
             is_active=True,
-            # Entrega 7: o admin do bootstrap escolhe a propria senha e
-            # NAO entra no fluxo de provisoria -- senao nao haveria admin
-            # destravado para emitir o 1o cadastro (chicken-and-egg).
+            # O admin do bootstrap escolhe a propria senha: sem provisoria.
             must_change_password=False,
         )
         self._session.add(admin)
         await self._session.flush()  # ids de team e admin
 
-        # 4. O admin do bootstrap: papel de ORGANIZACAO + vinculo de trabalho.
-        #
-        # ⚠️⚠️ ATE A SPEC 045 ISTO ERA UMA LINHA SO -- um `UserTeam` com
-        # `role=ADMIN` --, e o comentario dizia "ADMIN so existe na raiz, entao
-        # este vinculo ja nasce conforme a invariante de nivel". A fatia D
-        # revoga exatamente essa frase: ADMIN saiu do nivel de time e virou
-        # papel de ORGANIZACAO (fatia B), sem time.
-        #
-        # ⚠️ SE ESTA LINHA NAO ACOMPANHASSE A INVARIANTE, workspace novo
-        # nasceria SEM DONO: o vinculo seria recusado, e ninguem teria
-        # `workspace.manage` -- que e o portao da unica rota capaz de promover
-        # alguem de volta. Trava irreversivel pela tela, e o caminho que menos
-        # tem teste (nenhum teste cria workspace pelo caminho de producao).
+        # ADMIN e papel de organizacao, sem time; sem ele o workspace nasce
+        # sem dono e ninguem consegue promover alguem pela tela.
         admin.org_role = OrgRole.ADMIN
 
-        # E ele TAMBEM entra na raiz como MANAGER, e nao como mero membro: o
-        # bootstrap precisa de alguem apto a triar solicitacoes e a administrar
-        # a arvore desde o primeiro minuto (anti-lockout). A autoridade sobre a
-        # organizacao vem do `org_role` acima; este vinculo e o de TRABALHO.
+        # Vinculo de trabalho na raiz como MANAGER (triar solicitacoes desde
+        # o primeiro minuto).
         membership = UserTeam(
             workspace_id=workspace.id,
             user_id=admin.id,
@@ -165,20 +109,13 @@ class WorkspaceProvisioningService:
         self._session.add(membership)
         await self._session.flush()
 
-        # 5. Quadro geral do time RAIZ (Spec 035 fatia 3a, ADR 0032).
-        # ⚠️ Do time raiz, e um so -- subtime nao ganha quadro por existir.
-        # Dentro da mesma transacao: workspace sem quadro e o estado que a
-        # `0008` deixou para tras e que a `0011` tem de consertar. Nao vale a
-        # pena criar mais nenhum.
-        # ⚠️ BoardService nao usa BaseRepository e nao precisa de tenant.
+        # Quadro geral do time raiz, na mesma transacao. BoardService nao
+        # precisa de tenant.
         quadro = await BoardService(self._session).create_default_board(
             workspace_id=workspace.id,
             team_id=team.id,
-            # ⚠️ AS OITO, e explicitas desde 10/09: elas sao a copia da
-            # migration `0008` e do `test_quadro_novo_nasce_igual_ao_migrado`.
-            # O quadro do Marketing em producao tem essas oito, e este caminho
-            # tem de continuar reproduzindo o que esta la. Time raiz NOVO nasce
-            # com QUATRO -- ver `create_default_board`.
+            # As oito colunas da migration `0008`; time raiz criado depois
+            # nasce com quatro (ver `create_default_board`).
             colunas=COLUNAS_PADRAO,
         )
 

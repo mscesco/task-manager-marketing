@@ -1,34 +1,14 @@
 // =====================================================
-// useFecharAoClicarFora -- clicar fora fecha; ARRASTAR pra fora nao
-// -----------------------------------------------------
-// O BUG QUE ISTO RESOLVE (reportado 2026-07-31, com captura):
-// selecionar texto dentro do modal -- descricao da tarefa, campo de
-// comentario, qualquer coisa -- arrastando o mouse ate soltar FORA do card
-// fechava o modal. No `TaskModal` isso apagava o formulario inteiro sem
-// perguntar nada.
-//
-// POR QUE ACONTECIA: o scrim tinha `onClick={fechar}` e o card tinha
-// `onClick={(e) => e.stopPropagation()}`. O `stopPropagation` parece resolver,
-// e resolve o clique normal -- mas o evento `click` do DOM nao dispara no
-// elemento clicado: dispara no ANCESTRAL COMUM do alvo do `mousedown` com o
-// alvo do `mouseup`. Apertando dentro e soltando fora, esse ancestral comum e
-// o proprio scrim. O clique nunca passa pelo card, entao o `stopPropagation`
-// dele nunca roda, e o scrim fecha.
-//
-// A REGRA CERTA: so e "clique fora" quando o botao foi PRESSIONADO fora E
-// SOLTO fora. Os quatro casos estao na tabela do arquivo de teste.
-//
-// FRONTEIRA (Spec 027): mora em `lib/` porque e decisao, nao desenho -- e
-// porque sao TRES modais com o mesmo defeito (TaskDetail, TaskModal e o
-// `Modal` de `app/times`). Tres copias da regra seriam tres chances de
-// consertar so duas.
+// useFecharAoClicarFora -- clicar fora do modal fecha; arrastar pra fora não.
+// O `click` do DOM dispara no ancestral comum do mousedown e do mouseup:
+// selecionar texto dentro e soltar fora cai no scrim, e `stopPropagation` no
+// card não pega. Por isso a regra pareia mousedown e mouseup.
 // =====================================================
 import { useCallback, useEffect, useRef } from "react";
 import type { MouseEvent as ReactMouseEvent, RefObject } from "react";
 
 /**
- * Decide se o clique fecha. Pura de proposito: e a tabela-verdade inteira
- * do comportamento, e o teste bate nela sem precisar de DOM.
+ * Decide se o clique fecha.
  *
  *   pressionouFora | soltouFora | fecha?
  *   ---------------|------------|-------
@@ -45,12 +25,8 @@ export function deveFecharNoClique(
 }
 
 /**
- * Handlers para espalhar no elemento do SCRIM (o fundo escuro).
- *
- * ⚠️ Depende de o scrim ser o `currentTarget`: a comparacao
- * `target === currentTarget` e o que distingue "o ponteiro estava no fundo"
- * de "estava em qualquer coisa dentro do card". Espalhar isto no card, e nao
- * no scrim, inverte a regra em silencio.
+ * Handlers para espalhar no scrim (o fundo escuro), não no card: a regra
+ * depende de `target === currentTarget`.
  */
 export function useFecharAoClicarFora(onFechar: () => void) {
   const pressionouFora = useRef(false);
@@ -66,8 +42,7 @@ export function useFecharAoClicarFora(onFechar: () => void) {
 
   const onClick = useCallback(() => {
     const fecha = deveFecharNoClique(pressionouFora.current, soltouFora.current);
-    // Zera SEMPRE, inclusive quando nao fecha: sem isto um arraste que sobrou
-    // marcado deixaria o proximo clique fechar por herana do anterior.
+    // Zera sempre, senão o próximo clique herda o estado do anterior.
     pressionouFora.current = false;
     soltouFora.current = false;
     if (fecha) onFechar();
@@ -77,16 +52,8 @@ export function useFecharAoClicarFora(onFechar: () => void) {
 }
 
 // =====================================================
-// useFecharAoClicarForaDe -- o PAINEL SUSPENSO (popover) fecha ao apertar fora
-// -----------------------------------------------------
-// ⚠️ NAO E A REGRA DO MODAL, acima. Aquela pareia `mousedown` e `mouseup` no
-// SCRIM (`target === currentTarget`); um painel suspenso nao tem scrim, e
-// precisa de `contains` -- senao clicar DENTRO da lista fecharia. Aqui basta o
-// `mousedown` fora do elemento.
-//
-// ⚠️ ERAM 15 COPIAS DESTE `useEffect` (revisao de 07/10): seis so no detalhe
-// da tarefa, mais o modal, o quadro, os seletores, o sino, emoji e GIF. O
-// mesmo bloco de nove linhas, com uma ref e um setter trocados.
+// useFecharAoClicarForaDe -- painel suspenso (popover) fecha ao apertar fora.
+// Sem scrim: usa `contains` e basta o mousedown fora do elemento.
 // =====================================================
 
 /**

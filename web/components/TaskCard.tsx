@@ -17,18 +17,10 @@ import Avatar from "@/components/Avatar";
 import type { Task } from "@/lib/api";
 import { nomeCurto } from "@/lib/people";
 
-// Selo do card: SO os responsaveis do proprio card (Entrega 10). Os das
-// subtarefas vivem na sublista do modal -- nao sao agregados aqui (assignee
-// e por task; a subtarefa e uma task separada). 2 bolinhas, depois "+N".
+// Só os responsáveis do próprio card (os das subtarefas não entram): 2 bolinhas, depois "+N".
 const MAX_BOLINHAS = 2;
 
-// Spec 031 (C10): os selos usavam glifo Unicode (▦ ↳ ◷ ☑). Trocados por
-// `lucide-react`, que ja e dependencia e ja desenha a navegacao do AppShell.
-// Motivo: glifo nao e icone -- a forma muda com a fonte do sistema (no Windows
-// varios caem no fallback), o tamanho nao e controlavel, e o leitor de tela
-// anuncia o nome do caractere ("quadrado com preenchimento") no meio da frase.
-// `aria-hidden` em todos: o texto ao lado ja diz o que e, e o `title` do span
-// carrega o resto.
+// Ícones `aria-hidden`: o texto ao lado já diz o que é, e o `title` do span carrega o resto.
 const ICONE = { size: 12, strokeWidth: 2, "aria-hidden": true as const };
 
 type CardMember = { name: string };
@@ -46,50 +38,24 @@ export default function TaskCard({
   travado = false,
 }: {
   task: Task;
-  /**
-   * Spec 039 (F8). O quadro esta no MODO DE EDICAO de colunas: o card nao
-   * arrasta, e visualmente ele para de flutuar. Nao esconde nada -- a decisao
-   * de 12/08 de manter os cards a vista no modo de edicao continua valendo
-   * ("sumir esconderia que o x esta sobre uma coluna com 40 tarefas dentro").
-   */
+  /** Modo de edição de colunas: o card não arrasta e perde a sombra, mas continua à vista. */
   travado?: boolean;
   members?: Map<string, CardMember>; // resolve id -> nome (mapa memoizado do quadro)
   subtaskCount?: number; // filhos DIRETOS
   subtaskDone?: number; // filhos diretos concluidos
   projectName?: string; // nome do projeto p/ a tag (so no quadro geral)
   /**
-   * Fatia 5b-5b: `Quadro · Coluna` quando a tarefa mora em outro quadro que o
-   * desenhado pela tela; so o nome da coluna quando mora neste.
-   *
-   * ⚠️ SO AS TELAS TRANSVERSAIS PASSAM (`/minhas-tarefas`). No quadro o card
-   * ja esta DENTRO da coluna dele e repetir o nome seria ruido -- por isso e
-   * opcional, e nao um campo derivado de `coluna.name` aqui dentro.
-   *
-   * ⚠️ `undefined` (nao passou) e diferente de `null` (passou e nao sabe): o
-   * primeiro nao desenha nada, o segundo cai na reserva de quem chama.
+   * `Quadro · Coluna` quando a tarefa mora em outro quadro; só a coluna quando mora neste.
+   * Só as telas transversais passam. `undefined` não desenha nada; `null` cai na reserva de quem chama.
    */
   rotuloDaColuna?: string | null;
-  /**
-   * Titulo da tarefa-mae. So "Minhas tarefas" passa: e a unica tela que
-   * mostra subtarefa como card SOLTO -- no quadro geral ela vive dentro do
-   * card da mae (ADR 0004) e o contexto ja e obvio.
-   */
+  /** Título da tarefa-mãe; só "Minhas tarefas" passa (lá a subtarefa aparece como card solto). */
   parentTitle?: string | null;
-  // Fatia 4b: origem da task no quadro de SUBTIME. "compartilhada" = veio
-  // da raiz (responsavel do subtime); "interna" = nasceu no subtime.
-  // undefined em outros quadros (nao mostra pill).
+  // Origem da task no quadro de subtime: "compartilhada" veio da raiz, "interna" nasceu no subtime.
+  // undefined em outros quadros (não mostra pill).
   escopo?: "compartilhada" | "interna";
   /**
-   * A coluna em que esta tarefa esta (fatia 4c). **OBRIGATORIA de proposito.**
-   *
-   * ⚠️ As duas regras visuais deste card -- cor do prazo e selo de "parada ha
-   * X dias" -- decidiam por `task.status` e passaram a decidir pela COLUNA
-   * (ADR 0040). Prop opcional com reserva nas funcoes antigas teria migrado a
-   * tela aos poucos, e o preco seria as duas regras vivas ao mesmo tempo, sem
-   * ninguem sabendo qual roda onde. Obrigatoria, o `tsc` lista todos os usos
-   * de uma vez -- que e exatamente o que faltou na fatia 3, onde um `as` numa
-   * fixture calou o compilador e o buraco durou horas.
-   *
+   * A coluna em que a tarefa está; cor do prazo e selo de "parada há X dias" decidem por ela.
    * Quem chama resolve por `task.column_id` no mapa de colunas do quadro.
    */
   coluna: Coluna;
@@ -98,65 +64,26 @@ export default function TaskCard({
   const mostra = ids.slice(0, MAX_BOLINHAS);
   const resto = ids.length - mostra.length;
   const dueTone = deadlineTonePorColuna(coluna, task.due_date, task.is_archived, task.due_time);
-  // Spec 031 / C2. `updated_at` ja vem no payload da listagem -- custo zero de
-  // rede. Ver o aviso sobre o que ele NAO mede em lib/status.ts.
+  // Ver o aviso sobre o que `updated_at` não mede em lib/status.ts.
   const parada = diasParadoPorColuna(coluna, task.updated_at, task.is_archived);
   const semResponsavel = ids.length === 0;
 
   return (
     <div
-      // ⚠️ ANCORA ESTAVEL DO CARD, e nao um `data-testid`. Os testes de
-      // montagem subiam do titulo com `parentElement` -- o comentario do helper
-      // dizia que isso "quebra alto se a estrutura mudar, que e o comportamento
-      // desejado". Quebrou: mover os responsaveis para a linha do titulo pos um
-      // `<div>` no meio e derrubou SEIS testes que nao tinham nada a ver com a
-      // mudanca. Quebrar alto e bom; quebrar por contagem de niveis so ensina a
-      // ajustar o numero. Com a ancora, o teste continua achando o card e passa
-      // a quebrar so quando o CARD sumir.
+      // Âncora estável do card para os testes, em vez de subir por `parentElement`.
       data-card={task.id}
-      // Redesign (19/10): a borda mora na classe; so a cor do filete e inline,
-      // porque vem da coluna (excecao de cor dinamica do web/AGENTS.md §11).
+      // Só a cor do filete é inline, porque vem da coluna.
       className="card-stripe"
       style={{
         background: "var(--surface)", borderTopColor: coluna.color,
-        // Raio 10 (redesign, fatia 4): o mesmo do `--radius` dos controles.
         borderRadius: 10, padding: "12px 12px 10px",
-        // ⚠️ NO MODO DE EDICAO O CARD PERDE A SOMBRA, e so ela (Spec 039, F8).
-        // Sem sombra ele para de flutuar e vira ladrilho chato sobre o fundo
-        // esmaecido -- o quadro inteiro le como "parado". O FUNDO do card
-        // continua `--surface` de proposito: e ele que serve de backdrop para
-        // os selos cromaticos, e trocar o backdrop obrigaria a remedir as 15
-        // familias nos dois temas (Spec 031 §2.2b, a licao que custou uma
-        // correcao publica).
+        // No modo de edição o card perde só a sombra; o fundo segue `--surface`, backdrop dos selos cromáticos.
         boxShadow: travado ? "none" : "var(--shadow-card)",
         display: "flex", flexDirection: "column", gap: 8,
       }}
     >
-      {/* Spec 039 (F1): título de card = 13px / 600. O `13.5` era meio-pixel,
-          que a Spec 018 §4 tinha matado e voltou por inércia. */}
-      {/* ⚠️ `overflowWrap: "anywhere"` -- SEM ELE UMA PALAVRA LONGA ESTOURA O
-          CARD. Título é texto de usuário, e texto de usuário não tem contrato:
-          "JDHWEIGUAWKLVIUWEIUJQJWFKQEFJLJWEFLQJNEVOMEV" não tem espaço nem
-          hífen, então não existe ponto de quebra natural e a palavra empurra a
-          largura. Medido na tela em 21/08: card de 182px com 387px de conteúdo
-          -- 205px de excesso, e barra de rolagem DENTRO do card.
-          O `TaskDetail` já fazia isso na descrição, pelo mesmo motivo; o card
-          ficou de fora. É a regra "resiliente a conteúdo de usuário" do
-          `web/AGENTS.md`, e ela não tem portão: nenhum teste mede largura. */}
-      {/* ⚠️ OS RESPONSAVEIS SOBEM PARA A LINHA DO TITULO (21/08). Eles moravam
-          na linha de meta, com `marginLeft: auto` dentro de um `flexWrap`:
-          quando prioridade + data + checklist + avatares nao cabiam nos ~216px
-          uteis do card -- e a conta dava ~238 --, eles quebravam para uma
-          SEGUNDA linha, sozinhos e colados a direita. Lia como defeito, e era
-          intermitente: dependia do tamanho da data e de haver checklist.
-
-          Aqui o lugar deles e FIXO em todo card, a altura nao cresce, e a
-          linha de meta perde ~55px e para de quebrar.
-
-          ⚠️ `min-w-0` no titulo e obrigatorio: sem ele um filho de flex NAO
-          encolhe abaixo do proprio conteudo, e o titulo empurraria os avatares
-          para fora em vez de quebrar. Mesma armadilha que o `web/AGENTS.md`
-          registra. */}
+      {/* `overflowWrap: "anywhere"`: título sem espaço estouraria o card. Os responsáveis
+          ficam na linha do título para a linha de meta não quebrar; `min-w-0` deixa o título encolher. */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div
           style={{
@@ -314,18 +241,7 @@ export default function TaskCard({
             }}
           >
             <Calendar {...ICONE} />
-            {/* ⚠️ A HORA ENTRA AQUI PORQUE O TOM JA A USAVA (Spec 039, F7). O
-                `deadlineTonePorColuna` acima le `task.due_time` desde a Spec
-                038; este texto nao lia. O card ficava VERMELHO com a data de
-                hoje e nada na tela explicava o vermelho -- e a unica outra
-                tela que mostra prazo (`/minhas-tarefas`) ja dizia a hora, pelo
-                `deadlineLabel`. Duas telas discordando sobre a mesma tarefa.
-
-                ⚠️ CUSTO DE LARGURA, MEDIDO: ~32px a mais na linha de meta, que
-                hoje gasta ~177 de ~216 uteis numa coluna de 240. Cabe -- e so
-                em card COM hora. Foi esta linha que quebrou quando os
-                avatares moravam nela; eles saíram para a linha do titulo
-                justamente para abrir esta folga. */}
+            {/* A hora aparece porque a cor do prazo já a considera. */}
             {dataHoraBR(task.due_date, task.due_time)}
           </span>
         )}
@@ -343,10 +259,7 @@ export default function TaskCard({
           <span className="muted" style={{ fontSize: 11 }}>arquivada</span>
         )}
 
-        {/* Spec 031 / C2: ausencia de responsavel precisa ser DITA. Um card
-            sem bolinha nenhuma nao le como "falta alguem", le como nada --
-            e sao 44 tarefas nesse estado hoje. Tom neutro de proposito: e
-            pendencia de preenchimento, nao erro. */}
+        {/* Ausência de responsável dita; tom neutro: é pendência, não erro. */}
         {semResponsavel && (
           <span className="muted" style={{ fontSize: 11, marginLeft: "auto" }}>
             sem responsável

@@ -1,17 +1,7 @@
 "use client";
-// components/bases/EditorDeLinksDaCelula.tsx
-// O painel de editar os links de uma célula da Base (Spec 056, fatia J).
-//
-// Pedido dela: *"não dá pra adicionar mais de um link, e ele não aparece
-// naquela cápsula bonitinha igual no detalhe da tarefa"*. A célula virou uma
-// lista, e o editor é o MESMO da tarefa (`EditorDeLinks`), com uma diferença:
-// aqui o nome é opcional -- sem ele, a cápsula mostra o domínio.
-//
-// ⚠️ GRAVA AO FECHAR, como a seleção múltipla: clicar fora salva a lista
-// inteira numa gravação só (uma entrada no diário do Ctrl+Z). Esc desiste.
-// ⚠️ COM ERRO, CLICAR FORA NÃO FECHA: o painel fica com o erro marcado.
-// Fechar jogando fora o que a pessoa digitou seria pior que insistir -- a
-// mesma regra de `LinksEditaveis.tsx`.
+// Painel de editar os links de uma célula da Base (usa `EditorDeLinks`; o nome é opcional).
+// Grava ao fechar (clicar fora salva a lista numa gravação só); Esc desiste.
+// Com erro, clicar fora não fecha, para não perder o que foi digitado.
 
 import { useState, type MutableRefObject } from "react";
 import AnchoredPanel, { type PanelBox } from "@/components/AnchoredPanel";

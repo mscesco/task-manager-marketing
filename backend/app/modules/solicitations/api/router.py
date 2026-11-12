@@ -1,26 +1,17 @@
-"""Router de Solicitacoes (formulario publico FazAe + triagem).
+"""Router de Solicitacoes: envio publico e triagem.
 
-Rotas:
-    POST /solicitacoes/publico          -- PUBLICA (sem auth, rate-limited)
-    GET  /solicitacoes                  -- fila de triagem (autenticado)
-    GET  /solicitacoes/{id}             -- detalhe (autenticado)
-    POST /solicitacoes/{id}/aprovar     -- solicitation.review
-    POST /solicitacoes/{id}/rejeitar    -- solicitation.review
-    POST /solicitacoes/{id}/andamento   -- solicitation.review (Spec 043, D)
-    POST /solicitacoes/{id}/criar-tarefa -- solicitation.review (Spec 043, E)
+    POST /solicitacoes/publico            -- publica (sem auth, rate-limited)
+    GET  /solicitacoes                    -- fila de triagem (solicitation.read)
+    GET  /solicitacoes/{id}               -- detalhe (solicitation.read)
+    POST /solicitacoes/{id}/tarefa        -- solicitation.review
+    POST /solicitacoes/{id}/criar-tarefa  -- solicitation.review
+    POST /solicitacoes/{id}/andamento     -- solicitation.review
+    POST /solicitacoes/{id}/aprovar       -- solicitation.review
+    POST /solicitacoes/{id}/rejeitar      -- solicitation.review
 
-ACESSO (Spec 025/D11): todas as rotas autenticadas exigem
-`solicitation.review` -- LEITURA inclusive. Pela invariante da Spec 024,
-isso significa ADMIN ou MANAGER do time principal. SUPERVISOR e OPERATOR
-nao enxergam a fila (a aba some do menu deles).
-
-A rota publica e a UNICA de escrita sem credencial na API alem
-de /auth/login e /auth/refresh. Defesas (nesta ordem):
-    1. rate limit por IP (janela deslizante, mesma infra do login);
-    2. honeypot (descartado silenciosamente no service);
-    3. validacao Pydantic com limites de tamanho;
-    4. categoria validada contra o dominio;
-    5. workspace por slug -- 404 generico se invalido.
+Defesas da rota publica: rate limit por IP, honeypot (descartado em silencio no
+servico), limites de tamanho no schema, categoria validada e 404 generico para
+workspace invalido.
 """
 
 from __future__ import annotations
@@ -86,10 +77,7 @@ async def create_public_solicitation(
         uow,
         CreatePublicCommand(
             workspace_slug=payload.workspace_slug,
-            # ⚠️ CAMPO A CAMPO -- declarar no schema NAO chega ao dominio.
-            # Sem esta linha o `form_id` seria descartado em silencio e toda
-            # solicitacao nasceria orfa, caindo na fila do workspace inteiro em
-            # vez da do time dono do formulario.
+            # Campo a campo: sem esta linha o `form_id` some e o pedido nasce orfao.
             form_id=payload.form_id,
             requester_name=payload.requester_name,
             requester_email=str(payload.requester_email),
@@ -107,8 +95,7 @@ async def create_public_solicitation(
             honeypot=payload.website,
         ),
     )
-    # Honeypot: criadas None => bot. Devolve protocolo falso com o MESMO
-    # formato do real (e a contagem que ele pediu) -- indistinguivel.
+    # Honeypot: criadas None => bot. Devolve protocolo falso no mesmo formato.
     if criadas is None:
         return PublicSolicitationCreateResponse(
             protocol=uuid.uuid4().hex[:8].upper(), created=len(payload.items)
@@ -131,8 +118,7 @@ async def list_solicitations(
     _: TenantContextDep,
     session: SessionDep,
     page: int = Query(1, ge=1),
-    # D6: dez ENVIOS por pagina. Com card agrupado, dez ja enchem a tela --
-    # e o payload traz as `answers` de todas as secoes (R4).
+    # Dez envios por pagina; o payload traz as `answers` de todas as secoes.
     size: int = Query(10, ge=1, le=50),
     filtro: str | None = Query(
         None,
@@ -172,8 +158,7 @@ async def list_solicitations(
         form_id=form_id,
         without_task=without_task,
     )
-    # ⚠️ UMA CONSULTA SO PARA A PAGINA INTEIRA, e nao uma por item: dez envios
-    # de quatro categorias seriam 40 idas ao banco para buscar um titulo.
+    # Uma consulta para a pagina inteira, nao uma por item.
     todos = [item for lote in lotes for item in lote.items]
     rotulos = await service.rotulos_de_categoria(todos)
     titulos = await service.titulos_das_tarefas(todos)
@@ -187,9 +172,7 @@ async def list_solicitations(
             mudanca["category_title"] = rotulo.title
             mudanca["category_emoji"] = rotulo.emoji
             mudanca["category_sla"] = rotulo.sla_text
-        # ⚠️ TAREFA APAGADA NAO ENTRA em `titulos`, e o `task_title` fica
-        # `None` -- a tela mostra "tarefa vinculada" sem nome em vez de um link
-        # que leva a lugar nenhum.
+        # Tarefa apagada nao entra em `titulos`: `task_title` fica `None`.
         if item.task_id is not None:
             mudanca["task_title"] = titulos.get(item.task_id)
         return resposta.model_copy(update=mudanca) if mudanca else resposta
@@ -216,15 +199,12 @@ async def list_solicitations(
         total=total,
         page=page,
         size=size,
-        # ⚠️ OS BADGES RECEBEM O MESMO `team_id` DA LISTA. Um contador que
-        # conta a organizacao ao lado de uma lista recortada por time e pior que
-        # nao ter contador: a aba diria "7 pendentes" e a fila mostraria duas.
+        # Os contadores usam o mesmo `team_id` da lista.
         pending_total=await service.count_pending(team_id),
         approved_without_task_total=await service.count_approved_without_task(
             team_id
         ),
-        # A mesma caixinha e a mesma aba da lista: o numero de cada aba e o selo
-        # "sem tarefa" dizem o que a tela vai mostrar (revisao de 16/10).
+        # Mesma aba e caixinha da lista, para os numeros baterem com a tela.
         tab_totals=await service.count_by_tab(
             team_id, q, form_id, filtro=filtro, without_task=without_task
         ),
@@ -268,9 +248,7 @@ async def mark_task_created(
             solicitation_id=solicitation_id,
             created=payload.created,
             task_ref=payload.task_ref,
-            # ⚠️ CAMPO A CAMPO -- declarar no schema NAO chega ao dominio.
-            # Foi exatamente esta linha que faltou no `form_id` da fatia B, e a
-            # sabotagem de teste passou verde porque nada olhava o CORPO.
+            # Campo a campo: declarar no schema nao chega ao dominio.
             task_id=payload.task_id,
         ),
     )
@@ -290,15 +268,9 @@ async def criar_tarefa_da_solicitacao(
     session: SessionDep,
     uow: UoWDep,
 ) -> TarefaCriadaResponse:
-    """Cria a tarefa a partir do pedido e ja a vincula (Spec 043, fatia E).
+    """Cria a tarefa a partir do pedido e ja a vincula.
 
-    ⚠️ SUBSTITUI UM COPIA-E-COLA DE SEIS PASSOS: copiar o briefing, sair da
-    fila, abrir o quadro, criar a tarefa, colar, voltar e marcar. O ultimo era
-    o que mais se esquecia -- e e a razao de o filtro "aprovadas sem tarefa"
-    existir.
-
-    ⚠️ DEVOLVE OS DOIS: a solicitacao (com o vinculo) e o id da tarefa, para a
-    tela poder oferecer "abrir a tarefa" sem um segundo request.
+    Devolve a solicitacao e a tarefa, para a tela oferecer "abrir a tarefa".
     """
     solicitation, tarefa = await SolicitationService(session).criar_tarefa(
         uow,
@@ -327,12 +299,9 @@ async def andar_solicitacao(
     session: SessionDep,
     uow: UoWDep,
 ) -> SolicitationResponse:
-    """Move um pedido ACEITO entre aprovada, em andamento e concluida.
+    """Move um pedido aceito entre aprovada, em andamento e concluida.
 
-    ⚠️ ROTA SEPARADA DE `/aprovar`, e nao um campo dela: triar e acompanhar
-    sao trabalhos diferentes. Aprovar grava QUEM decidiu e QUANDO; andar nao
-    toca nesses campos, e reaproveitar a rota de triagem os reescreveria a
-    cada mudanca de andamento.
+    Separada de `/aprovar` para nao reescrever quem triou e quando.
     """
     solicitation = await SolicitationService(session).andar(
         uow,

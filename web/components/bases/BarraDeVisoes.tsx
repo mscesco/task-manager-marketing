@@ -1,29 +1,10 @@
 "use client";
-// components/bases/BarraDeVisoes.tsx
-// As abas das visões da Base (Spec 056, fatia F) -- "Todo o conteúdo",
-// "Calendário", "Por status"... -- e o "+" de criar.
-//
-// ⚠️ VISÃO É COMPARTILHADA (D14): criar, renomear e apagar mexem na base de
-// todo mundo. Os botões seguem os cadeados do servidor (`can_*_view`), e a
-// visão padrão não se apaga (D25) -- o servidor recusa com 409, e a tela nem
-// oferece.
-//
-// ⚠️⚠️ FATIA J: O MENU MORA NA PRÓPRIA ABA. Antes era um "⋯" no fim da
-// fileira, que agia sobre a visão ativa -- mas, ali no fim, parecia ser da
-// última aba, e ela achou que estava mexendo na visão errada. Agora, como no
-// Notion: clicar na aba que JÁ ESTÁ ativa abre o menu dela (a setinha ao lado
-// do nome avisa), o duplo clique renomeia ali mesmo, e o botão direito abre o
-// menu de qualquer aba.
-//
-// ⚠️ O PRIMEIRO CLIQUE DO DUPLO CLIQUE TAMBÉM É UM CLIQUE. Na aba ativa ele
-// abriria o menu, e o duplo clique o fecharia de novo -- um piscar. Por isso o
-// menu pelo mouse espera `ESPERA_DO_DUPLO` antes de abrir, e o duplo clique
-// cancela a espera. Pelo teclado (Enter/Espaço chegam com `detail === 0`) o
-// menu abre na hora.
-//
-// As abas são desenhadas aqui, e não por `components/Tabs.tsx`: aquela é de
-// filtro de lista, e não tem renomear nem menu. O indicador que desliza é o
-// mesmo truque (`layoutId` do motion), com grupo próprio.
+// Abas das visões da Base e o "+" de criar. Visão é compartilhada: os botões seguem
+// `can_*_view`, e a visão padrão não se apaga (o servidor recusa com 409).
+// Clicar na aba já ativa abre o menu dela, duplo clique renomeia e o botão direito abre o
+// menu de qualquer aba. O primeiro clique do duplo também é clique: pelo mouse o menu espera
+// `ESPERA_DO_DUPLO`, e o duplo clique cancela; pelo teclado (`detail === 0`) abre na hora.
+// Não usa `components/Tabs.tsx`, que não tem renomear nem menu.
 
 import { useEffect, useRef, useState } from "react";
 import { motion } from "motion/react";
@@ -132,7 +113,7 @@ export default function BarraDeVisoes({
               aria-haspopup={selecionada && temMenu ? "dialog" : undefined}
               aria-expanded={selecionada && temMenu ? menu : undefined}
               title={selecionada && temMenu ? "Clique para as opções; duplo clique renomeia" : undefined}
-              // ⚠️ Mesmo foco das abas de `Tabs.tsx`: fundo, e não anel.
+              // Mesmo foco das abas de `Tabs.tsx`: fundo, e não anel.
               className="tappable relative flex items-center gap-1 rounded-t px-3 pb-2 pt-1.5 text-sm outline-none focus-visible:bg-surface-2 focus-visible:outline-none"
               onClick={(e) => {
                 if (!selecionada) {
@@ -221,9 +202,8 @@ export default function BarraDeVisoes({
   );
 }
 
-/** O nome da visão editado no lugar da aba. Enter ou clicar fora salva; Esc
- *  desiste. ⚠️ O blur dispara DEPOIS do Enter (o campo some): a trava evita
- *  gravar duas vezes. */
+/** Nome da visão editado na aba. Enter ou clicar fora salva; Esc desiste.
+ *  O blur dispara depois do Enter: a trava evita gravar duas vezes. */
 function CampoDeNome({
   inicial,
   onSalvar,
@@ -276,9 +256,7 @@ function NovaVisao({
   const [aberto, setAberto] = useState(false);
   const [nome, setNome] = useState("");
   const [layout, setLayout] = useState<BaseView["layout"]>("table");
-  // Fatia J, pedido dela: o quadro já nasce agrupado -- a coluna se escolhe
-  // aqui, e não depois, num controle à parte. O calendário, pelo mesmo
-  // motivo, já nasce com a coluna de data. A primeira que serve vem marcada.
+  // O quadro já nasce agrupado e o calendário com a coluna de data; a primeira que serve vem marcada.
   const doLayout = layout === "board" ? colunasDeAgrupar(colunas) : layout === "calendar" ? colunasDeData(colunas) : [];
   const [coluna, setColuna] = useState<string | null>(null);
   const escolhida = doLayout.find((c) => c.id === coluna)?.id ?? doLayout[0]?.id ?? null;
@@ -313,7 +291,6 @@ function NovaVisao({
 
   return (
     <>
-      {/* Fatia J: só o "+", pedido dela. */}
       <button
         ref={anchorRef}
         className="btn btn-ghost mb-1"

@@ -1,18 +1,9 @@
-"""Os avisos do que ACONTECE numa tarefa (Spec 053, fatia C).
+"""Avisos de mudanca numa tarefa (coluna, prazo, descricao, arquivar, excluir).
 
-Coluna, prazo, descricao, arquivar, desarquivar e excluir avisam seguidores +
-responsaveis + criador, menos quem fez (D14, D15).
-
-⚠️⚠️ SO O GESTO DIRETO AVISA (D16), e e por isso que este modulo e chamado
-pelas ROTAS, e nunca de dentro do `TaskService`. O mesmo `TaskService.update`
-roda em LACO quando alguem apaga uma coluna no lote
-(`BoardService.apagar_coluna`, uma chamada por tarefa movida) -- emitir la
-dentro mandaria 40 avisos por apagar uma coluna com 40 tarefas. Tambem nao
-avisam a cascata de conclusao (SQL em massa) nem o job `archive-stale` (outro
-metodo). O guardiao e `test_avisos_de_mudanca_053c_db.py`.
-
-A forma e sempre a mesma: a rota tira um RETRATO da tarefa antes do servico,
-chama o servico, e entrega retrato + tarefa depois para este modulo comparar.
+Avisam seguidores + responsaveis + criador, menos quem fez. So o gesto direto
+avisa: por isso e chamado pelas rotas, nunca de dentro do `TaskService` (que
+roda em laco ao apagar coluna). A rota tira um retrato antes do servico e
+entrega retrato + tarefa depois para comparar.
 """
 
 from __future__ import annotations
@@ -38,12 +29,7 @@ from app.modules.tasks.infrastructure.collaboration_repository import (
 
 @dataclass(frozen=True, slots=True)
 class RetratoDaTarefa:
-    """O que os avisos comparam, copiado ANTES da mudanca.
-
-    ⚠️ VALORES, e nao a `Task`: o servico altera o MESMO objeto da sessao (o
-    identity map devolve a mesma instancia), entao guardar a referencia seria
-    comparar a tarefa com ela mesma.
-    """
+    """Valores copiados antes da mudanca (nao a `Task`: o servico altera o mesmo objeto)."""
 
     column_id: uuid.UUID | None
     due_date: date | None
@@ -60,18 +46,14 @@ def _prazo(d: date | None, t: time | None) -> dict | None:
 
 
 class AvisosDaTarefa:
-    """Compara o antes e o depois de um gesto e emite os avisos da Spec 053."""
+    """Compara o antes e o depois de um gesto e emite os avisos."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
         self._notify = NotificationEmitter(session)
 
     async def retrato(self, task_id: uuid.UUID) -> RetratoDaTarefa | None:
-        """Tira o retrato antes do servico. `None` se a tarefa nao existe.
-
-        ⚠️ Nao confere visibilidade -- quem confere e o servico chamado logo em
-        seguida. O retrato so e usado se o servico nao recusar.
-        """
+        """Retrato antes do servico (`None` se nao existe). Visibilidade e o servico que confere."""
         task = await self._session.get(Task, task_id)
         if task is None:
             return None
@@ -86,7 +68,7 @@ class AvisosDaTarefa:
     async def depois_da_edicao(
         self, antes: RetratoDaTarefa | None, task: Task
     ) -> None:
-        """PATCH /tasks/{id}: coluna, prazo e descricao (D14)."""
+        """PATCH /tasks/{id}: coluna, prazo e descricao."""
         if antes is None:
             return
         destinatarios = await self._destinatarios(task)
@@ -103,8 +85,7 @@ class AvisosDaTarefa:
                 },
             )
 
-        # §6.4: COMPARA VALOR. O front manda start_date, due_date e due_time
-        # juntos em todo PATCH de datas -- `fields_set` diria "mudou" sempre.
+        # Compara valor: o front manda as tres datas juntas, `fields_set` diria "mudou" sempre.
         if (antes.due_date, antes.due_time) != (task.due_date, task.due_time):
             await self._emitir(
                 NotificationType.TASK_DUE_CHANGED, task, destinatarios,
@@ -134,12 +115,9 @@ class AvisosDaTarefa:
         await self._emitir(tipo, task, await self._destinatarios(task))
 
     async def depois_de_excluir(self, task: Task) -> None:
-        """DELETE /tasks/{id}. Avisa so pela tarefa excluida, nao pelas filhas
-        que foram junto (Spec 053, §9.1: gesto direto).
+        """DELETE /tasks/{id}. Avisa so pela tarefa excluida, nao pelas filhas.
 
-        ⚠️ O aviso de exclusao MOSTRA o titulo (§9.2): quem recebe via a tarefa
-        ate este instante. As linhas de seguidor e responsavel continuam no
-        banco depois do soft-delete, entao a audiencia ainda se calcula.
+        Seguidores e responsaveis seguem no banco apos o soft-delete: a audiencia ainda se calcula.
         """
         await self._emitir(
             NotificationType.TASK_DELETED, task, await self._destinatarios(task)
@@ -147,11 +125,9 @@ class AvisosDaTarefa:
 
     # ----------------------------------------------------
     async def _destinatarios(self, task: Task) -> dict[uuid.UUID, list[str]]:
-        """Seguidores + responsaveis + criador, cada um com os PAPEIS que tem
-        na tarefa agora (Spec 053, D15; Spec 054, D12).
+        """Seguidores + responsaveis + criador, cada um com os papeis que tem na tarefa.
 
-        O emissor tira o autor do gesto e quem nao alcanca a tarefa, e grava
-        os papeis em `notification.roles`.
+        O emissor tira o autor do gesto e quem nao alcanca a tarefa.
         """
         papeis: dict[uuid.UUID, list[str]] = {}
         for uid in await TaskWatcherRepository(self._session).list_user_ids(task.id):

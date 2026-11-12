@@ -1,10 +1,8 @@
-"""O valor de uma celula, por tipo de coluna (Spec 056, §7.1). Puro, sem banco.
+"""O valor de uma celula, por tipo de coluna. Puro, sem banco.
 
-`None` = esvaziar a celula: a chave sai de `values`, e nao fica guardando um
-`null` (a celula vazia e a ausencia da chave, o mesmo que a troca de tipo faz).
-
-⚠️ A COLUNA PESSOA guarda ids de usuario; QUEM pode ser escolhido (os membros
-da arvore, D8) e pergunta do servico, que tem o banco -- aqui so a forma.
+`None` = esvaziar a celula: a chave sai de `values` (celula vazia e a ausencia
+da chave). A coluna pessoa so tem a forma validada aqui; quem pode ser
+escolhido e pergunta do servico.
 """
 
 from __future__ import annotations
@@ -38,8 +36,8 @@ def clean_value(
 ) -> Any:
     """O valor normalizado para gravar, ou `None` para esvaziar. 422 se nao serve.
 
-    `ja_tinha`: o que a celula guardava. Uma opcao apagada que JA estava ali
-    pode continuar (D17) -- so nao pode ser escolhida de novo.
+    `ja_tinha`: o que a celula guardava. Uma opcao apagada que ja estava ali
+    pode continuar; so nao pode ser escolhida de novo.
     """
     if valor is None:
         return None
@@ -74,10 +72,8 @@ def clean_value(
         return valor
 
     if tipo == "link":
-        # Fatia J (pedido dela): VARIOS links por celula, cada um com nome
-        # opcional, como os da tarefa (Spec 052). A forma antiga -- um texto
-        # so -- continua aceita e vira lista de um, sem nome: as celulas
-        # gravadas antes nao precisam de migration.
+        # Varios links por celula, com nome opcional. Um texto solto (forma
+        # antiga, ainda gravada no banco) vira lista de um.
         itens = [{"url": valor}] if isinstance(valor, str) else valor
         if not isinstance(itens, list) or len(itens) > LINKS_MAX:
             raise _erro(coluna, f"No maximo {LINKS_MAX} links por celula.")
@@ -90,7 +86,6 @@ def clean_value(
                 raise _erro(coluna, f"Nome do link passa de {LINK_TITLE_MAX} caracteres.")
             url = item["url"].strip()
             partes = urlparse(url)
-            # So http e https, como os links da Spec 052.
             if len(url) > LINK_MAX or partes.scheme not in ("http", "https") or not partes.netloc:
                 raise _erro(coluna, "O link precisa comecar com http:// ou https://.")
             limpos.append({"title": titulo.strip(), "url": url})

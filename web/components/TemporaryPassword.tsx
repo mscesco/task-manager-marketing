@@ -1,15 +1,6 @@
 "use client";
-// components/TemporaryPassword.tsx
-// O bloco reveal-once da senha provisória (ADR 0008 / ADR 0021).
-//
-// ⚠️⚠️ O SEGREDO VOLTA UMA VEZ SÓ. Não há rota para relê-lo: quem fecha sem
-// copiar precisa resetar de novo. Por isso o aviso é destacado e o botão de
-// concluir é explícito -- fechar não pode ser acidental.
-//
-// ⚠️ MORA EM `components/` porque agora tem DOIS gatilhos em telas
-// diferentes: o cadastro (na tela do time) e o reset (na gaveta do membro, de
-// qualquer tela que use a tabela). Duas cópias divergiriam no aviso -- e o
-// aviso é a parte que evita a perda do segredo.
+// O bloco da senha provisória, mostrada uma vez só: não há rota para relê-la,
+// por isso o aviso é destacado e concluir é explícito. Usado no cadastro e no reset.
 
 import { useState } from "react";
 

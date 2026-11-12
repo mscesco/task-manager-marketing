@@ -1,14 +1,9 @@
 @import "tailwindcss";
 
-/* Tokens do design-system expostos ao Tailwind v4 (gera bg-*, text-*,
-   border-*, rounded-*, text-<escala>). Espelham os valores legados do
-   :root abaixo -- duplicacao proposital e temporaria, zero-break. */
+/* Tokens expostos ao Tailwind v4 (gera bg-*, text-*, border-*, rounded-*).
+   Espelham o :root abaixo, valor por valor: `--color-*` alimenta as utilitárias,
+   `--*` o inline e as classes .btn/.input. Mexeu num, mexa no outro. */
 @theme {
-  /* ⚠️ ESPELHA O `:root` ABAIXO, VALOR POR VALOR (Spec 039, F0). A duplicacao
-     e a mesma de sempre e continua proposital: `--color-*` alimenta as
-     utilitarias do Tailwind v4, `--*` alimenta o inline e as classes .btn/
-     .input. Mexeu num, mexa no outro -- metade da tela mudando de cor e o
-     sintoma de ter esquecido. */
   --color-canvas: #f4f2ee;
   --color-surface: #ffffff;
   --color-surface-2: #f0ede7;
@@ -19,26 +14,23 @@
   --color-accent: #0075de;
   --color-accent-soft: #d6e8fb;
   --color-danger: #dc2626;
-  /* Cores de apoio do redesign (19/10). Espelham `--teal` etc. do :root. */
+  /* Cores de apoio. Espelham `--teal` etc. do :root. */
   --color-teal: #0a6e63;
   --color-teal-soft: #d7f0ea;
   --color-amber: #9a5300;
   --color-amber-soft: #fbecd3;
   --color-violet: #6b2fd1;
   --color-violet-soft: #ece4fb;
-  /* Painel escuro da tela de entrada (fatia 4). Espelha `--panel`. */
+  /* Painel escuro da tela de entrada. Espelha `--panel`. */
   --color-panel: #0b3d6b;
-  /* Raia do quadro (fatia 4). Espelha `--lane`. */
+  /* Raia do quadro. Espelha `--lane`. */
   --color-lane: #ece9e3;
 
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 12px;
 
-  /* ⚠️ SPEC 039 (F1) -- a escala HIBRIDA. Os papeis e os pesos estao na §5.2
-     da spec; aqui ficam so os tamanhos que o Tailwind expoe.
-     `--text-lg` (15) e o corpo de LEITURA; `--text-sm`/`--text-base` (12/13)
-     seguem sendo a GRADE. O `--text-2xl` e novo: e o cabecalho de tela. */
+  /* `--text-lg` (15) é o corpo de leitura; `--text-sm`/`--text-base` (12/13), a grade. */
   --text-xs: 11px;
   --text-sm: 12px;
   --text-base: 13px;
@@ -52,143 +44,62 @@
     "Segoe UI", Roboto, sans-serif;
 }
 
-/* Tokens de design. Tom: ferramenta interna calma e legivel -- o oposto
-   de "cheio de abas". Paleta sobria, um unico azul de acao, tipografia
-   com peso pra dar hierarquia sem decoracao. */
-/* ⚠️ color-scheme NAO e cosmetica: e o que informa ao BROWSER qual paleta
-   usar nos controles que ele desenha sozinho e que nenhum CSS nosso alcanca
-   -- icone do <input type="date">, painel que abre no <select>, caixa do
-   <input type="checkbox">, barra de rolagem, fundo de autofill.
-   Sem esta declaracao o browser assume claro SEMPRE, e no tema escuro o
-   icone do calendario fica preto sobre fundo escuro (invisivel), o dropdown
-   do select abre branco no meio da tela escura e as barras de rolagem
-   voltam claras. Sao 5 <input type="date">, 22 <select> e 7 checkbox.
-   Alterar junto com a paleta: os dois blocos, sempre. */
+/* `color-scheme` informa ao navegador a paleta dos controles que ele desenha
+   (ícone do date, painel do select, checkbox, rolagem, autofill). Alterar
+   junto com a paleta, nos dois blocos. */
 :root {
   color-scheme: light;
 
-  /* ⚠️ SPEC 039 (F0) -- A PALETA CLARA VEM DA ANALISE DA NOTION, mapeada 1:1
-     na §3 da spec. Onze tokens saem de la sem interpretacao; os tres de baixo
-     (`--accent-soft`, `--danger`, `--on-danger`) NAO existem la e sao
-     derivados, com o motivo escrito em cada um.
-
-     ⚠️ TROCA DE TOM, e nao so de valor: o cinza-azulado saiu e entrou o
-     off-white QUENTE (`#f6f5f4`). E o nucleo do "paper-calm" -- a mesma
-     mudanca que faz a tela parecer documento em vez de painel.
-
-     ⚠️ E O TEMA ESCURO NAO MUDOU NESTA FATIA. Ele e paleta desenhada, nao o
-     claro invertido, e refaze-lo e a F2. Ate la os dois convivem: quem estiver
-     no escuro ve exatamente o que via ontem. */
-  /* ⚠️ REDESIGN (19/10): fundo, superficie-2 e borda ficaram um ponto mais
-     quentes e mais separados do branco. `--text-faint` sobre o fundo novo: 5.84;
-     sobre a surface-2 nova: 5.58 (ambos AA). Borda vs surface: 1.33. */
-  --bg: #f4f2ee;         /* era o Notion `canvas-soft` #f6f5f4 */
-  --surface: #ffffff;    /* Notion `surface` */
-  --surface-2: #f0ede7;  /* era #f6f5f4 */
-  --border: #e3dfd8;     /* era o Notion `hairline` #e6e6e6 */
-  --text: #000000;       /* Notion `ink` */
-  --text-soft: #31302e;  /* Notion `ink-secondary` */
-  /* ⚠️ ISTO CONSERTA UMA LACUNA CONHECIDA. O `#8a94a3` anterior REPROVAVA AA
-     no tema claro, e estava registrado como decisao de design por falta de
-     alternativa. O `ink-muted` da Notion aprova, e a troca sai de graca junto
-     com a paleta. */
-  --text-faint: #615d59; /* Notion `ink-muted` */
-  /* ⚠️ FUNDO DO MODO DE EDICAO (Spec 039, F8). Pedido da Camila em 22/08:
-     "quero que ao entrar no modo de edicao, a tela esmaeca um pouco, pra
-     perceber que esta em um modo diferente".
-
-     ⚠️ E ELE E FUNDO, E NAO `opacity`, POR MEDICAO -- ver a nota longa no
-     `Board.tsx`. Esmaecer os cards com opacidade arrasta TODO par medido de
-     dentro deles junto (os 62 tokens cromaticos do §3.2 inclusive), e isso e
-     exatamente o que a Spec 031 proibiu sem remedicao.
-
-     Contraste sobre este fundo, MEDIDO NO NAVEGADOR em 22/08: `--text` 17.02,
-     `--text-soft` 10.68, `--text-faint` 5.29. Os tres aprovam AA -- e o faint
-     aprova por menos margem que sobre o branco (6.53), entao escurecer mais
-     este tom exige remedir. */
+  /* `--text-faint` sobre o fundo: 5.84; sobre a surface-2: 5.58. */
+  --bg: #f4f2ee;
+  --surface: #ffffff;
+  --surface-2: #f0ede7;
+  --border: #e3dfd8;
+  --text: #000000;
+  --text-soft: #31302e;
+  --text-faint: #615d59;
+  /* Fundo do modo de edição: fundo, e não `opacity`, para não alterar o
+     contraste medido dos cards. `--text-faint` aqui dá 5.29: escurecer mais exige remedir. */
   --edicao-fundo: #e9e7e4;
-  --accent: #0075de;     /* Notion `primary` -- o UNICO acento estrutural */
-  /* Derivado: a Notion nao tem azul suave. Mesmo papel de sempre -- fundo de
-     selo e anel de foco --, agora tirado do `primary` novo em vez do velho. */
+  --accent: #0075de;     /* o único acento estrutural */
   --accent-soft: #d6e8fb;
-  /* Derivado: a analise da Notion nao expoe rampa de erro nenhuma (ela mesma
-     diz isso). Vermelho mantido, porque ele nao e "cor de marca" -- e sinal, e
-     a Spec 031 mediu o contraste dele. */
   --danger: #dc2626;
-  /* Cor do TEXTO quando o fundo e --danger. Token proprio porque --danger
-     serve a dois papeis (texto sobre superficie E fundo de selo); no tema
-     escuro ele clareia, e branco por cima deixaria de ser legivel. */
+  /* Texto sobre fundo --danger; no escuro o --danger clareia e branco deixaria de ser legível. */
   --on-danger: #ffffff;
-  /* ⚠️ COR DE APOIO (redesign, 19/10): tres familias com par suave, para selo e
-     realce sem roubar o papel do `--accent`. Cada `--x` e TEXTO sobre `--x-soft`
-     E sobre `--surface`; os dois numeros estao ao lado (sobre soft / sobre
-     surface). O teal da proposta (#0b7a6e) dava 4.36 sobre o suave e REPROVAVA
-     AA; este escurecido e o mais claro que aprova com margem. */
+  /* Cores de apoio para selo e realce. Cada `--x` é texto sobre `--x-soft` e
+     sobre `--surface` (números ao lado). */
   --teal: #0a6e63;        --teal-soft: #d7f0ea;    /* 5.12 / 6.13 */
   --amber: #9a5300;       --amber-soft: #fbecd3;   /* 5.00 / 5.82 */
   --violet: #6b2fd1;      --violet-soft: #ece4fb;  /* 5.78 / 7.11 */
-  /* Painel da tela de entrada (fatia 4): azul-marinho, texto branco por cima
-     (12.4 no claro). Nao e superficie de app: so o login o usa. */
+  /* Painel da tela de entrada (só o login): texto branco por cima, 12.4. */
   --panel: #0b3d6b;
-  /* Raia do quadro (fatia 4): um ponto mais escura que o fundo, para o card
-     branco pousar nela. `--text-faint` por cima: 5.3 (o "—" da coluna vazia). */
+  /* Raia do quadro, um ponto mais escura que o fundo. `--text-faint` por cima: 5.3. */
   --lane: #ece9e3;
-  --radius: 10px;    /* controle (botao, input, selo). Redesign 19/10: era 8 */
+  --radius: 10px;    /* controle (botão, input, selo) */
   --radius-lg: 12px; /* superficie (card, painel, modal) */
-  /* ⚠️ MOVIMENTO (redesign, 19/10). Quatro duracoes e duas curvas; nenhuma
-     regra deste arquivo crava mais segundos. `--dur-1` e o maximo que a saida do
-     modal pode ter: `useSaidaAnimada` segura o unmount por 140ms, e a animacao
-     precisa terminar antes. */
+  /* Movimento: quatro durações e duas curvas. `--dur-1` é o máximo da saída do
+     modal: `useSaidaAnimada` segura o unmount por 140ms. */
   --dur-1: 120ms;
   --dur-2: 200ms;
   --dur-3: 320ms;
   --dur-4: 560ms;
   --ease-out: cubic-bezier(.22, 1, .36, 1);
   --ease-io: cubic-bezier(.65, 0, .35, 1);
-  /* Elevacao da Notion: camadas quase transparentes em vez de uma sombra
-     dura. O nivel 0 dela e SO o hairline; estas duas sao o nivel 1. */
+  /* Elevação em camadas quase transparentes, em vez de uma sombra dura. */
   --shadow: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027),
     0 4px 18px rgba(0, 0, 0, 0.04);
   --shadow-card: 0 0.8px 2.9px rgba(0, 0, 0, 0.02), 0 2px 7.8px rgba(0, 0, 0, 0.027);
-  /* ⚠️ A VARIAVEL VEM DO `next/font/local` (ver `app/layout.tsx`). O fallback
-     depois da virgula NAO e decoracao: se a fonte falhar, o texto cai na pilha
-     do sistema em vez de na serifada padrao do navegador. */
+  /* A variável vem do `next/font/local` (`app/layout.tsx`); o fallback cobre a falha da fonte. */
   --font: var(--fonte-raleway), ui-sans-serif, system-ui, -apple-system,
     "Segoe UI", Roboto, sans-serif;
 }
 
 /* ---------------------------------------------------------------
-   TEMA ESCURO
-   Ativado por data-theme="escuro" no <html> (posto pelo script
-   bloqueante do layout.tsx antes da primeira pintura, e depois
-   mantido por lib/tema.ts).
-
-   ATENCAO -- sobrescreve os DOIS conjuntos de token de proposito:
-     --color-*  alimenta as classes do Tailwind v4 (bg-surface, text-ink…)
-     --*        alimenta os estilos inline e as classes .btn/.input daqui
-   O CSS compilado do Tailwind referencia var(--color-*) em vez de gravar
-   o hex, entao trocar a variavel em runtime realmente vira a utility.
-   Esquecer um dos conjuntos = metade da tela vira e a outra metade nao.
-
-   A paleta nao e o claro invertido: fundo que nao e preto puro (preto puro
-   cansa e achata a hierarquia), azul de acao mais claro pra segurar
-   contraste, e --accent-soft deixa de ser um azul palido pra ser um azul
-   ESCURO -- senao fundos de badge e anel de foco viram um borrao claro no
-   meio do escuro.
-
-   ⚠️ SPEC 039 (F2) -- O TOM VIROU QUENTE, acompanhando o claro. Ate aqui o
-   fundo era azulado (#0f1520); com a paleta clara indo para o off-white
-   quente da Notion, um escuro azulado deixaria os dois temas parecendo
-   produtos diferentes. A decisao "nao e preto puro" continua valendo -- o que
-   mudou foi a DIRECAO do desvio, de azul para terra.
-
-   ⚠️ A NOTION NAO TEM TEMA ESCURO NA ANALISE, entao NADA aqui e mapeado: e
-   tudo derivado, e por isso cada par foi MEDIDO em vez de escolhido no olho.
-   Contraste conferido (WCAG, sobre --surface): texto 14.76, texto-suave 8.54,
-   texto-fraco 5.05, accent 6.78, danger 6.02, on-danger sobre danger 6.47,
-   on-accent sobre accent 7.7, borda vs surface 1.34.
-   ⚠️ O texto-fraco saiu de 4.6 para 5.05 -- ele passava raspando e agora tem
-   margem, que e o mesmo ganho que o tema claro teve na F0.
+   TEMA ESCURO: data-theme="escuro" no <html> (posto pelo script do
+   layout.tsx antes da primeira pintura e mantido por lib/tema.ts).
+   Sobrescreve os dois conjuntos de token: --color-* (Tailwind) e --*
+   (inline e .btn/.input). Esquecer um = metade da tela não vira.
+   Paleta derivada, não o claro invertido; cada par foi medido (WCAG).
    --------------------------------------------------------------- */
 [data-theme="escuro"] {
   color-scheme: dark;
@@ -212,10 +123,7 @@
   --color-panel: #0e2238;
   --color-lane: #191815;
 
-  /* ⚠️ REDESIGN (19/10): a surface escura foi de #1f1e1c para #1e1d1a (um
-     ponto mais escura) -- os 15 pares de selo abaixo sobem um pouco, nao
-     descem. `--text-faint` sobre: fundo 5.63, surface 5.11, surface-2 4.52
-     (o mais justo). Borda vs surface: 1.36. */
+  /* `--text-faint` sobre: fundo 5.63, surface 5.11, surface-2 4.52. */
   --bg: #141311;
   --surface: #1e1d1a;
   --surface-2: #292723;
@@ -223,39 +131,14 @@
   --text: #f2f1ef;
   --text-soft: #bdb9b4;
   --text-faint: #918d88;
-  /* Par escuro do fundo de edicao. ⚠️ Ele CLAREIA em vez de escurecer: no
-     escuro o `--bg` ja e quase o fundo do monitor, e escurecer nao teria para
-     onde ir.
-
-     ⚠️ A PRIMEIRA VERSAO (#1a1918) FICOU INVISIVEL, e a Camila viu na tela:
-     "o modo edicao do tema escuro ficou muito escuro ainda". Ela estava a
-     1.04 de contraste da pagina -- ou seja, praticamente a mesma cor.
-
-     Este valor e O MAIS CLARO QUE AINDA APROVA AA, e o teto foi medido, nao
-     chutado (navegador, 22/08). `--text-faint` sobre cada candidato:
-
-       #1a1918 -> 5.32  (o antigo; separacao da pagina: 1.04)
-       #22201e -> 4.92                          (1.12)
-       #262422 -> 4.69  ← ESTE                  (1.18)
-       #2a2825 -> 4.46  ✗ reprova por 0.04      (1.24)
-
-     Ou seja: a separacao da pagina quadruplicou (1.04 -> 1.18) e ainda sobra
-     margem de 0.19 sobre o minimo. Clarear mais exige trocar o `--text-faint`
-     junto, e ai nao e mais um token, sao dois.
-
-     ⚠️ EFEITO COLATERAL ACEITO: o fundo agora e MAIS CLARO que o card
-     (`--surface`, #1f1e1c). Os cards passam a afundar na bandeja em vez de
-     flutuar sobre ela -- que e exatamente a leitura desejada no modo de
-     edicao, e casa com a sombra que eles perdem. Eles seguem delimitados pela
-     propria borda. No tema claro o efeito e o inverso (fundo mais escuro que o
-     card branco), e isso e proposital: a §3.3 desta spec ja diz que o escuro
-     NAO e o claro invertido. */
+  /* Fundo do modo de edição no escuro: clareia em vez de escurecer. É o mais
+     claro em que `--text-faint` ainda aprova AA (4.69); clarear mais exige
+     trocar o `--text-faint` junto. */
   --edicao-fundo: #262422;
   --accent: #5aabf2;
   --accent-soft: #14304a;
   --danger: #f87171;
-  /* Texto sobre fundo --danger: branco daria 2.77 de contraste sobre este
-     vermelho claro (reprova AA). Este marrom quase preto da 6.47. */
+  /* Texto sobre fundo --danger: branco reprovaria AA sobre este vermelho claro. */
   --on-danger: #2a0f0f;
   /* Cores de apoio: texto claro sobre o par suave escuro (sobre soft / sobre
      surface). */
@@ -265,24 +148,17 @@
   --panel: #0e2238; /* branco por cima: 15.9 */
   --lane: #191815;  /* `--text-faint` por cima: 5.6 */
 
-  /* Sombra no escuro precisa de mais opacidade: a de baixo relevo do tema
-     claro simplesmente some e os cards perdem a separacao do fundo. */
+  /* No escuro a sombra precisa de mais opacidade para separar o card do fundo. */
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35);
 }
 
-/* Hover do botao primario: no claro escurece o azul, no escuro precisa
-   CLAREAR -- escurecer sobre fundo escuro le como "desabilitado". */
+/* No escuro o hover clareia: escurecer sobre fundo escuro lê como "desabilitado". */
 [data-theme="escuro"] .btn-primary:hover { background: #8cc4f7; }
-/* ⚠️ Texto sobre o azul do escuro. NAO e `--bg`: e um quase-preto proprio,
-   medido contra o accent (7.7). Amarrar ao `--bg` faria a legibilidade do
-   botao depender de uma decisao de FUNDO -- e a F0 acabou de mostrar que
-   fundo muda. */
+/* Texto sobre o azul do escuro: quase-preto próprio, medido contra o accent (7.7). */
 [data-theme="escuro"] .btn-primary { color: #0d1117; }
 
-/* O numero em destaque da tela inicial (Spec 058): o fundo e o azul de acao,
-   e o texto segue a MESMA regra do .btn-primary -- branco no claro, o
-   quase-preto medido no escuro. */
+/* O número em destaque da tela inicial: mesma regra de texto do .btn-primary. */
 .tile-destaque { background: var(--color-accent); color: #ffffff; }
 [data-theme="escuro"] .tile-destaque { color: #0d1117; }
 [data-theme="escuro"] .tile-destaque .text-ink-soft { color: inherit; }
@@ -291,7 +167,7 @@
 .logo-marca { background: var(--color-accent); color: #ffffff; }
 [data-theme="escuro"] .logo-marca { color: #0d1117; }
 
-/* .error-box tinha as tres cores cravadas (rosa claro) -- sumia no escuro. */
+/* .error-box no escuro. */
 [data-theme="escuro"] .error-box {
   background: #3a1a1d;
   border-color: #6d2a2f;
@@ -299,36 +175,20 @@
 }
 
 
-/* --- Cor de status / prioridade / prazo (Spec 031, C1a) -----------------
-   DOIS papeis por familia, e eles NAO podem ser o mesmo valor:
-
-     --*-dot   cromatico. Bolinha, borda de coluna, outline de drop, borda
-               esquerda de linha. NAO e texto -> AA nao se aplica. Valor
-               IDENTICO ao de hoje, de proposito: nenhum elemento nao-textual
-               muda de aparencia nesta fatia.
-     --*-text  stop escuro da mesma familia. Serve a DOIS usos: texto sobre
-               --surface, e FUNDO sob texto branco (Badge tone="solid").
-               Contraste e simetrico, entao um valor cobre os dois.
-
-   O fundo do Badge tone="soft" NAO e token: o Badge calcula com color-mix
-   a partir da propria cor. Ver o comentario do Badge.tsx.
-
-   ⚠️ Os numeros abaixo sao o texto sobre --surface PURO. O caso que manda e
-   OUTRO: dentro do Badge tone="soft" o fundo e a propria cor a 12%, o que
-   escurece a base e DERRUBA o contraste. Medido com a tinta aplicada, o pior
-   caso desta tabela e 4.98 -- margem de 0.48 sobre AA. Amber e verde usam o
-   stop 800 (nao o 700) exatamente por isso: com o 700 o selo "Alta" dava 4.25
-   e reprovava. Mexeu em cor aqui, remede COM a tinta. */
+/* --- Cor de status / prioridade / prazo ----------------------------------
+   Dois papéis por família, que não podem ser o mesmo valor:
+     --*-dot   cromático (bolinha, borda de coluna). Não é texto.
+     --*-text  stop escuro: texto sobre --surface e fundo sob texto branco.
+   O fundo do Badge tone="soft" é a própria cor a 12% (color-mix), o que derruba
+   o contraste; por isso amber e verde usam o stop 800. Os números são sobre a
+   --surface pura; mexeu em cor, remeça com a tinta. */
 :root {
   --status-backlog-dot:  #64748b;  --status-backlog-text:  #334155; /* 10.35 */
   --status-planned-dot:  #6366f1;  --status-planned-text:  #4338ca; /*  7.90 */
   --status-progress-dot: #0ea5e9;  --status-progress-text: #0369a1; /*  5.93 */
   --status-review-dot:   #f59e0b;  --status-review-text:   #92400e; /*  7.09 */
-  /* ⚠️ REDESIGN (19/10): externo e concluido passam a ser as cores de apoio,
-     dot E text no mesmo valor (o `--x` ja e texto medido sobre a surface).
-     O dot tambem alias porque a cor da coluna mora no BANCO como
-     `var(--status-done-dot)` -- so assim o filete do card acompanha o selo.
-     Com a tinta a 12%: violeta 5.86, teal 5.16 (sobre a surface: 7.11 / 6.13). */
+  /* Externo e concluído usam as cores de apoio, dot e text iguais. O dot também,
+     porque a cor da coluna mora no banco como `var(--status-done-dot)`. */
   --status-external-dot: var(--violet);  --status-external-text: var(--violet);
   --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #94a3b8;  --status-cancel-text:   #475569; /*  7.58 */
@@ -342,16 +202,12 @@
   --due-overdue-text:  #b91c1c; /*  6.47 */
   --due-soon-text:     #92400e; /*  7.09 */
 
-  /* Selo "parada ha X d" (C2). Token PROPRIO, mesmo tendo o valor do prazo:
-     parada e estagnacao, prazo e data -- se um dia divergirem, divergem sem
-     tocar no outro. */
+  /* Selo "parada há X d". Token próprio, mesmo com o valor do prazo: podem divergir. */
   --stale-dot: #f59e0b;  --stale-text: #92400e; /*  7.09 */
 
-  /* Cor das OPCOES da Base (Spec 056, §12) -- a paleta fixa de
-     `bases/domain/columns.py::OPTION_COLORS`. Usadas como `color` do
-     `Badge tone="soft"`, entao os numeros sao COM A TINTA (a cor a 12% sobre a
-     --surface), medidos em 07/10/2026. Pior caso: rosa, 4.93. Sem par
-     `--color-*` no @theme: so o inline do Badge as le. */
+  /* Cor das opções da Base (paleta de `bases/domain/columns.py::OPTION_COLORS`).
+     Números com a tinta do `Badge tone="soft"`. Sem par `--color-*`: só o
+     inline do Badge as lê. */
   --opt-gray:   #475569; /* 6.34 */
   --opt-brown:  #78350f; /* 7.43 */
   --opt-orange: #9a3412; /* 6.04 */
@@ -362,38 +218,22 @@
   --opt-pink:   #be185d; /* 4.93 */
   --opt-red:    #b91c1c; /* 5.29 */
 
-  /* Texto POR CIMA de um fundo `-text` (Badge tone="solid"). Mesmo papel
-     que --on-danger, e pelo mesmo motivo: no escuro o fundo vira o stop
-     CLARO da familia, e branco em cima dele reprova. Pior caso medido:
-     5.02 no claro, 8.46 no escuro. */
+  /* Texto por cima de um fundo `-text` (Badge tone="solid"); no escuro o fundo
+     vira o stop claro, e branco reprovaria. */
   --on-chroma: #ffffff;
 }
 
-/* --- Cor de status / prioridade / prazo, tema escuro (Spec 031, C1a) ----
-   ⚠️ ESQUECER UM PAR AQUI NAO E PEGO POR TESTE NENHUM: o vitest.config.ts
-   limita o include a lib/**, entao ele nao le este arquivo. A var some,
-   o CSS cai no valor do :root (claro) e o selo fica ilegivel no escuro.
-   Conferir com grep que cada nome aparece nos DOIS blocos.
-
-   O `dot` clareia junto com o resto da paleta escura; o `text` vira o stop
-   CLARO da familia -- sobre a --surface escura o stop escuro sumiria.
-
-   ⚠️ OS NUMEROS ABAIXO FORAM REMEDIDOS NA F2 (21/08/2026), contra a surface
-   NOVA (`#1f1e1c`). Eles tinham sido tirados contra a antiga (`#161d2b`) e
-   passariam a mentir em silencio -- trocar a surface muda TODOS eles de uma
-   vez, e ninguem olha 15 comentarios.
-   A surface nova e um pouco mais escura, entao cada um subiu ~0.15; o pior
-   caso e 8.36, contra um minimo de 4.5. Nenhum chegou perto de reprovar.
-
-   ⚠️ MEXEU NA `--surface` DO ESCURO? REMEDE ESTES 15. E o mesmo aviso que a
-   Spec 031 deixou para o tema claro, pelo mesmo motivo: cor de selo se mede
-   CONTRA a superficie onde ela pousa. */
+/* --- Cor de status / prioridade / prazo, tema escuro ---------------------
+   Nenhum teste lê este arquivo: um par esquecido aqui cai no valor claro do
+   :root e o selo fica ilegível. Conferir que cada nome aparece nos dois blocos.
+   O `text` vira o stop claro da família. Os números são contra a `--surface`
+   escura: mexeu nela, remeça. */
 [data-theme="escuro"] {
   --status-backlog-dot:  #94a3b8;  --status-backlog-text:  #cbd5e1; /* 11.22 */
   --status-planned-dot:  #818cf8;  --status-planned-text:  #a5b4fc; /*  8.36 */
   --status-progress-dot: #38bdf8;  --status-progress-text: #7dd3fc; /* 9.99 */
   --status-review-dot:   #fbbf24;  --status-review-text:   #fcd34d; /* 11.55 */
-  /* Cores de apoio (redesign 19/10), com a tinta: violeta 7.22, teal 7.19. */
+  /* Cores de apoio, com a tinta: violeta 7.22, teal 7.19. */
   --status-external-dot: var(--violet);  --status-external-text: var(--violet);
   --status-done-dot:     var(--teal);    --status-done-text:     var(--teal);
   --status-cancel-dot:   #cbd5e1;  --status-cancel-text:   #cbd5e1; /* 11.22 */
@@ -409,7 +249,7 @@
 
   --stale-dot: #fbbf24;  --stale-text: #fcd34d; /* 11.55 */
 
-  /* Opcoes da Base (Spec 056), com a tinta, contra a surface #1f1e1c (07/10). */
+  /* Opções da Base, com a tinta, contra a surface escura. */
   --opt-gray:   #cbd5e1; /* 8.39 */
   --opt-brown:  #e7c9a9; /* 7.96 */
   --opt-orange: #fdba74; /* 7.55 */
@@ -420,11 +260,7 @@
   --opt-pink:   #f9a8d4; /* 7.12 */
   --opt-red:    #fca5a5; /* 6.88 */
 
-  /* ⚠️ ERA A `--surface` ANTIGA CRAVADA (`#161d2b`), e a F2 trocou a surface.
-     Sem esta linha o texto de dentro do `Badge tone="solid"` continuaria
-     azulado no meio de um tema terra -- o tipo de sobra que nao quebra teste
-     nenhum e so aparece no olho. Acompanha a `--surface` de propósito: e a
-     cor de "buraco" no selo cheio. */
+  /* Acompanha a `--surface` escura: é a cor de "buraco" no selo cheio. */
   --on-chroma: #1f1e1c;
 }
 
@@ -434,11 +270,7 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  /* ⚠️ SPEC 039 (F1) -- 15px E O CORPO DE LEITURA, e este e o default que a
-     escala híbrida move. A grade continua em 12-13px porque ela declara o
-     tamanho dela explicitamente; o que sobe aqui é o texto que NÃO declara --
-     descrição, comentário, formulário. É exatamente a divisão da §4 da spec:
-     leitura confortável onde se lê, densidade onde se compara. */
+  /* 15px é o corpo de leitura; a grade declara 12-13px explicitamente. */
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
@@ -457,30 +289,16 @@ button { font-family: inherit; cursor: pointer; }
 .btn:hover { background: var(--surface-2); }
 .btn:disabled { opacity: .55; cursor: not-allowed; }
 .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-/* Notion `primary-active` (#005bab) -- o estado pressionado do azul dela.
-   Era o escurecido do azul VELHO; sem trocar, o hover puxaria para outro tom. */
+/* Estado pressionado do azul de ação. */
 .btn-primary:hover { background: #005bab; }
 .btn-ghost { border-color: transparent; background: transparent; color: var(--text-soft); }
 .btn-ghost:hover { background: var(--surface-2); }
-/* ⚠️ ACAO DESTRUTIVA. O produto ja tinha este padrao -- o `TaskDetail` pinta o
-   botao de excluir tarefa com `background: var(--danger)` desde a Spec 019 --
-   mas so em estilo inline, entao a tela seguinte nao o herdou: o botao que
-   apaga uma coluna e MARCA AS TAREFAS DELA COMO CONCLUIDAS nasceu `btn-primary`,
-   o mesmo azul de "Criar", "Salvar" e "+ Nova tarefa".
-
-   ⚠️ A COR E A UNICA DEFESA AQUI. Apagar coluna nao pede confirmacao digitada
-   -- decisao consciente e certa, porque nada se perde. Mas o gesto e identico
-   ao de renomear: par de botoes, primario azul na esquerda. Um renomeia; o
-   outro conclui 40 tarefas, cascateia nas subtarefas e joga tudo na fila de
-   arquivamento.
-
-   `--on-danger` e nao `#fff`: no tema escuro o fundo clareia e branco por cima
-   reprova AA. Ver o comentario do token. */
+/* Ação destrutiva. `--on-danger` e não `#fff`: no escuro o fundo clareia e
+   branco por cima reprova AA. */
 .btn-danger { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
 .btn-danger:hover { filter: brightness(0.92); }
-/* Redesign (21/10), a prancha da fila: aprovar e um botao TEAL SUAVE, e rejeitar
-   um botao sem fundo que so fica vermelho no hover -- o azul cheio fica para
-   criar. Os tokens mudam por tema, entao uma regra serve aos dois. */
+/* Aprovar: teal suave. Rejeitar: sem fundo, vermelho no hover. O azul cheio
+   fica para criar. */
 .btn-ok { background: var(--teal-soft); border-color: transparent; color: var(--teal); }
 .btn-ok:hover { background: color-mix(in srgb, var(--teal) 22%, var(--teal-soft)); }
 .btn-no { background: transparent; border-color: transparent; color: var(--danger); }
@@ -501,27 +319,19 @@ button { font-family: inherit; cursor: pointer; }
   background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
   padding: 10px 12px; border-radius: var(--radius); font-size: 13px;
 }
-/* ⚠️ ERA USADA EM DOIS LUGARES E NAO EXISTIA (13/08). `EditorDeColunas` e
-   `SeletorDeQuadro` marcavam o erro com `className="error-text"` desde a fatia
-   5b -- e como a classe nunca foi definida, a mensagem saia na cor do texto
-   comum, tamanho 13, no meio de um painel com outros textos de tamanho 13. Ela
-   nao parecia erro; parecia uma frase a mais. O `role="alert"` estava certo e
-   o leitor de tela anunciava: quem enxerga e que nao tinha sinal.
-
-   Irma do `.error-box`, e nao a mesma coisa: a caixa e para erro que ocupa a
-   tela (falhou a carga, nao da para seguir); esta e para erro ao lado do
-   campo, dentro de um painel que continua utilizavel. */
+/* Erro ao lado do campo, num painel que continua utilizável (o `.error-box`
+   é para erro que ocupa a tela). */
 .error-text { color: var(--danger); font-weight: 600; }
 .muted { color: var(--text-faint); }
 
 /* utilitarios de layout */
 .center-screen { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
 
-/* Spec 063: o iPhone da zoom na pagina ao focar campo menor que 16px, e nao
-   volta sozinho. `!important` porque ha `fontSize` inline nos campos antigos. */
+/* O iPhone dá zoom ao focar campo menor que 16px e não volta sozinho.
+   `!important` porque há `fontSize` inline em campos. */
 @media (max-width: 767px), (pointer: coarse) {
   input, select, textarea, [contenteditable="true"] { font-size: 16px !important; }
-  /* Alvo de toque de pelo menos 24px (web/AGENTS.md, secao 3). */
+  /* Alvo de toque de pelo menos 24px. */
   button, [role="button"], select { min-height: 24px; min-width: 24px; }
   input[type="checkbox"], input[type="radio"] { width: 24px; height: 24px; }
 }
@@ -530,14 +340,9 @@ button { font-family: inherit; cursor: pointer; }
   * { transition: none !important; animation: none !important; }
 }
 
-/* --- Animacao de entrada/saida do modal de tarefa ---------------------
-   Curtas de proposito (entrada --dur-2, saida --dur-1): o suficiente pra tirar
-   o "corte seco", curto o bastante pra nao atrasar quem usa o app o dia inteiro.
-   A saida e disparada por estado no TaskDetail (data-saindo), que segura
-   o unmount por 140ms (`useSaidaAnimada`) -- por isso ela usa o `--dur-1`
-   (120ms), e nao o `--dur-2`. O bloco de prefers-reduced-motion acima
-   desliga as duas -- e o JS pula a espera, senao fechar ficaria lento
-   sem animacao nenhuma pra justificar. */
+/* --- Animação de entrada/saída do modal de tarefa ---------------------
+   A saída usa `--dur-1` (120ms) porque `useSaidaAnimada` segura o unmount por
+   140ms. Com prefers-reduced-motion o JS pula a espera. */
 @keyframes tm-scrim-entra {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -546,8 +351,7 @@ button { font-family: inherit; cursor: pointer; }
   from { opacity: 0; transform: translateY(8px) scale(0.97); }
   to   { opacity: 1; transform: none; }
 }
-/* O desfoque do veu (redesign 19/10) nao e animado: `backdrop-filter` nao e
-   transform nem opacity, e a opacidade do proprio veu ja faz a entrada. */
+/* O desfoque do véu não é animado: `backdrop-filter` não é transform nem opacity. */
 .modal-scrim {
   animation: tm-scrim-entra var(--dur-2) var(--ease-out);
   backdrop-filter: blur(6px);
@@ -556,11 +360,10 @@ button { font-family: inherit; cursor: pointer; }
 .modal-scrim[data-saindo="true"] { animation: tm-scrim-entra var(--dur-1) var(--ease-io) reverse forwards; }
 .modal-card[data-saindo="true"]  { animation: tm-card-entra var(--dur-1) var(--ease-io) reverse forwards; }
 
-/* --- Comentario apontado pela notificacao (26/10) -----------------------
-   Uma camada `--accent-soft` POR TRAS do comentario pisca duas vezes, so com
-   opacity. ⚠️ A opacidade de repouso e 1 de proposito: com
-   prefers-reduced-motion o bloco global corta a animacao, e o comentario fica
-   destacado parado -- o JS tira a classe em 2,5 s nos dois casos. */
+/* --- Comentário apontado pela notificação ----------------------------------
+   Uma camada atrás do comentário pisca duas vezes, só com opacity. A opacidade
+   de repouso é 1 de propósito: com prefers-reduced-motion o comentário fica
+   destacado parado. O JS tira a classe em 2,5 s. */
 @keyframes tm-destaque {
   0%, 45%, 100% { opacity: 0; }
   20%, 70%      { opacity: 1; }
@@ -579,10 +382,9 @@ button { font-family: inherit; cursor: pointer; }
   animation: tm-destaque 2.4s var(--ease-io) forwards;
 }
 
-/* --- Tela de entrada (fatia 4): os cartoezinhos que flutuam no painel ---
-   Decoracao pura (`aria-hidden`): sobem ao chegar e depois derivam devagar,
-   so com transform e opacity. O bloco global de prefers-reduced-motion acima
-   os deixa parados, e o `both` garante que apareçam no estado final. */
+/* --- Tela de entrada: os cartões que flutuam no painel -------------------
+   Decoração pura. O bloco global de prefers-reduced-motion os deixa parados,
+   e o `both` garante que apareçam no estado final. */
 @keyframes tm-rise {
   from { opacity: 0; transform: translateY(12px); }
   to   { opacity: 1; transform: none; }
@@ -607,10 +409,9 @@ button { font-family: inherit; cursor: pointer; }
 .login-tile:nth-child(3) { animation-delay: 240ms, 1.6s; }
 .login-rise { animation: tm-rise var(--dur-4) var(--ease-out) both; animation-delay: 120ms; }
 
-/* --- Meu perfil (fatia 4): o personagem do Tibia no canto -------------
-   O `tibia.png` e um PNG ANIMADO (16 quadros): ele anda sozinho, sem CSS por
-   cima. `fixed` para ficar sempre inteiro na tela, fora do fluxo do main.
-   `pixelated` porque o sprite e 64px desenhado a 96. So esta tela o usa. */
+/* --- Meu perfil: o personagem no canto ------------------------------
+   `tibia.png` é um PNG animado (anda sozinho). `pixelated` porque o sprite é
+   64px desenhado a 96. */
 .tibia-egg {
   position: fixed; right: 28px; bottom: 28px;
   width: 96px; height: 96px; pointer-events: none;
@@ -620,12 +421,12 @@ button { font-family: inherit; cursor: pointer; }
   image-rendering: pixelated;
 }
 
-/* --- Detalhe da tarefa (redesign 19/10) --------------------------------
-   A lista de propriedades: rotulo numa coluna de 110px, o controle na outra.
-   O balao do comentario: canto reto no alto a esquerda, apontando o avatar. */
+/* --- Detalhe da tarefa ---------------------------------------------------
+   Propriedades: rótulo numa coluna de 110px, o controle na outra. Balão do
+   comentário: canto reto no alto à esquerda, apontando o avatar. */
 .prop-list {
   display: flex; flex-direction: column; gap: 2px; padding: 0 0 6px;
-  /* So a borda de baixo (ajuste dela, 19/10): a lista comeca logo sob a barra. */
+  /* Só a borda de baixo: a lista começa logo sob a barra. */
   border-bottom: 1px solid var(--border);
 }
 .prop {
@@ -638,29 +439,24 @@ button { font-family: inherit; cursor: pointer; }
   padding: 10px 12px; border-radius: 0 12px 12px 12px; margin-top: 4px;
 }
 
-/* --- Card do quadro: filete da coluna (redesign 19/10) ----------------
-   3px no topo com a cor da coluna. A borda inteira mora aqui porque o
-   shorthand `border` inline zeraria a largura do topo; so a COR do filete
-   entra inline (`borderTopColor`), que e a excecao de cor dinamica do
-   web/AGENTS.md §11 -- ela vem da coluna, inclusive do banco. */
+/* --- Card do quadro: filete da coluna ----------------------------------
+   3px no topo. A borda inteira mora aqui porque o shorthand `border` inline
+   zeraria a largura do topo; só a cor entra inline (`borderTopColor`). */
 .card-stripe {
   border: 1px solid var(--border);
   border-top: 3px solid var(--border);
 }
 
-/* --- Card do quadro: elevacao no hover -------------------------------
-   Substitui o outline duro do .tappable NESTE caso: em card arrastavel a
-   elevacao le como "pegavel", o outline lia como "selecionado". O foco por
-   teclado continua vindo da regra [tabindex]:focus-visible abaixo. */
+/* --- Card do quadro: elevação no hover -------------------------------
+   Em card arrastável a elevação lê como "pegável", o outline como
+   "selecionado". O foco por teclado vem de [tabindex]:focus-visible abaixo. */
 .card-elev {
   cursor: grab;
-  border-radius: var(--radius); /* o mesmo raio 10 do TaskCard (fatia 4) */
+  border-radius: var(--radius); /* o mesmo raio do TaskCard */
   transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
 }
-/* Redesign 19/10: sobe 3px e a sombra e tingida do `--accent` -- o token muda
-   por tema, entao uma regra serve aos dois. Sem anel de 1px (ajuste dela,
-   19/10): ele brigava com o filete colorido do topo do card. */
-/* Spec 063: sem isto, o toque longo que comeca o arraste abre o menu do
+/* Sobe 3px e a sombra é tingida do `--accent` (o token muda por tema). */
+/* No toque, sem isto o toque longo que começa o arraste abre o menu do
    navegador e seleciona o texto do card. */
 @media (hover: none) {
   .card-elev { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
@@ -670,11 +466,8 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
-/* --- Esqueleto (redesign 19/10): a forma da tela que vem ---------------
-   Linhas na `--surface-2` com um brilho que atravessa em 1,4s. So `transform`
-   anima (o brilho e um pseudo-elemento que desliza); o bloco de
-   prefers-reduced-motion acima o para, e as linhas paradas ainda leem como
-   "espere". Cores dos tokens: no escuro `--surface-2` clareia junto. */
+/* --- Esqueleto: a forma da tela que vem ---------------------------------
+   Só `transform` anima (o brilho é um pseudo-elemento que desliza). */
 @keyframes tm-shimmer {
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
@@ -693,68 +486,25 @@ button { font-family: inherit; cursor: pointer; }
   animation: tm-shimmer 1.4s var(--ease-io) infinite;
 }
 
-/* --- Affordance de clique: hover + foco visivel por teclado (C1/C2) ---
+/* --- Affordance de clique: hover + foco visível por teclado -----------
+   Superfície (cartão, linha) usa o contorno desenhado (`useDrawnOutline`);
+   controle não tem anel de hover, só escurece. O foco continua sendo anel.
 
-   ⚠️⚠️ O ANEL DE HOVER MORREU EM 10/09, e o motivo foi a tela: *"o contorno em
-   torno do meu nome e cargo esta tenebroso de feio (...) da para identificar e
-   mudar absolutamente todos para ficar com a animacao igual dos subtimes?"*.
+   `filter` e não `opacity`: há `opacity` inline em controles (pílula de filtro,
+   `PillSelect`), e o inline venceria o :hover. Uma regra por tema: no claro
+   escurece, no escuro clareia.
 
-   O que ele era: `outline: 1px solid var(--accent)` aparecendo INTEIRO, de uma
-   vez, colado no conteudo. Dois defeitos somados:
-
-     1. em SUPERFICIE (cartao, linha de lista) ele lia como "selecionado", e nao
-        como "passei o mouse" -- e nao acompanhava o raio;
-     2. em PILULA ele desenhava um RETANGULO em volta de uma forma redonda,
-        porque quem recebia o anel era o `<a>`/`<button>` de fora, que nao tem
-        raio nenhum. Era isto na captura dela.
-
-   A divisao que substituiu (decisao dela entre tres opcoes, 10/09):
-
-     SUPERFICIE  -> o contorno DESENHADO (`useDrawnOutline`), o traco que corre
-                    e para no meio da base. Nada de anel; nada aqui no CSS.
-     CONTROLE    -> nenhum anel de hover. O feedback e o proprio elemento
-                    escurecendo, e o FOCO continua sendo anel (acessibilidade).
-
-   ⚠️⚠️ `filter` E NAO `opacity`, e a razao esta no comentario que este bloco
-   substituiu: *"outline funciona por cima de estilos inline: border e
-   box-shadow inline ganham de :hover"*. `opacity` tem o MESMO problema -- e
-   nao e hipotetico, sao dois lugares reais: a pilula de filtro de
-   `minhas-tarefas` (`opacity: on ? 1 : 0.45`) e o `PillSelect`
-   (`opacity: disabled ? 0.5 : 1`). Nos dois, o inline venceria e o hover
-   simplesmente nao aconteceria -- silenciosamente, em dois controles, sem
-   nenhum portao para dizer.
-   `filter` nao e setado inline em lugar nenhum desta base (conferido), entao
-   ele e a unica propriedade que chega a todos.
-
-   ⚠️ SAO DUAS REGRAS, uma por tema, porque brilho nao e simetrico: no claro o
-   controle ESCURECE, no escuro ele CLAREIA. Uma regra so teria de escolher um
-   tema para funcionar. `.btn-primary:hover` ja e assim, logo acima.
-
-   ⚠️ ARMADILHA CONHECIDA: `filter` cria bloco de contencao -- um filho
-   `position: fixed` DENTRO de um `.tappable` passaria a se posicionar pelo
-   controle, e nao pela janela. Hoje nenhum painel e filho de um `.tappable`
-   (no `PillSelect` e no papel de organizacao o painel e IRMAO do botao), mas
-   quem puser um la dentro vai ver o painel saltar no hover. */
+   Armadilha: `filter` cria bloco de contenção; um filho `position: fixed`
+   dentro de um `.tappable` passaria a se posicionar pelo controle. */
 .tappable { cursor: pointer; transition: filter var(--dur-1) var(--ease-out); }
 .tappable:hover { filter: brightness(.93); }
 [data-theme="escuro"] .tappable:hover { filter: brightness(1.25); }
 
-/* ⚠️⚠️ A FORMA DO ALVO E DA PILULA QUE ELE EMBRULHA. Quando um `<a>` ou
-   `<button>` contem SO um `Badge`, o anel de foco segue o raio de QUEM O
-   RECEBE -- o elemento de fora --, e sem esta classe ele e um retangulo em
-   volta de uma pilula.
-   ⚠️ Ela existe como classe, e nao como componente, porque o que falta e um
-   FATO DE ESTILO ("este alvo tem a forma do filho"), nao comportamento. E ela
-   e grepavel: `PillSelect` ja resolvia isto com `borderRadius: 999` inline, na
-   mao, e a segunda e a terceira ocorrencia do mesmo defeito nasceram
-   justamente porque a correcao nao tinha nome. */
+/* Quando um `<a>` ou `<button>` contém só um `Badge`, o anel de foco segue o
+   raio do elemento de fora; esta classe dá a ele a forma da pílula. */
 .pill-target { border-radius: 999px; }
 
-/* ⚠️ SEM `border-radius` AQUI: a regra antiga impunha `6px` ao elemento
-   focado, o que (a) arredondava o proprio elemento no momento do foco -- um
-   salto visual -- e (b) quadrava o anel em volta de qualquer coisa mais
-   redonda que 6px, pilula inclusive. Sem a linha, o anel segue o raio real de
-   cada elemento, que e o que o navegador ja faz de graca. */
+/* Sem `border-radius`: o anel segue o raio real de cada elemento. */
 a:focus-visible,
 button:focus-visible,
 [role="button"]:focus-visible,
@@ -763,15 +513,10 @@ button:focus-visible,
   outline-offset: 2px;
 }
 
-/* ⚠️ A DESCRICAO FORMATADA (Spec 052, fatia C). `components/TextoFormatado.tsx`
-   desenha elementos soltos (p, ul, h3...) e o preflight do Tailwind zera margem
-   e marcador de lista -- sem esta classe, lista vira linhas sem bolinha e
-   paragrafos grudam.
-   ⚠️ SO TOKENS, nenhuma cor cravada: o tema escuro troca as variaveis e o texto
-   acompanha sem regra propria.
-   ⚠️ SEM `white-space: pre-wrap`: a quebra de linha simples ja vira `<br>`
-   (`remark-breaks`), e o pre-wrap desenharia TAMBEM as quebras que o Markdown
-   poe entre os blocos -- cada paragrafo ganharia uma linha em branco a mais. */
+/* A descrição formatada (`components/TextoFormatado.tsx`): o preflight do
+   Tailwind zera margem e marcador de lista. Só tokens, sem cor cravada.
+   Sem `white-space: pre-wrap`: a quebra simples já vira `<br>` (`remark-breaks`),
+   e o pre-wrap desenharia também as quebras entre blocos. */
 .texto-formatado { font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .texto-formatado > * + * { margin-top: 0.6em; }
 .texto-formatado ul { list-style: disc; padding-left: 1.4em; }
@@ -787,13 +532,9 @@ button:focus-visible,
 .texto-formatado em { font-style: italic; }
 .texto-formatado a { color: var(--accent); text-decoration: underline; }
 
-/* ⚠️ O EDITOR DA DESCRICAO (Spec 052, fatia E). Ele usa a MESMA classe
-   `.texto-formatado` do texto salvo -- e o ponto: o que se ve escrevendo e o
-   que se ve depois. So o que e dele esta aqui:
-   - dentro do editor os cabecalhos sao `h1`/`h2`/`h3` de verdade (o
-     `TextoFormatado` rebaixa para h3/h4 ao desenhar), entao os tres ganham os
-     mesmos tamanhos da tela salva;
-   - o texto de exemplo do campo vazio (extensao Placeholder do Tiptap). */
+/* O editor da descrição usa a mesma `.texto-formatado` do texto salvo. Aqui só
+   o que é dele: os `h1`/`h2`/`h3` reais (o `TextoFormatado` rebaixa para h3/h4)
+   e o placeholder do Tiptap. */
 .editor-descricao { cursor: text; }
 .editor-descricao h1,
 .editor-descricao h2 { font-size: 15px; font-weight: 700; margin-top: 0.9em; }
@@ -807,9 +548,7 @@ button:focus-visible,
   pointer-events: none;
 }
 
-/* ⚠️ O QUE A REVISAO DE 16/09 DEVOLVEU A DESCRICAO: codigo, citacao, linha e
-   tabela. Antes o editor os apagava ao salvar; agora eles existem no editor e
-   no texto salvo, e precisam de cara nos dois (a classe e a mesma). */
+/* Código, citação, linha e tabela, no editor e no texto salvo (a classe é a mesma). */
 .texto-formatado code {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.9em; background: var(--surface-2); border-radius: 4px; padding: 0.1em 0.3em;
@@ -831,17 +570,11 @@ button:focus-visible,
 .texto-formatado ul[data-type="taskList"] li { display: flex; gap: 0.5em; align-items: flex-start; }
 .texto-formatado ul[data-type="taskList"] li > label { margin-top: 0.2em; }
 
-/* --- Barra de rolagem (15/10, pedido dela: "um scroll mais bonito") --------
-   ⚠️ CSS, e NÃO uma rolagem em JavaScript (motion e afins): a simulada troca a
-   rolagem do navegador -- perde a inércia do touchpad, o teclado (setas, Page
-   Down) e o leitor de tela, e pesa em toda lista que rola. Aqui a rolagem é a
-   de sempre; só a BARRA muda: fina, arredondada, nas cores do tema, sem as
-   setas do Windows, e mais forte ao passar o mouse.
-
-   ⚠️ DUAS ESCRITAS, uma por família de navegador, e elas NÃO se misturam: o
-   Chrome 121+ ignora as regras `::-webkit-scrollbar` quando `scrollbar-color`
-   está definido -- e só elas fazem a barra redonda. Por isso as propriedades
-   padrão (Firefox) moram num `@supports not` do seletor do Chrome. */
+/* --- Barra de rolagem --------------------------------------------------------
+   CSS, não rolagem em JavaScript: a simulada perde inércia, teclado e leitor de
+   tela. Duas escritas que não se misturam: o Chrome 121+ ignora
+   `::-webkit-scrollbar` quando `scrollbar-color` está definido, por isso as
+   propriedades padrão (Firefox) moram num `@supports not`. */
 :root {
   --scroll-thumb: rgba(16, 24, 40, 0.2);
   --scroll-thumb-hover: rgba(16, 24, 40, 0.38);
@@ -868,10 +601,9 @@ button:focus-visible,
   * { scrollbar-width: thin; scrollbar-color: var(--scroll-thumb) transparent; }
 }
 
-/* --- Impressão (Spec 058, 15/10: exportar o painel em PDF) -----------------
-   ⚠️ SEMPRE NO TEMA CLARO: o PDF vai para quem não escolheu o tema escuro, e
-   fundo escuro gasta tinta. ⚠️ `print-color-adjust: exact`: sem ele o
-   navegador tira os fundos (as barras e o círculo sumiriam do PDF). */
+/* --- Impressão (exportar o painel em PDF) ---------------------------------
+   Sempre no tema claro. `print-color-adjust: exact`: sem ele o navegador tira
+   os fundos (as barras e o círculo sumiriam do PDF). */
 @media print {
   @page { size: A4 landscape; margin: 10mm; }
   :root, [data-theme="escuro"] {
@@ -886,7 +618,7 @@ button:focus-visible,
     --color-accent: #0075de;
     --color-accent-soft: #d6e8fb;
     --color-danger: #dc2626;
-    /* O painel usa `bg-teal`/`stroke-teal` em "Concluídas" (redesign 19/10). */
+    /* O painel usa `bg-teal`/`stroke-teal` em "Concluídas". */
     --color-teal: #0a6e63;
   }
   [data-theme="escuro"] .tile-destaque { color: #ffffff; }

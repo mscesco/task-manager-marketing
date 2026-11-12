@@ -1,20 +1,8 @@
 /**
- * Filtros do quadro por equipe (pedido da gestao, 2026-07-27).
+ * Filtros do quadro: escopo (interna x compartilhada), responsável e busca.
  *
- * FRONTEIRA (Spec 027): isto e DECISAO -> mora em `lib/`, puro, sem React.
- * O `Board` ja passa de 800 linhas; enfiar mais dois predicados no meio dele
- * e como nasceu o bug do modal.
- *
- * Sao DOIS filtros independentes, que a mesma tela combina:
- *
- *   1. ESCOPO      -- interna x compartilhada com o quadro geral.
- *   2. RESPONSAVEL -- "o que a fulana esta fazendo", visao pedida pela gestao.
- *
- * Ambos herdam a regra de AGREGACAO POR RAIZ que o filtro de subtime ja usa:
- * o card do quadro e sempre a raiz (ADR 0004), entao uma raiz passa se ELA ou
- * QUALQUER subtarefa dela satisfaz o criterio. Sem isso, filtrar pela pessoa
- * que so aparece numa subtarefa faria o card inteiro sumir -- exatamente o
- * problema que o comentario do `subtimesPorRaiz` registra no Board.
+ * O card do quadro é sempre a raiz, então uma raiz passa se ELA ou QUALQUER
+ * subtarefa dela satisfaz o critério.
  */
 
 /** Tarefa, no minimo que estes filtros precisam. */
@@ -23,9 +11,8 @@ export type TaskMin = {
   parent_task_id: string | null;
   team_id: string | null;
   assignee_ids?: string[];
-  // Spec 042 (B2): responsaveis da subarvore inteira, agregados pelo backend.
-  // `undefined` = a resposta nao trouxe (mutacao, ou cliente velho) -> cai no
-  // caminhamento pela lista carregada.
+  // Responsáveis da subárvore, agregados pelo backend. `undefined` = a
+  // resposta não trouxe; cai no caminhamento pela lista carregada.
   subtree_assignee_ids?: string[];
 };
 
@@ -38,40 +25,16 @@ export type FiltroEscopo = "todos" | "interna" | "compartilhada";
 export type Escopo = "interna" | "compartilhada";
 
 /**
- * "indefinido" = estamos no modo subtime mas NAO da pra classificar (o
- * projeto da tarefa nao esta no mapa, ou nao tem time). Diferente de
- * `undefined`, que significa "fora do modo subtime, a pergunta nao existe".
- *
- * ⚠️ A distincao existe porque as duas situacoes exigem respostas OPOSTAS no
- * filtro: fora do modo subtime, esconder deixaria a tela vazia sem
- * explicacao; DENTRO dele, mostrar em "So internas" e justamente a promessa
- * quebrada que este ajuste conserta.
+ * "indefinido" = no modo subtime, mas não dá para classificar. `undefined` =
+ * fora do modo subtime. O filtro trata os dois de forma oposta.
  */
 export type EscopoClassificado = Escopo | "indefinido" | undefined;
 
 /**
- * Classifica a tarefa no quadro de SUBTIME.
- *
- * "interna" = SO o subtime enxerga. E uma promessa de confidencialidade, nao
- * de procedencia (decisao D1 de 03/08/2026).
- *
- * ⚠️ POR QUE O PROJETO MANDA. A visibilidade real esta em
- * `task_guards.py:67-69`: quando a tarefa esta num projeto, o `team_id` DELA
- * e IGNORADO -- quem ve o projeto ve a tarefa. Ate 03/08 esta funcao olhava
- * `task.team_id` sempre, entao tarefa criada com time do CRM dentro de um
- * projeto do Marketing aparecia marcada "Interna" e era visivel pelo
- * workspace inteiro. Sete tarefas em producao nessa situacao.
- *
- * ⚠️ A combinacao (time do CRM + projeto do Marketing) e LEGITIMA e o backend
- * aceita de proposito -- e alguem do CRM organizando trabalho dentro dos
- * projetos do Marketing. O defeito era o ROTULO, nunca a combinacao.
- *
- * `timeDoProjeto`: project_id -> team_id do projeto. Obrigatorio de
- * proposito: opcional aqui seria um chamador esquecido virando pill errada
- * em silencio, e pill errada e o bug que estamos consertando.
- *
- * `undefined` fora do modo subtime (quadro geral e de projeto nao tem a
- * distincao, entao nao mostram pill nem filtro).
+ * Classifica a tarefa no quadro de subtime. "interna" = só o subtime enxerga.
+ * Quando a tarefa está num projeto, a visibilidade é a do projeto e o
+ * `team_id` dela é ignorado (`task_guards.py`); por isso o time do projeto
+ * manda. `undefined` fora do modo subtime.
  */
 export function escopoDaTask(
   task: Pick<TaskMin, "team_id"> & { project_id: string | null },
@@ -81,11 +44,8 @@ export function escopoDaTask(
   if (!subteamId) return undefined;
   if (task.project_id !== null) {
     const timeDoProj = timeDoProjeto.get(task.project_id);
-    // D3 -- projeto AUSENTE do mapa (lista truncada em 1000, arquivado, ou a
-    // chamada falhou). D4 -- projeto SEM time (pessoal, ou comum sem time).
-    // Nos dois casos nao da pra prometer nada: sem pill, e fora do filtro
-    // especifico. Cair de volta em `task.team_id` aqui reintroduziria a
-    // mentira, so que intermitente -- o pior tipo, porque nao reproduz.
+    // Projeto fora do mapa ou sem time: não dá para prometer nada. Não cair em
+    // `task.team_id`, que daria rótulo errado de forma intermitente.
     if (!timeDoProj) return "indefinido";
     return timeDoProj === subteamId ? "interna" : "compartilhada";
   }
@@ -104,13 +64,9 @@ export function passaEscopo(
   escopo: EscopoClassificado,
 ): boolean {
   if (filtro === "todos") return true;
-  // Fora do modo subtime nao ha escopo definido: um filtro especifico nao
-  // pode esconder tudo, entao trata como "nao se aplica" e deixa passar.
+  // Fora do modo subtime o filtro não se aplica.
   if (escopo === undefined) return true;
-  // ⚠️ DENTRO do modo subtime, "indefinido" e o oposto: nao sabemos se o
-  // subtime e o unico que ve, entao "So internas" NAO pode mostrar. O custo
-  // de esconder e um card a menos numa visao filtrada; o de mostrar e repetir
-  // a promessa de confidencialidade que este ajuste veio consertar.
+  // Sem saber quem vê, "Só internas" não pode mostrar.
   if (escopo === "indefinido") return false;
   return escopo === filtro;
 }
@@ -120,10 +76,8 @@ export function passaEscopo(
 // ====================================================================
 
 /**
- * Sobe da tarefa ate a raiz VISIVEL no conjunto carregado.
- *
- * Se o pai nao esta no conjunto, para no topo que da -- mesma decisao do
- * `subtimesPorRaiz`. Guarda anti-ciclo por id visitado.
+ * Sobe da tarefa até a raiz visível no conjunto carregado (para no topo
+ * disponível se o pai não veio). Guarda anti-ciclo por id visitado.
  */
 function raizDe(task: TaskMin, byId: Map<string, TaskMin>): string {
   let atual = task;
@@ -137,31 +91,16 @@ function raizDe(task: TaskMin, byId: Map<string, TaskMin>): string {
   return atual.id;
 }
 
-/**
- * Agrega, por raiz, TODOS os responsaveis da subarvore.
- *
- * `id_da_raiz -> Set<user_id>`. Espelha `subtimesPorRaiz` do Board, trocando
- * "subtime do responsavel" por "o proprio responsavel".
- *
- * Motivo de existir: a gestao filtra pela pessoa e espera ver a demanda em
- * que ela trabalha, mesmo que a designacao esteja numa subtarefa -- que e o
- * caso comum (a raiz e a campanha; a pessoa toca uma peca dela).
- */
+/** `id_da_raiz -> Set<user_id>` com todos os responsáveis da subárvore. */
 export function responsaveisPorRaiz(
   tasks: TaskMin[],
 ): Map<string, Set<string>> {
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const out = new Map<string, Set<string>>();
   for (const t of tasks) {
-    // ⚠️ SPEC 042 (B2): quando o backend manda `subtree_assignee_ids`, ele JA
-    // agregou a subarvore inteira -- a raiz junto, porque o `<@` do LTREE e
-    // descendente-OU-IGUAL. Nao ha o que caminhar, e nao HAVERIA: com
-    // `root_only` a subarvore nem esta carregada.
-    //
-    // ⚠️ O ramo antigo continua vivo, e nao e gordura: `/minhas-tarefas` monta
-    // esta mesma agregacao sobre uma lista que AINDA traz subtarefa (la a
-    // subtarefa e card solto, por desenho). Apagar o caminhamento quebraria o
-    // filtro por pessoa daquela tela sem nenhum portao reclamar.
+    // Com `subtree_assignee_ids` o backend já agregou (raiz inclusa). O
+    // caminhamento abaixo ainda serve a `/minhas-tarefas`, que traz subtarefa
+    // como card solto.
     const daSubarvore = t.subtree_assignee_ids;
     if (daSubarvore !== undefined) {
       if (daSubarvore.length === 0) continue;
@@ -186,48 +125,16 @@ export function responsaveisPorRaiz(
   return out;
 }
 
-/**
- * A raiz passa no filtro por pessoa?
- *
- * ⚠️ A regra e OU (UNIAO), decidida em 03/08/2026. Com Beatriz e Clara
- * marcadas, passa a tarefa da Beatriz, a da Clara E a das duas. O "E"
- * (intersecao) mostraria so a ultima -- e quando a gestao marca duas pessoas
- * a pergunta e "o que essas duas estao tocando", nao "o que elas dividem".
- * Trocar para "E" e uma linha (`every` no lugar de `some`), mas e mudanca de
- * PRODUTO: nao troque sem pedir.
- *
- * Lista vazia = sem filtro. Raiz cuja subarvore inteira nao tem NENHUM
- * responsavel some quando ha filtro -- mesma decisao ja tomada para o filtro
- * de subtime, para o resultado nao misturar "e dela" com "nao e de ninguem".
- */
 // ====================================================================
-// 3. BUSCA POR TITULO -- inclui SUBTAREFA (05/08/2026)
+// 3. BUSCA POR TITULO -- inclui SUBTAREFA
 // ====================================================================
 
 /** Tarefa com titulo -- o minimo que a busca precisa. */
 export type TaskComTitulo = TaskMin & { title: string };
 
 /**
- * Raizes que casam com a busca, contando o titulo das SUBTAREFAS.
- *
- * ⚠️ POR QUE DEVOLVE RAIZ, e nao a tarefa que casou. O card do quadro e
- * sempre a raiz (ADR 0004) -- o quadro so desenha `depth === 0`. Uma
- * subtarefa nao tem card pra aparecer, entao a unica forma de "achar" uma
- * subtarefa pela busca e trazer a raiz dela. Mesma agregacao que
- * `responsaveisPorRaiz` e o `subtimesPorRaiz` do Board ja fazem: a raiz passa
- * se ELA ou QUALQUER descendente satisfaz o criterio.
- *
- * Ate 05/08 a busca comparava so `t.title` das raizes: procurar por uma
- * subtarefa devolvia lista vazia, e o estado vazio dizia isso com todas as
- * letras. Decisao de 05/08: SO TITULO. Descricao ficou de fora de proposito
- * -- casando por descricao o card aparece com o termo buscado em lugar nenhum
- * da tela, e a leitura honesta de quem olha e "o filtro bugou". Descricao so
- * entra junto com um "por que este card apareceu" no card.
- *
- * ⚠️ So enxerga o que foi CARREGADO. `listAllTasks` tem teto (`truncated`) e
- * o quadro so traz arquivadas quando a pessoa pede: subtarefa fora do lote ou
- * arquivada com o toggle desligado nao e encontrada. Busca no servidor e o
- * conserto de verdade, e e outro tamanho.
+ * Raízes cujo título, ou o de alguma subtarefa, casa com a busca. Só título,
+ * e só o que foi carregado (lista com teto, arquivadas só quando pedidas).
  */
 export function raizesQueCasamBusca(
   tasks: readonly TaskComTitulo[],
@@ -243,6 +150,11 @@ export function raizesQueCasamBusca(
   return out;
 }
 
+/**
+ * A raiz passa no filtro por pessoa? A regra é OU: com duas pessoas marcadas,
+ * passa o que for de qualquer uma. Lista vazia = sem filtro; raiz sem nenhum
+ * responsável some quando há filtro.
+ */
 export function passaResponsavel(
   pessoaIds: readonly string[],
   raizId: string,
@@ -258,7 +170,7 @@ export function passaResponsavel(
 // Combinacao
 // ====================================================================
 
-/** Ha algum filtro desta spec ativo? Alimenta o contador "X de Y". */
+/** Há filtro de escopo ou pessoa ativo? Alimenta o contador "X de Y". */
 export function temFiltroNovo(
   escopo: FiltroEscopo,
   pessoaIds: readonly string[],
@@ -267,29 +179,15 @@ export function temFiltroNovo(
 }
 
 // =====================================================================
-// Painel de filtros do quadro (29/07)
-//
-// A barra tinha ate SEIS controles soltos na mesma linha do titulo -- busca,
-// prazo, ordenacao, subtime, origem e pessoa -- e no quadro de subtime todos
-// apareciam de uma vez. O painel recolhe os FILTROS atras de um botao; busca
-// e ordenacao ficam de fora de proposito:
-//
-//   - busca e o controle mais usado, e esconder custa um clique por uso;
-//   - ordenacao NAO E FILTRO. Ela nao esconde nada, so muda a ordem. Contar
-//     ordenacao como "filtro ativo" faria o badge mentir sobre quantas
-//     tarefas estao sendo omitidas.
+// Painel de filtros do quadro. Ordenação não é filtro (não esconde nada).
 // =====================================================================
 
-/** O estado dos filtros que o painel recolhe. Ordenacao e busca ficam fora. */
+/** O estado dos filtros do painel. Ordenação fica fora. */
 export type EstadoFiltros = {
   prazo: "todos" | "atrasadas" | "em-dia";
   subtime: string;
   escopo: FiltroEscopo;
-  // Multi-selecao (03/08/2026): UNIAO. Ver passaResponsavel.
   pessoas: readonly string[];
-  // Spec 031 (C3). Os dois entraram porque MUDAM O QUE APARECE e ficavam de
-  // fora da conta: com a busca preenchida o badge dizia "0", e o checkbox de
-  // arquivadas nunca apareceu em lugar nenhum. Eram dois furos no antidoto.
   busca: string;
   arquivadas: boolean;
 };
@@ -303,13 +201,7 @@ export const FILTROS_LIMPOS: EstadoFiltros = {
   arquivadas: false,
 };
 
-/**
- * Tira acento e caixa pra busca casar "midia" com "Midia Paga".
- *
- * Estava duplicado como `normalizar` local no Board; com "Minhas tarefas"
- * ganhando busca (C3), viraria a segunda copia -- e duas buscas com regra
- * diferente e um bug esperando. Fronteira da Spec 027: e decisao, mora aqui.
- */
+/** Tira acento e caixa pra busca casar "midia" com "Midia Paga". */
 export function normalizarBusca(s: string): string {
   return s
     .normalize("NFD")
@@ -343,15 +235,8 @@ const ROTULO_ESCOPO: Record<string, string> = {
 const MAX_BUSCA_NO_CHIP = 24;
 
 /**
- * Os filtros ligados AGORA, em ordem estavel, prontos para virar pastilha.
- *
- * Isto substitui o badge numerico. O numero dizia QUANTOS; a pastilha diz
- * QUAIS e desfaz em um clique. Filtro recolhido e filtro esquecido, e
- * "cade minha tarefa?" nasce dai -- um "2" nao responde a pergunta, "Equipe:
- * Midia Paga ✕" responde.
- *
- * Id sem nome no mapa nao vira uuid na tela: cai para um rotulo generico.
- * Acontece de verdade -- o membro pode ter saido do time depois do filtro.
+ * Os filtros ligados agora, em ordem estável, prontos para virar pastilha.
+ * Id sem nome no mapa cai num rótulo genérico (o membro pode ter saído).
  */
 export function listaFiltrosAtivos(
   f: EstadoFiltros,
@@ -377,9 +262,7 @@ export function listaFiltrosAtivos(
     chips.push({ campo: "escopo", rotulo: ROTULO_ESCOPO[f.escopo] ?? f.escopo });
   }
   if (f.pessoas.length > 0) {
-    // UMA pastilha, nao uma por pessoa: com quatro marcadas a linha das
-    // pastilhas viraria a propria barra de filtros de novo -- o problema que
-    // o painel resolveu. O ✕ limpa TODAS; desmarcar uma e no painel.
+    // Uma pastilha só para todas as pessoas; o ✕ limpa todas.
     const primeiro = nomes.pessoas?.get(f.pessoas[0]) ?? "outra pessoa";
     const resto = f.pessoas.length - 1;
     chips.push({
@@ -397,14 +280,8 @@ export function listaFiltrosAtivos(
 }
 
 /**
- * Quantos filtros estao ESTREITANDO o quadro agora.
- *
- * ⚠️ NAO e o mesmo que `listaFiltrosAtivos().length`, e a diferenca e de
- * proposito: "incluindo arquivadas" ALARGA o quadro, nao estreita. Ela vira
- * pastilha (e estado que a pessoa quer ver e desfazer) mas nao entra na conta
- * de "quanta coisa esta escondida de mim". Contar tudo faria o numero subir
- * quando a pessoa passa a ver MAIS -- exatamente o contrario do que o
- * contador promete.
+ * Quantos filtros estão estreitando o quadro. "Incluindo arquivadas" alarga,
+ * então vira pastilha mas não entra na conta.
  */
 export function contaFiltrosAtivos(f: EstadoFiltros): number {
   return listaFiltrosAtivos(f).filter((c) => c.campo !== "arquivadas").length;

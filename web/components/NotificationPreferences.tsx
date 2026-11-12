@@ -1,25 +1,7 @@
 "use client";
-// components/NotificationPreferences.tsx
-// O cartão "Notificações" do Meu perfil (Spec 054, fatia D).
-//
-// Pedido dela, 17/09: *"uma tela de configuração de notificações dentro do
-// perfil que permite mudar as notificações que quero ou não receber (...) com
-// toggle em cada uma das possibilidades de notificações"*.
-//
-// ⚠️ UMA GRADE, E NÃO UMA LISTA DE 24 (§9.2 da spec, aprovada por ela): uma
-// linha por aviso, uma coluna por papel. Vinte e quatro interruptores em lista
-// seriam vinte e quatro frases quase iguais -- "comentário como seguidor",
-// "comentário como responsável" --, e ninguém acharia o que procura.
-//
-// ⚠️ É UMA `<table>` DE VERDADE, com `<th scope>` nas duas direções. Numa grade
-// de caixas a pergunta "este interruptor é de quê?" se responde OLHANDO para a
-// linha e a coluna; quem usa leitor de tela não olha. Com a tabela, cada
-// interruptor é anunciado com a linha e a coluna dele -- e é por isso que o
-// rótulo acessível vem de `lib/notificationPreferences.ts` e não do desenho.
-//
-// ⚠️ MORA EM `components/` e não em `app/`, para ter guardião: o `include` do
-// vitest não lê `app/`. A regra (linhas, colunas, rótulos, o que a ausência
-// significa) está em `lib/notificationPreferences.ts` -- aqui só se desenha.
+// Cartão "Notificações" do Meu perfil: grade com uma linha por aviso e uma coluna por papel.
+// `<table>` com `<th scope>` nas duas direções, para o leitor de tela anunciar linha e coluna.
+// As regras (linhas, colunas, rótulos) ficam em `lib/notificationPreferences.ts`; aqui só se desenha.
 
 import { useEffect, useState } from "react";
 
@@ -49,9 +31,7 @@ export default function NotificationPreferences() {
   const avisar = useAvisar();
   const [toggles, setToggles] = useState<NotificationToggle[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // Quais células estão no ar agora. Duas podem estar: a pessoa clica numa
-  // linha e noutra sem esperar, e travar a grade inteira a cada clique faria
-  // a tela parecer lenta num gesto que é instantâneo.
+  // Células gravando agora; pode haver várias, para não travar a grade a cada clique.
   const [inFlight, setInFlight] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
@@ -62,9 +42,7 @@ export default function NotificationPreferences() {
 
   async function change(row: PreferenceRow, role: Role, enabled: boolean) {
     const key = toggleKey(row.group, role);
-    // ⚠️ OTIMISTA (D7): o interruptor vira agora. Numa grade, esperar a
-    // resposta a cada clique faria a pastilha "voltar" por um instante --
-    // e o gesto aqui é sempre uma sequência de vários.
+    // Otimista: o interruptor vira agora.
     const before = toggles;
     setToggles((current) =>
       current?.map((t) =>
@@ -73,9 +51,7 @@ export default function NotificationPreferences() {
     );
     setInFlight((s) => new Set(s).add(key));
     try {
-      // O servidor devolve a lista INTEIRA: os grupos que governam dois tipos
-      // (arquivar+desarquivar, pôr+tirar) mudam junto, e assim a tela mostra o
-      // que ficou gravado em vez de deduzir.
+      // O servidor devolve a lista inteira (grupos que governam dois tipos mudam juntos).
       const saved = await setNotificationPreference({
         type_group: row.group,
         role,
@@ -84,9 +60,7 @@ export default function NotificationPreferences() {
       setToggles(saved);
       avisar("Preferência salva.");
     } catch (e) {
-      // ⚠️ VOLTA ATRÁS E DIZ (D7): sem isto o interruptor ficaria mostrando um
-      // silêncio que o servidor não gravou, e a pessoa descobriria ao não
-      // receber -- ou ao receber -- semanas depois.
+      // Em erro, volta atrás e avisa.
       setToggles(before);
       avisar((e as ApiError).message || "Não consegui salvar a preferência.");
     } finally {
@@ -163,8 +137,7 @@ export default function NotificationPreferences() {
                     )}
                   </th>
                   {row.roles[0] === "none" ? (
-                    // Um interruptor só, no meio das três colunas: a linha não
-                    // se divide por papel (reação, pôr/tirar, e as travadas).
+                    // Um interruptor só para a linha: ela não se divide por papel.
                     <td colSpan={COLUMNS.length} className="py-2 text-center">
                       <Cell
                         row={row}
@@ -186,9 +159,7 @@ export default function NotificationPreferences() {
                             onChange={change}
                           />
                         ) : (
-                          // ⚠️ Prazo não tem coluna de seguidor (§5). Um traço,
-                          // e não um interruptor desligado: desligado diria que
-                          // ela PODE ligar, e esse aviso nunca chega por seguir.
+                          // Prazo não chega por seguir: traço, não interruptor desligado.
                           <span className="muted" aria-label="não se aplica">
                             —
                           </span>
@@ -223,8 +194,7 @@ function Cell({
   return (
     <Switch
       checked={enabled}
-      // Travado fica LIGADO e desabilitado (D6): a linha existe para mostrar
-      // que o aviso existe, e a explicação ao lado diz por que não se desliga.
+      // Travado fica ligado e desabilitado; a explicação ao lado diz por quê.
       disabled={row.locked || inFlight.has(toggleKey(row.group, role))}
       aria-label={toggleLabel(row, role)}
       aria-describedby={row.help ? `ajuda-${row.group}` : undefined}

@@ -1,33 +1,6 @@
 "use client";
-// components/Toasts.tsx
-// Avisos empilhados no canto — Spec 047, revisão de 10/09.
-//
-// ⚠️⚠️ ELES SUBSTITUEM O AVISO INLINE, que era uma linha de texto com um
-// botão "Entendi" empurrando a tela para baixo. Pedido da Camila: *"toda e
-// qualquer notificação de atualização, criação de membro, ou esses avisos que
-// aparecem na tela (…) gostaria que aparecesse como esse stacked
-// notifications"*, com o exemplo de pilha do motion.
-//
-// ⚠️ E o inline tinha um defeito real além da estética: ele MOVIA o conteúdo.
-// A pessoa clicava em "Salvar", o aviso nascia acima da tabela e tudo descia
-// uma linha — justamente enquanto ela olhava para a linha que acabou de mudar.
-// A pilha flutua; nada abaixo se move.
-//
-// ⚠️⚠️ A PILHA É "CARTAS EMPILHADAS", e não uma lista: só o aviso do topo
-// aparece inteiro, e os anteriores ficam recuados e menores atrás dele. É o
-// que mantém o canto da tela pequeno quando alguém adiciona cinco pessoas
-// seguidas -- uma lista de cinco tomaria metade da altura.
-//
-// ⚠️ `layout` do motion é o que faz o recuo ANIMAR: cada carta muda de escala
-// e de deslocamento quando outra entra, e sem `layout` elas saltariam para a
-// nova posição. É a "layout animation" da documentação que ela mandou.
-//
-// ⚠️ `aria-live="polite"` no contêiner: sem isso, quem usa leitor de tela não
-// fica sabendo de nada — o aviso é a ÚNICA confirmação de que a escrita deu
-// certo. `polite` e não `assertive` porque nenhum destes é urgente.
-//
-// ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
-// `include` do vitest.
+// Avisos flutuantes empilhados como cartas: só o do topo aparece inteiro.
+// `layout` do motion anima o recuo das cartas; `aria-live="polite"` anuncia o aviso no leitor de tela.
 
 import {
   createContext,
@@ -51,12 +24,7 @@ const VISIVEIS = 3;
 /** Quanto tempo cada aviso fica antes de sair sozinho. */
 const VIDA_MS = 5000;
 
-/**
- * A fila de avisos.
- *
- * ⚠️ `useCallback` no `avisar` porque ele entra em dependência de efeito nas
- * telas; recriado a cada render, dispararia o efeito em laço.
- */
+/** A fila de avisos. `avisar` em `useCallback`: entra em dependência de efeito nas telas. */
 export function useToasts(): {
   toasts: Toast[];
   avisar: (text: string) => void;
@@ -70,8 +38,7 @@ export function useToasts(): {
   }, []);
 
   const avisar = useCallback((text: string) => {
-    // ⚠️ O MAIS NOVO FICA NO FIM do array e no TOPO da pilha — ver o `map`
-    // invertido no componente.
+    // O mais novo fica no fim do array e no topo da pilha.
     setToasts((atuais) => [...atuais, { id: proximoId.current++, text }]);
   }, []);
 
@@ -81,13 +48,8 @@ export function useToasts(): {
 const AvisarContext = createContext<((text: string) => void) | null>(null);
 
 /**
- * A pilha UNICA do app, montada no `AppShell` (17/09).
- *
- * ⚠️ POR QUE UMA SÓ, e não uma por tela: quem avisa muitas vezes FECHA logo
- * depois -- o modal de duplicar avisa "Cópia criada" e se fecha, o detalhe
- * exclui a tarefa e some. Uma pilha dentro deles desmontaria junto com o
- * aviso. E duas pilhas vivas ao mesmo tempo (a da tela do time e a do detalhe
- * aberto por cima) se desenhariam uma sobre a outra no mesmo canto.
+ * A pilha única do app, montada no `AppShell`: quem avisa muitas vezes fecha logo
+ * depois, e uma pilha dentro dele desmontaria junto com o aviso.
  */
 export function AvisosProvider({ children }: { children: ReactNode }) {
   const { toasts, avisar, dispensar } = useToasts();
@@ -101,13 +63,7 @@ export function AvisosProvider({ children }: { children: ReactNode }) {
 
 const NAO_AVISA = () => {};
 
-/**
- * Põe um aviso na pilha do app.
- *
- * ⚠️ SEM `AvisosProvider` por cima NÃO AVISA NADA, em vez de estourar: é o
- * caso dos testes que montam um componente sozinho. Teste que afirma um aviso
- * precisa envolver o componente no provider.
- */
+/** Põe um aviso na pilha do app. Sem `AvisosProvider` por cima não avisa nada (testes precisam do provider). */
 export function useAvisar(): (text: string) => void {
   return useContext(AvisarContext) ?? NAO_AVISA;
 }
@@ -122,12 +78,9 @@ export default function Toasts({
   return (
     <div
       aria-live="polite"
-      // ⚠️ CENTRO INFERIOR, a pedido dela em 10/09. `left-1/2` +
-      // `-translate-x-1/2` porque a largura é fluida (`min(...)`): centrar com
-      // `right`/`left` fixos exigiria saber a largura de antemão.
+      // Centro inferior com `left-1/2` + `-translate-x-1/2`: a largura é fluida.
       className="pointer-events-none fixed bottom-4 left-1/2 z-[70] w-[min(420px,calc(100vw-2rem))] -translate-x-1/2"
-      // ⚠️ ALTURA FIXA no contêiner: as cartas se sobrepõem em `absolute`, e
-      // sem uma altura a caixa colapsaria para zero e nada apareceria.
+      // Altura fixa: as cartas são `absolute`, e sem ela a caixa colapsaria.
       style={{ height: 96 }}
     >
       <AnimatePresence initial={false}>
@@ -158,8 +111,7 @@ function ToastCard({
   profundidade: number;
   onDismiss: (id: number) => void;
 }) {
-  // ⚠️ SAI SOZINHO, e o temporizador é POR CARTA: um único timer na fila
-  // derrubaria o aviso mais novo junto com o mais velho.
+  // Temporizador por carta: um único na fila derrubaria o mais novo junto com o mais velho.
   useEffect(() => {
     const t = setTimeout(() => onDismiss(toast.id), VIDA_MS);
     return () => clearTimeout(t);
@@ -180,9 +132,7 @@ function ToastCard({
       style={{ zIndex: 10 - profundidade }}
       className="pointer-events-auto absolute bottom-0 left-0 right-0 flex items-center gap-2 rounded-lg border border-border bg-surface p-3 shadow-[var(--shadow)]"
     >
-      {/* ⚠️ O X OCUPA ESPAÇO À ESQUERDA TAMBÉM (um `span` vazio do mesmo
-          tamanho), senão "centralizar o texto" centra numa caixa que já perdeu
-          20px para o botão — e a frase fica visivelmente à esquerda do meio. */}
+      {/* Espaço do X à esquerda também, para o texto centrar de verdade. */}
       <span aria-hidden="true" className="w-5 shrink-0" />
       <span className="min-w-0 flex-1 text-center text-xs leading-relaxed">
         {toast.text}

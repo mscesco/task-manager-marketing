@@ -1,22 +1,12 @@
-// Gera `web/lib/emojiCatalogo.generated.ts` a partir do `emojibase-data` (pt).
-//
-// Spec 050, fatia C. Emoji livre (decisao dela) pede um seletor com o catalogo
-// inteiro, e catalogo sem categoria e sem busca em portugues nao se usa. A
-// biblioteca do BACKEND (`emoji`) valida, mas nao tem nome em portugues nem
-// grupo -- medido em 15/09. O `emojibase-data` (MIT) tem os dois.
-//
-// Uso (de `web/`):
+// Gera `web/lib/emojiCatalogo.generated.ts` a partir do `emojibase-data` (pt),
+// que tem nome em português e grupo. Uso (de `web/`):
 //
 //     node scripts/gen-emoji-catalogo.mjs
 //
-// ⚠️ O ARQUIVO E COMMITADO, e nao gerado no build: o `emojibase-data` e
-// dependencia de DESENVOLVIMENTO (so este script a le), e o `next build` nao
-// deve depender dela. Dois guardioes cobram que ele esteja em dia:
-//   - `web/lib/__tests__/emojiCatalogo.generated.test.ts` compara o arquivo
-//     com o que este script produziria;
-//   - `backend/tests/test_emoji_catalogo_front.py` passa CADA emoji pela
-//     validacao do servidor -- e o que impede o seletor de oferecer o que o
-//     PUT recusaria com 422.
+// O arquivo é commitado (o `emojibase-data` é dependência de desenvolvimento).
+// `emojiCatalogo.generated.test.ts` confere que está em dia e
+// `backend/tests/test_emoji_catalogo_front.py` passa cada emoji pela validação
+// do servidor.
 
 import { writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
@@ -32,17 +22,11 @@ export const DESTINO = join(AQUI, "..", "lib", "emojiCatalogo.generated.ts");
 const GRUPO_COMPONENTES = "component";
 
 /**
- * A forma que o SERVIDOR grava (`normalize_emoji`, fully-qualified).
- *
- * ⚠️ NAO E "TIRAR O U+FE0F", e a primeira versao desta funcao erraria nisso:
- * `👍` vem do emojibase como `👍️` (com U+FE0F a mais) e precisa perde-lo, mas
- * `#️⃣` e `🏳️‍🌈` tambem o tem e precisam MANTE-LO. Quem decide e o `type`:
+ * A forma que o servidor grava (`normalize_emoji`, fully-qualified). Quem
+ * decide o U+FE0F é o `type`:
  *
  *   type 1 (apresentacao de emoji) -> a sequencia do proprio `hexcode`;
  *   type 0 (apresentacao de texto: ❤ ☺ ©) -> o `hexcode` + U+FE0F.
- *
- * Medido em 15/09 contra a biblioteca do backend para 👍, ❤, ☺, ©, #️⃣ e a
- * bandeira com ZWJ; o guardiao do backend cobre os 1.9 mil.
  */
 export function formaCanonica({ hexcode, type }) {
   const base = hexcode

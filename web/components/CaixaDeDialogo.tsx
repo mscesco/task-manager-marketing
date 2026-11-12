@@ -1,20 +1,9 @@
 "use client";
-// components/CaixaDeDialogo.tsx
-// A moldura dos dialogos centrados: o fundo escurecido e a caixa.
-//
-// ⚠️ ERAM TRES COPIAS, E TINHAM DIVERGIDO NO DESENHO (revisao de 07/10):
-// `ConfirmarExclusaoDeQuadro`, `RevisaoDaEdicao` e `FormNovaColuna` montavam o
-// mesmo fundo e a mesma caixa a mao, e a de apagar quadro tinha nascido sem
-// borda e sem sombra, com outro raio. Uma moldura so.
-//
-// ⚠️ A REGRA DE FECHAR CONTINUA SENDO DE QUEM USA, e e diferente de proposito:
-// - `onEsc`: Esc fecha. Quem esta ocupado (salvando) passa `undefined`.
-// - `onFundo`: clicar no FUNDO fecha. Os dialogos de confirmacao destrutiva
-//   (apagar quadro, revisar colunas) NAO passam -- la so o botao e o Esc
-//   fecham, para um clique errado ao lado nao desfazer o que a pessoa leu.
-//   ⚠️ So conta o `mousedown` no proprio fundo (`target === currentTarget`):
-//   apertar dentro e soltar fora nao fecha -- selecionar texto do campo e
-//   arrastar para fora jogaria fora o que se digitou.
+// A moldura dos diálogos centrados: o fundo escurecido e a caixa.
+// - `onEsc`: Esc fecha. Quem está ocupado passa `undefined`.
+// - `onFundo`: clicar no fundo fecha. Diálogos destrutivos não passam.
+//   Só conta o `mousedown` no próprio fundo: apertar dentro e soltar fora
+//   (selecionando texto) não fecha.
 
 import type { ReactNode, Ref } from "react";
 
@@ -38,9 +27,8 @@ export default function CaixaDeDialogo({
   respiroNoTopo?: "8vh" | "12vh";
   /** `z-60`: abre por cima de outro modal (o detalhe da tarefa). Senao `z-50`. */
   acimaDeModal?: boolean;
-  /** O `mousedown` dentro da caixa nao chega ao documento. ⚠️ Para o dialogo
-   *  aberto de dentro de um painel que fecha ao "clicar fora" (o do quadro):
-   *  sem isto, clicar na caixa fecharia o painel que a abriu. */
+  /** O `mousedown` dentro da caixa não chega ao documento: sem isto, abrir de
+   *  dentro de um painel que fecha ao clicar fora fecharia esse painel. */
   isolarCliques?: boolean;
   children: ReactNode;
 }) {
@@ -67,8 +55,7 @@ export default function CaixaDeDialogo({
             onEsc();
           }
         }}
-        // A largura e o unico valor de runtime -- a excecao do estilo inline
-        // (web/AGENTS.md §11).
+        // A largura é o único valor de runtime, por isso inline.
         style={{ width: largura }}
       >
         {children}

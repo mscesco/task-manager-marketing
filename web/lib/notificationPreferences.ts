@@ -1,22 +1,13 @@
-// lib/notificationPreferences.ts
-// As regras do cartão "Notificações" do Meu perfil (Spec 054, §6.6).
-//
-// ⚠️ `lib/` DECIDE (Spec 027): quais linhas a grade tem, que colunas cada linha
-// oferece, o que cada toggle se chama e o que a ausência de resposta significa.
-// O componente (`components/NotificationPreferences.tsx`) só desenha.
-//
-// ⚠️ ESTE ARQUIVO ESPELHA O CATÁLOGO DO BACKEND
-// (`notifications/domain/preferences.py`). Os rótulos são daqui -- o servidor
-// manda `type_group`, e nunca texto de tela --, mas as CHAVES e os PAPÉIS têm
-// de casar: uma linha com chave que o servidor não conhece é um toggle que
-// devolve 422 no primeiro clique.
+// Regras do cartão "Notificações" do Meu perfil: linhas, colunas e rótulos
+// da grade. Espelha o catálogo do backend (`notifications/domain/preferences.py`):
+// chaves e papéis têm de casar, senão o toggle devolve 422.
 
 import type { NotificationToggle } from "./api";
 
-/** Os papéis da Spec 054 (D2). `none` = a linha não se divide por papel. */
+/** Os papéis. `none` = a linha não se divide por papel. */
 export type Role = "watcher" | "assignee" | "creator" | "none";
 
-/** As colunas da grade, na ordem da spec (§5). */
+/** As colunas da grade, em ordem. */
 export const COLUMNS: readonly { readonly role: Role; readonly label: string }[] = [
   { role: "watcher", label: "Seguidor" },
   { role: "assignee", label: "Responsável" },
@@ -30,7 +21,7 @@ export type PreferenceRow = {
   /** Quais colunas esta linha tem. `["none"]` = um toggle só. */
   readonly roles: readonly Role[];
   readonly locked: boolean;
-  /** Por que é travada (§5). Só nas travadas. */
+  /** Por que é travada. Só nas travadas. */
   readonly help?: string;
 };
 
@@ -40,7 +31,7 @@ export type PreferenceSection = {
 };
 
 const BY_ROLE: readonly Role[] = ["watcher", "assignee", "creator"];
-/** ⚠️ Prazo não tem coluna de seguidor: o aviso nunca chega por seguir (§5). */
+/** Prazo não tem coluna de seguidor: o aviso nunca chega por seguir. */
 const ASSIGNEE_AND_CREATOR: readonly Role[] = ["assignee", "creator"];
 const SINGLE: readonly Role[] = ["none"];
 
@@ -152,15 +143,8 @@ export function indexToggles(toggles: readonly NotificationToggle[]): ToggleMap 
   return new Map(toggles.map((t) => [toggleKey(t.type_group, t.role as Role), t]));
 }
 
-/**
- * O toggle está ligado?
- *
- * ⚠️ AUSENTE CONTA COMO LIGADO, e isso não é descuido: no servidor a ausência
- * de linha em `notification_mute` já SIGNIFICA ligado (D11). Se a resposta não
- * trouxer uma célula -- servidor mais antigo, grupo novo no front --, mostrar
- * "ligado" diz a verdade sobre o que a pessoa vai receber. Mostrar "desligado"
- * inventaria um silêncio que não existe.
- */
+/** O toggle está ligado? Ausente conta como ligado, como no servidor (sem
+ *  linha em `notification_mute` = ligado). */
 export function isEnabled(map: ToggleMap, group: string, role: Role): boolean {
   return map.get(toggleKey(group, role))?.enabled ?? true;
 }
@@ -177,10 +161,7 @@ export function summary(toggles: readonly NotificationToggle[]): string {
   return n === 1 ? "1 aviso desligado." : `${n} avisos desligados.`;
 }
 
-/**
- * O nome acessível do interruptor. É o que o leitor de tela anuncia, então
- * carrega a linha E a coluna: numa grade de 24, "Ligado" sozinho não diz nada.
- */
+/** O nome acessível do interruptor: linha e coluna, para o leitor de tela. */
 export function toggleLabel(row: PreferenceRow, role: Role): string {
   const column = COLUMNS.find((c) => c.role === role);
   return column ? `${row.label}, como ${column.label.toLowerCase()}` : row.label;

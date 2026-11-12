@@ -1,13 +1,4 @@
-"""Dominio de comentarios de task -- regras PURAS, sem DB nem ORM.
-
-Concentra o que da pra testar sem banco (Entrega 14):
-    - validacao de conteudo (strip, 1..CONTENT_MAX);
-    - regra de threading de 1 nivel (D4);
-    - autorizacao de edicao/delecao (D2/D3);
-    - mascaramento de tombstone (D5).
-
-O service so orquestra: carrega do banco e chama estas funcoes.
-"""
+"""Regras puras de comentario: conteudo, threading de 1 nivel, quem edita/apaga, tombstone."""
 
 from __future__ import annotations
 
@@ -16,17 +7,13 @@ import uuid
 
 from app.shared.exceptions.base import ValidationError
 
-#: Teto de tamanho do comentario (D8). A coluna e String sem limite no banco;
-#: o teto mora aqui, na validacao.
+#: Teto de tamanho do comentario; a coluna no banco nao tem limite.
 CONTENT_MAX = 5000
 
-#: Texto que substitui o conteudo de um comentario apagado que ainda aparece
-#: no thread por ter replicas vivas (D5).
+#: Texto que substitui o conteudo de um comentario apagado que ainda tem replicas vivas.
 TOMBSTONE_TEXT = "[comentário removido]"
 
-#: Padrao de mencao inline (Spec 019, D1): @[Nome](uuid). O nome e livre
-#: (qualquer coisa menos `]`); o id e um UUID com forma rigida. Linear e
-#: ancorado -> sem catastrophic backtracking, seguro contra content hostil.
+#: Mencao inline @[Nome](uuid). Linear, sem catastrophic backtracking.
 _MENTION_RE = re.compile(
     r"@\[[^\]]+\]\("
     r"([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
@@ -35,12 +22,7 @@ _MENTION_RE = re.compile(
 
 
 def extract_mentions(content: str) -> list[uuid.UUID]:
-    """Extrai os ids mencionados de `@[Nome](uuid)` no conteudo (Spec 019).
-
-    Pura, sem DB: dedup preservando ordem; descarta qualquer uuid que nao
-    parseie (a regex ja garante a forma, o try/except e cinto-e-suspensorio).
-    Nao valida se o id e membro de verdade -- isso e papel do service.
-    """
+    """Ids mencionados no conteudo, sem repetir e na ordem. Nao valida se e membro."""
     out: list[uuid.UUID] = []
     seen: set[uuid.UUID] = set()
     for m in _MENTION_RE.finditer(content or ""):
@@ -56,7 +38,7 @@ def extract_mentions(content: str) -> list[uuid.UUID]:
 
 def normalize_content(raw: str) -> str:
     """Aplica strip e valida o tamanho. Levanta ValidationError (422) se o
-    conteudo ficar vazio ou exceder CONTENT_MAX (D8)."""
+    conteudo ficar vazio ou exceder CONTENT_MAX."""
     content = (raw or "").strip()
     if not content:
         raise ValidationError(
@@ -77,7 +59,7 @@ def assert_reply_target(
     parent_parent_comment_id: uuid.UUID | None,
     task_id: uuid.UUID,
 ) -> None:
-    """Valida o alvo de uma replica -- threading de 1 nivel (D4).
+    """Valida o alvo de uma replica -- threading de 1 nivel.
 
     O pai (ja carregado e ATIVO pelo service) deve ser da MESMA task e ser de
     TOPO (parent_comment_id None). Replica-de-replica ou pai de outra task ->
@@ -96,7 +78,7 @@ def assert_reply_target(
 
 
 def can_edit(*, author_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
-    """So o autor edita o proprio comentario (D2). Nem moderador edita alheio."""
+    """So o autor edita o proprio comentario. Nem moderador edita alheio."""
     return author_id == actor_id
 
 
@@ -106,10 +88,10 @@ def can_delete(
     actor_id: uuid.UUID,
     actor_can_moderate: bool,
 ) -> bool:
-    """Autor apaga o proprio; moderador (task.delete) apaga de qualquer um (D3)."""
+    """Autor apaga o proprio; moderador (task.delete) apaga de qualquer um."""
     return author_id == actor_id or actor_can_moderate
 
 
 def mask_content(content: str, *, is_deleted: bool) -> str:
-    """Conteudo a exibir: o original, ou o tombstone se apagado (D5)."""
+    """Conteudo a exibir: o original, ou o tombstone se apagado."""
     return TOMBSTONE_TEXT if is_deleted else content

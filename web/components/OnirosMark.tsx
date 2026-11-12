@@ -1,6 +1,5 @@
-// O símbolo do Oniros, redesenhado do arquivo da Camila (26/10) e girado 45°
-// para virar losango. `currentColor`: quem usa decide a cor pelo `color` do
-// pai -- o original é branco, e branco fixo some no tema claro.
+// O símbolo do Oniros, girado 45° para virar losango. `currentColor`: quem usa
+// decide a cor pelo `color` do pai.
 export default function OnirosMark({ className }: { className?: string }) {
   return (
     <svg

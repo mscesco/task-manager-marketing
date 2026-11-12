@@ -1,25 +1,15 @@
-"""O ao vivo da Base (Spec 056, fatia G, §10): avisar quem esta com a base
-aberta que ela mudou.
+"""O ao vivo da Base: avisar quem esta com a base aberta que ela mudou.
 
     gravacao -> `publicar()` -> NOTIFY base_events  (dentro da transacao)
              -> o Postgres entrega no COMMIT, a todos os que escutam
-    cada worker da API -> UMA conexao com LISTEN (`LiveHub`)
+    cada worker da API -> uma conexao com LISTEN (`LiveHub`)
              -> fila de cada navegador com aquela base aberta -> SSE
 
-⚠️⚠️ POR QUE O POSTGRES, E NAO UMA FILA NA MEMORIA: a API roda com 2 workers
-(`entrypoint.sh`). A gravacao cai num e o navegador pode estar ouvindo no
-outro. O `LISTEN/NOTIFY` do proprio banco atravessa os dois sem servico novo
-(sem Redis).
+Postgres e nao fila na memoria porque a API roda com varios workers: a
+gravacao cai num e o navegador pode estar ouvindo no outro.
 
-⚠️⚠️ O AVISO NAO LEVA OS DADOS, so `{base_id, kind, actor_id}` -- quem recebe
-recarrega a base. O `NOTIFY` tem teto de 8.000 bytes por mensagem, e uma
-celula de texto pode ter 5.000 caracteres; mandar o estado novo exigiria um
-segundo caminho para o que nao cabe. Recarregar e um caminho so, e nunca fica
-pela metade. (Desvio registrado na spec §10.3.)
-
-⚠️ E SO SAI NO COMMIT: o `pg_notify` dentro da transacao e entregue quando ela
-confirma, e some se ela voltar. Ninguem e avisado de uma gravacao que nao
-aconteceu.
+O aviso nao leva os dados, so `{base_id, kind, actor_id}`, e quem recebe
+recarrega: o NOTIFY tem teto de 8.000 bytes por mensagem.
 """
 
 from __future__ import annotations
@@ -48,7 +38,7 @@ FILA_MAX = 50
 async def publicar(
     session: AsyncSession, base_id: uuid.UUID, kind: str, actor_id: uuid.UUID
 ) -> None:
-    """Avisa, NO COMMIT desta transacao, que a base mudou."""
+    """Avisa, no commit desta transacao, que a base mudou."""
     payload = json.dumps(
         {"base_id": str(base_id), "kind": kind, "actor_id": str(actor_id)}
     )
@@ -64,8 +54,8 @@ Conectar = Callable[[], Awaitable[tuple[Any, Callable[[], Awaitable[None]]]]]
 
 
 async def _conectar_pelo_pool() -> tuple[Any, Callable[[], Awaitable[None]]]:
-    """A conexao de escuta sai do MESMO pool da app (mesmo DSN, mesmo SSL),
-    e fica com ela enquanto o worker viver: UMA por worker, nao por navegador."""
+    """A conexao de escuta sai do pool da app e fica presa enquanto o worker
+    viver: uma por worker, nao por navegador."""
     from app.db.session import db_manager
 
     conexao = await db_manager.engine.connect()
@@ -109,16 +99,14 @@ class LiveHub:
             await self._soltar()
             self._pg, self._fechar = await self._conectar()
             await self._pg.add_listener(CANAL, self._ao_avisar)
-            # Caiu a conexao: devolve a vaga; o proximo `subscribe` reabre. Os
-            # canais abertos vencem em 60 s e reconectam -- e ai reabrem a escuta.
+            # Caiu a conexao: o proximo `subscribe` reabre (os canais abertos
+            # vencem em 60 s e reconectam).
             self._pg.add_termination_listener(self._caiu)
             logger.info("base.live.listening")
 
     def _caiu(self, conexao: Any) -> None:
-        """A conexao de escuta caiu. DEVOLVE a vaga do pool agora (auditoria de
-        21/10) -- antes so zerava os ponteiros, e a vaga ficava presa ate o
-        coletor passar. Captura e zera ANTES de agendar: se um `subscribe`
-        reabrir antes da tarefa rodar, ela nao pode fechar a conexao nova."""
+        """A conexao de escuta caiu: devolve a vaga do pool. Captura e zera antes
+        de agendar, para a tarefa nao fechar uma conexao nova reaberta antes dela."""
         if conexao is not self._pg:
             return
         pg, fechar = self._pg, self._fechar
@@ -149,8 +137,7 @@ class LiveHub:
         except ValueError:
             return
         for fila in self._filas.get(str(aviso.get("base_id")), ()):
-            # Fila cheia: quem nao esta lendo perde avisos -- inofensivo,
-            # porque um aviso so ja faz recarregar tudo.
+            # Fila cheia: perder aviso e inofensivo, um so ja faz recarregar tudo.
             with contextlib.suppress(asyncio.QueueFull):
                 fila.put_nowait(aviso)
 

@@ -1,12 +1,6 @@
 "use client";
-// components/PeriodPicker.tsx
-// O filtro de período da tela inicial (Spec 058, 15/10).
-//
-// Pedido dela: escolher a data e TUDO se adaptar a ela -- no estado de hoje
-// (a regra mora no servidor). Atalhos ("Esta semana", "Mês passado"…), um
-// período personalizado (de / até), e as setas ← → que andam o período
-// inteiro. Mesmo desenho do `FilterPicker`: botão arredondado, painel
-// ancorado, a escolha fecha o painel.
+// O filtro de período da tela inicial: atalhos ("Esta semana", "Mês passado"…),
+// período personalizado (de / até) e setas ← → que andam o período inteiro.
 
 import { useCallback, useState } from "react";
 import { CalendarRange, Check, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";

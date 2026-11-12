@@ -14,22 +14,9 @@ import { AvisoPublico } from "@/components/MolduraPublica";
 /**
  * Busca um formulário publicado e entrega as categorias a quem desenha.
  *
- * ⚠️⚠️ OS DOIS ERROS SÃO DIFERENTES, E ESSA DISTINÇÃO É O ASSUNTO DESTE
- * ARQUIVO. A Camila pediu "falhar visível" e escreveu um texto; ao aplicá-lo,
- * apareceu que ele descreve UM dos dois estados:
- *
- *   - **404** -- o formulário não existe, foi despublicado, apagado, ou o
- *     endereço está errado. O remédio é com quem mandou o link.
- *   - **qualquer outra falha** -- rede, servidor fora, 500. O link está CERTO,
- *     e mandar a pessoa conferir com quem enviou seria fazê-la incomodar
- *     alguém por um problema nosso.
- *
- * Um texto só para os dois casos seria mentir em metade das vezes.
- *
- * ⚠️ E NÃO HÁ RESERVA NO `solicitacaoForm.ts`. Cair no arquivo estático
- * manteria a porta de pé, e serviria a versão VELHA das perguntas sem ninguém
- * perceber -- divergência silenciosa, que é o defeito que mais dói neste
- * projeto. Decisão da Camila, 24/08.
+ * 404 (link que não serve) e as demais falhas (problema nosso, o link está
+ * certo) têm textos diferentes. Não há reserva estática: serviria perguntas
+ * desatualizadas sem ninguém perceber.
  */
 export default function CarregaFormularioPublico({
   slug,
@@ -55,10 +42,8 @@ export default function CarregaFormularioPublico({
       })
       .catch((e) => {
         if (!vivo) return;
-        // ⚠️ 404 É O ÚNICO QUE ACUSA O ENDEREÇO. O backend responde 404 para
-        // quatro situações diferentes de propósito (não existe, despublicado,
-        // apagado, de outro workspace) -- para quem está do lado de fora as
-        // quatro significam a mesma coisa: este link não serve.
+        // O backend responde 404 para não existe, despublicado, apagado e de
+        // outro workspace: para quem está fora, tudo é "este link não serve".
         setErro((e as ApiError).status === 404 ? "nao-existe" : "indisponivel");
       });
     return () => {
@@ -70,8 +55,6 @@ export default function CarregaFormularioPublico({
     return (
       <AvisoPublico estreito
         titulo="Este formulário não está disponível"
-        // O texto é o da Camila, ajustado ao tom do produto: ele fala em
-        // imperativo com "você" e não usa "lhe" nem "te" em lugar nenhum.
         texto="Ele não existe mais, ou o endereço está errado. Peça o link a quem enviou e confira se está completo."
       />
     );
@@ -80,8 +63,7 @@ export default function CarregaFormularioPublico({
     return (
       <AvisoPublico estreito
         titulo="Não consegui carregar o formulário"
-        // ⚠️ AQUI NÃO SE PEDE PARA CONFERIR O LINK: ele está certo, e o
-        // problema é nosso.
+        // Aqui não se pede para conferir o link: ele está certo.
         texto="Tente de novo em instantes. Se continuar assim, avise quem enviou este link."
       />
     );
@@ -94,9 +76,7 @@ export default function CarregaFormularioPublico({
 
   const categorias = paraCategorias(form);
   if (categorias.length === 0) {
-    // ⚠️ PUBLICADO E VAZIO NÃO É ERRO DE CARREGAMENTO -- é um formulário que
-    // ficou sem perguntas. Cair no texto de "endereço errado" mandaria a
-    // pessoa cobrar quem enviou por algo que quem MONTOU precisa resolver.
+    // Publicado e vazio não é erro de carregamento: quem resolve é quem montou.
     return (
       <AvisoPublico estreito
         titulo="Este formulário ainda não tem perguntas"

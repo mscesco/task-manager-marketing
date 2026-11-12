@@ -1,11 +1,6 @@
 /**
- * "Esta resposta ainda e a do ULTIMO pedido para esta chave?"
- *
- * Auditoria 11/11 (item 14): arrastar o mesmo card duas vezes depressa (A->B,
- * B->C) mandava dois PATCH. Se o primeiro respondesse por ultimo -- ou
- * falhasse --, a resposta ou a reversao dele punha o card de volta em B (ou
- * em A) com o servidor dizendo C. Cada pedido pega a sua vez; so a ultima
- * aplica a resposta ou desfaz.
+ * "Esta resposta ainda é a do último pedido para esta chave?" Com dois
+ * arrastes seguidos do mesmo card, só o último aplica a resposta ou desfaz.
  */
 export function criarUltimaVez() {
   const vezes = new Map<string, number>();

@@ -7,26 +7,9 @@ import { nomeConfere } from "@/lib/seletorDeQuadro";
 import { plural } from "@/lib/plural";
 
 /**
- * A confirmação de APAGAR QUADRO (Spec 036, fatia 7).
- *
- * ⚠️⚠️ **É A OPERAÇÃO MAIS DESTRUTIVA DO PRODUTO, E A ÚNICA QUE NÃO PERGUNTA O
- * DESTINO DAS TAREFAS.** Apagar coluna sempre oferece para onde elas vão, e a
- * revisão mostra a contagem — a pessoa aprendeu que apagar não perde tarefa.
- * Aqui elas somem junto. Este diálogo existe porque a expectativa que o resto
- * do produto ensinou está ERRADA neste botão.
- *
- * ⚠️ POR ISSO A CONFIRMAÇÃO É POR DIGITAÇÃO, e não um "tem certeza?". O
- * segundo é um clique a mais; o primeiro obriga a LER o nome do quadro. E é o
- * único momento em que dá para reparar que o quadro aberto não é o que se
- * pensava.
- *
- * ⚠️ E ELA SÓ FUNCIONA PORQUE O NOME É ÚNICO NO TIME (fatia 9). Com três
- * quadros "Quadro CRM Teste", digitar o nome não diz qual — a confirmação
- * viraria teatro. Foi por isso que aquela fatia veio antes desta.
- *
- * ⚠️ NÃO HÁ DESFAZER. O resgate é `backend/scripts/restaurar_quadro.sql`,
- * rodado no banco por quem tem acesso a ele. O texto diz isso, porque quem
- * está prestes a clicar precisa saber que não existe botão de voltar.
+ * A confirmação de apagar quadro: as tarefas somem junto, sem pergunta de
+ * destino e sem desfazer (o resgate é `backend/scripts/restaurar_quadro.sql`).
+ * Confirma por digitação do nome, que é único no time.
  */
 export default function ConfirmarExclusaoDeQuadro({
   nome,
@@ -37,7 +20,7 @@ export default function ConfirmarExclusaoDeQuadro({
   onCancelar,
 }: {
   nome: string;
-  /** `null` = ainda contando. ⚠️ Trava o botão: ver abaixo. */
+  /** `null` = ainda contando; trava o botão. */
   contagem: number | null;
   erro: string | null;
   ocupado: boolean;
@@ -48,23 +31,18 @@ export default function ConfirmarExclusaoDeQuadro({
   const campoRef = useRef<HTMLInputElement | null>(null);
   const caixaRef = useRef<HTMLDivElement | null>(null);
 
-  // ⚠️ O FOCO VAI PARA O CAMPO, e não para a caixa. Aqui a única coisa a fazer
-  // é digitar; quem usa teclado não pode precisar de um Tab para começar.
+  // O foco vai para o campo: a única coisa a fazer é digitar.
   useEffect(() => {
     campoRef.current?.focus();
   }, []);
 
   const confere = nomeConfere(digitado, nome);
-  // ⚠️ A CONTAGEM TRAVA O BOTÃO ENQUANTO NÃO CHEGA. Confirmar sem saber quantas
-  // tarefas vão junto é exatamente o que este diálogo existe para impedir --
-  // e um `?? 0` aqui faria a tela dizer "nenhuma tarefa" sobre um quadro cheio.
+  // Sem a contagem o botão fica travado; um `?? 0` diria "nenhuma tarefa".
   const podeConfirmar = confere && contagem !== null && !ocupado;
 
   return (
-    // ⚠️ `Esc` FECHA, e `Enter` NÃO confirma. Em todo o resto do produto Enter
-    // confirma; aqui ele é a tecla que a pessoa aperta por reflexo depois de
-    // digitar, e o custo do reflexo seria apagar as tarefas. Sem `onFundo`: em
-    // diálogo destrutivo, clicar ao lado não fecha.
+    // Esc fecha e Enter não confirma: o Enter de reflexo apagaria as tarefas.
+    // Sem `onFundo`: em diálogo destrutivo, clicar ao lado não fecha.
     <CaixaDeDialogo
       ariaLabel={`Apagar o quadro ${nome}`}
       largura={480}
@@ -75,9 +53,7 @@ export default function ConfirmarExclusaoDeQuadro({
           Apagar o quadro &quot;{nome}&quot;?
         </div>
 
-        {/* ⚠️ A CONTAGEM VEM ANTES DA CAIXA DE TEXTO, e não depois. É o número
-            que muda a decisão; embaixo do campo, ela seria lida depois de a
-            pessoa já ter digitado. */}
+        {/* A contagem vem antes do campo, para ser lida antes de digitar. */}
         <div className="muted" style={{ fontSize: 13, marginTop: 10 }}>
           {contagem === null ? (
             "Contando as tarefas…"
@@ -85,9 +61,7 @@ export default function ConfirmarExclusaoDeQuadro({
             "Este quadro não tem nenhuma tarefa."
           ) : (
             <>
-              {/* ⚠️ `plural` JÁ PÕE O NÚMERO na frente: com o número aqui
-                  também, a frase saía "As 5 5 tarefas deste quadro 5 vão
-                  ser apagadas" (revisão de 08/10). */}
+              {/* `plural` já põe o número na frente. */}
               {contagem === 1 ? "A" : "As"}{" "}
               <strong>{plural(contagem, "tarefa", "tarefas")}</strong> deste
               quadro{" "}
@@ -142,9 +116,7 @@ export default function ConfirmarExclusaoDeQuadro({
           <button className="btn btn-ghost" onClick={onCancelar} disabled={ocupado}>
             Cancelar
           </button>
-          {/* ⚠️ VERMELHO SEMPRE. Não há caso em que este botão seja a ação
-              segura -- diferente da revisão de colunas, onde o vermelho só
-              aparece quando há exclusão. */}
+          {/* Sempre vermelho: nunca é a ação segura. */}
           <button
             className="btn btn-danger"
             onClick={onConfirmar}

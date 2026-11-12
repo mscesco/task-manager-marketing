@@ -1,12 +1,6 @@
-// lib/timesDoFormulario.ts
-// Em quais times a pessoa pode criar formulario de solicitacao, e qual vem
-// pre-escolhido (08/10).
-//
-// ⚠️ A LISTA VEM DO SERVIDOR (`can_create_form`, a mesma pergunta do POST).
-// Ate 08/10 o campo "Time responsavel" listava TODO time do workspace: o
-// gestor do Marketing via o Comercial, escolhia, e ouvia 403 ao salvar.
-// Subtime entra -- decisao dela: o formulario de um subtime manda as
-// solicitacoes para a fila dele.
+// Em quais times a pessoa pode criar formulário de solicitação, e qual vem
+// pré-escolhido. A lista vem do servidor (`can_create_form`, a mesma pergunta
+// do POST); subtime entra.
 
 import type { Team } from "./api";
 
@@ -16,15 +10,9 @@ export function timesQueCriamFormulario(times: readonly Team[]): Team[] {
 }
 
 /**
- * O time que o campo traz pre-escolhido: o ATIVO, se a pessoa cria nele; senao
- * a UNICA RAIZ em que ela cria (a reserva de sempre); senao nenhum (`""`) -- e
- * o campo pede a escolha.
- *
- * ⚠️ A RESERVA E A RAIZ, e nao "o unico time": com subtime na lista, quase
- * nunca ha um unico, e o campo viria sempre vazio.
- * ⚠️ NUNCA "o primeiro da lista": com varias raizes, isso era o sorteio que a
- * Spec 046 proibiu -- o formulario nasceria no Comercial enquanto a pessoa
- * olha o Marketing.
+ * O time pré-escolhido: o ativo, se a pessoa cria nele; senão a única raiz em
+ * que ela cria; senão nenhum (`""`). Nunca "o primeiro da lista", que com
+ * várias raízes seria um sorteio.
  */
 export function timePadraoDoFormulario(times: readonly Team[], ativo: string | null): string {
   const podem = timesQueCriamFormulario(times);

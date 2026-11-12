@@ -1,27 +1,15 @@
 # =====================================================================
-# scripts/validate_baseline.ps1   (Entrega 8 / ADR 0022 -- Portao 1)
+# scripts/validate_baseline.ps1
 # ---------------------------------------------------------------------
-# GUARDIAO DE REGRESSAO DE SCHEMA (permanente).
+# Recria o db-test vazio, roda `alembic upgrade head` e compara o pg_dump
+# com a referencia commitada schema/baseline_reference.sql. Mudanca de schema
+# intencional: regenere com -Update e commite.
 #
-# Recria o db-test do compose do ZERO (banco vazio), roda
-# `alembic upgrade head` (baseline 0001 + migrations futuras), faz
-# pg_dump e compara contra a REFERENCIA VERSIONADA
-# schema/baseline_reference.sql.
-#
-# A referencia NAO e o dump da producao (esse morre, ADR 0022): e um
-# contrato gerado das proprias migrations e commitado. Quando uma entrega
-# muda o schema DE PROPOSITO, o diff acusa -- voce regenera com -Update e
-# commita. Um harness que nunca falha nao guarda nada.
-#
-# MODOS:
-#   .\scripts\validate_baseline.ps1            # valida (verde/vermelho)
+#   .\scripts\validate_baseline.ps1            # valida
 #   .\scripts\validate_baseline.ps1 -Update    # regenera a referencia
 #
-# NOTA DE ROBUSTEZ: o script shell interno e passado pro container em
-# BASE64 (token unico, sem espacos/pipes/aspas) e decodificado la dentro.
-# Isso evita o word-splitting do repasse PowerShell -> docker -> sh, que
-# quebrava o comando no '|' do regex. O conteudo tambem tem o CR removido
-# antes de codificar, imune ao CRLF do checkout no Windows.
+# O script shell vai ao container em base64, sem CR, para escapar do
+# word-splitting PowerShell -> docker -> sh.
 # =====================================================================
 param([switch]$Update)
 

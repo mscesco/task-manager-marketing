@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-// Só pelo nome da aba; o nome da base, quem põe é o `useDocumentTitle` da
-// página, depois de carregar (ver `app/tarefa/[id]/layout.tsx`).
+// Só para dar nome à aba: a página é de cliente e não pode exportar `metadata`.
+// Nome genérico; o específico a página põe com `useDocumentTitle` depois de carregar.
 export const metadata: Metadata = { title: "Base" };
 
 export default function Layout({ children }: { children: ReactNode }) {

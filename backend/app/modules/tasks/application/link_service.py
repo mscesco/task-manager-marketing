@@ -1,17 +1,7 @@
-"""Links com nome de projeto e de tarefa. Spec 052, fatia B.
+"""Links com nome de projeto e de tarefa.
 
-Casos de uso:
-    LinkService.list_task_links / replace_task_links
-    LinkService.list_project_links / replace_project_links
-
-⚠️⚠️ SEM VERBO NOVO, e e decisao da spec (§4.2): quem enxerga o item le os
-links dele; quem EDITA o item edita os links. As perguntas sao as mesmas das
-escritas do item -- tarefa: lente (404), editavel e `task.update` no time dela
-(403); projeto: lente (404) e `project.update` no time dele (403).
-
-⚠️ A VALIDACAO MORA AQUI, e nao so na tela: a url precisa comecar com `http://`
-ou `https://`. E o que impede `javascript:` e `data:` de virarem link clicavel
-para outra pessoa -- a tela ajuda, o servidor garante.
+Quem enxerga o item le os links; quem edita o item edita os links (sem verbo proprio).
+A url precisa comecar com `http://` ou `https://`: barra `javascript:` e `data:`.
 """
 
 from __future__ import annotations
@@ -35,7 +25,7 @@ from app.shared.exceptions.base import AuthorizationError, ValidationError
 
 logger = get_logger(__name__)
 
-#: Teto da lista (§4.2): acima disso deixa de ser "os links principais".
+#: Teto da lista: acima disso deixa de ser "os links principais".
 MAX_LINKS = 20
 TITULO_MAXIMO = 120
 URL_MAXIMA = 2048
@@ -96,8 +86,7 @@ class LinkService:
         task = await self._tasks.get_by_id_or_raise(task_id)
         await self._guards.assert_visible(task)
         await self._guards.assert_editable(task)
-        # ⚠️ O verbo no time da tarefa, como toda escrita desde a Spec 051:
-        # a lente sozinha deixaria quem esta em duas arvores editar la.
+        # O verbo no time da tarefa: a lente sozinha deixaria quem esta em duas arvores editar.
         if not require_tenant().has_permission_in("task.update", task.team_id):
             raise AuthorizationError("Você não edita tarefas deste time.")
         links = validar_links(itens)

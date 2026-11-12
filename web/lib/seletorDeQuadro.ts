@@ -1,40 +1,21 @@
 /**
- * Spec 036, fatia 5b-6 -- o que o seletor de quadro mostra, e quem pode o que.
+ * O que o seletor de quadro mostra e quem pode o quê. Não é segurança: o
+ * backend recusa de verdade; aqui só se evita oferecer o botão que daria 403.
  *
- * FRONTEIRA (Spec 027): isto e DECISAO, entao mora em `lib/` -- funcao pura,
- * sem React, testavel. A tela desenha; nao decide. Mesmo remedio de
- * `lib/permissoesMembros.ts`, e pelo mesmo motivo: foi espalhar maquina de
- * estado dentro de componente grande que causou o bug do modal.
- *
- * ⚠️ ESTE ARQUIVO NAO E SEGURANCA. O backend trava de verdade
- * (`BoardService._assert_pode_gerir` e `_assert_quadro_editavel`). Aqui so
- * evitamos oferecer botao que o servidor vai recusar com 403 ou 422 -- se
- * divergir, o usuario ve erro em vez de brecha. Ao mudar a regra no backend,
- * mudar aqui junto.
- *
- * ⚠️ A LENTE NAO E UM QUADRO, E ESSA E A DISTINCAO QUE O ARQUIVO INTEIRO
- * EXISTE PARA MANTER. `/quadro/[teamId]` mostra o espelho do Quadro geral
- * filtrado por pessoa (ADR 0034) -- nao ha registro no banco, nao ha
- * `board_id`, e nao ha o que renomear. Ela aparece no MESMO seletor que os
- * quadros avulsos porque para quem usa sao dois lugares onde a tarefa pode
- * estar; mas so um dos dois tem afordancia de editar.
+ * A lente (`/quadro/[teamId]`) não é um quadro: é o espelho do Quadro geral
+ * filtrado, sem registro no banco nem `board_id`.
  */
 
 import type { Quadro } from "./api";
 import { alcancePor, type Alcance, type AtorMinimo } from "./alcance";
 import type { Permission } from "./permissions.generated";
 
-// O tipo e a derivacao moram em `lib/alcance.ts` desde 07/10 (eram copiados
-// em `lib/permissoesMembros.ts`).
 export type { AtorMinimo } from "./alcance";
 
-/** O que o ator alcanca na gestao de quadros. ⚠️ "amplo" nao e "pode tudo":
- *  as colunas do Quadro geral continuam fora (fatia 5c), e a recusa e do
- *  backend. */
+/** O que o ator alcança na gestão de quadros. "amplo" não inclui as colunas
+ *  do Quadro geral. */
 export type AlcanceDeQuadro = Alcance;
 
-/** O alcance na gestao de QUADROS (Spec 049, fatia A: os verbos eram
- *  `board.manage.root` e `board.manage.subteam`). */
 export function alcanceDeQuadro(me: AtorMinimo | null | undefined): AlcanceDeQuadro {
   return alcancePor(me, "board.update.root", "board.update");
 }
@@ -49,97 +30,38 @@ export function podeGerirQuadrosDe(
   return false;
 }
 
-/**
- * Uma opcao do seletor.
- *
- * ⚠️ `id: null` E A LENTE, e nao "ainda nao carregou". A lente nao tem
- * registro no banco; usar um id falso ("lente", "") a faria parecer um quadro
- * para qualquer codigo que compare ids, e o primeiro `find` do proximo mes
- * devolveria um objeto que nao existe.
- */
-/**
- * Quem edita as colunas do QUADRO GERAL (`board.manage.root`).
- *
- * ⚠️ EXISTE PARA A REGRA TER UM LUGAR SO. A tela `/quadro` precisava dela em
- * 17/08, quando o lapis do Quadro geral foi ligado, e a alternativa era
- * `alcance.tipo === "amplo"` escrito la dentro -- uma segunda definicao da
- * mesma coisa, que diverge da primeira sem nada ficar vermelho.
- *
- * ⚠️ NAO E `podeGerirQuadrosDe(alcance, idDaRaiz)`. Aquela responde "pode
- * gerir os quadros DO TIME X" e exige o id da raiz, que a tela `/quadro` nao
- * tem sem uma requisicao a mais. Esta responde a pergunta da raiz direto, e as
- * duas concordam por construcao: `board.manage.root` esta em ADMIN e MANAGER
- * (que e o `tipo: "amplo"` de `alcanceDeQuadro`) e nao no SUPERVISOR, e
- * MANAGER so existe na raiz (Spec 024).
- *
- * ⚠️ NAO E SEGURANCA. O backend recusa com 403; isto so evita oferecer um
- * botao que nao funcionaria.
- */
-// `nomeConfere` mora em `lib/confirmarNome.ts` desde 07/10 (era copiada na
-// Base, e a copia aceitava nome vazio). Reexportada para quem ja a importa daqui.
 export { nomeConfere } from "./confirmarNome";
 
+/** Quem edita o Quadro geral; não pede o id da raiz, que a tela `/quadro` não tem. */
 export function podeGerirQuadroDaRaiz(alcance: AlcanceDeQuadro): boolean {
   return alcance.tipo === "amplo";
 }
 
+/** Uma opção do seletor. `id: null` é a lente, não "ainda não carregou". */
 export type OpcaoDeQuadro = {
   readonly id: string | null;
   readonly nome: string;
-  /** Frase fixa, so na lente. */
+  /** Frase fixa, só na lente. */
   readonly descricao?: string;
-  /**
-   * ⚠️ AUSENTE, E NAO DESABILITADA (ADR 0034 item 2). Quando `false`, a tela
-   * NAO desenha o botao de renomear -- nao desenha desabilitado. Afordancia
-   * que nao funciona e afordancia em que alguem clica, e depois pergunta por
-   * que nao aconteceu nada.
-   */
+  /** `false` = a tela não desenha o botão (ausente, não desabilitado). */
   readonly podeRenomear: boolean;
-  /**
-   * ⚠️ AUSENTE, E NAO DESABILITADA, pela mesma razao de `podeRenomear` -- e
-   * aqui a razao pesa mais: apagar quadro apaga as tarefas dentro, e e a
-   * unica operacao do produto que nao pergunta o destino delas.
-   *
-   * ⚠️ `false` NA LENTE SEMPRE (nao ha registro para apagar) e no QUADRO
-   * PADRAO -- que nem chega a esta lista, porque `opcoesDoSeletor` filtra
-   * `!q.is_default`. O backend recusa com `quadro_padrao_nao_apagavel`; isto
-   * so evita oferecer.
-   */
+  /** `false` = ausente. Apagar quadro apaga as tarefas dentro. */
   readonly podeApagar: boolean;
 };
 
-/** A descricao fixa da lente (decisao de 11/08). */
 export const DESCRICAO_DA_LENTE = "espelho do quadro geral";
 
 /**
- * As opcoes do seletor, na ordem em que a tela desenha.
- *
- * A lente vem SEMPRE primeiro e SEMPRE existe -- ela e o que
- * `/quadro/[teamId]` mostrava antes desta fatia, e continua sendo o padrao de
- * quem abre a tela.
- *
- * ⚠️ FILTRA POR `team_id`, e o filtro nao e cosmetico. `GET /boards` devolve
- * todo quadro que a pessoa ALCANCA -- para um supervisor isso inclui o Quadro
- * geral da raiz e, para um ADMIN, os quadros de todos os subtimes. Sem o
- * filtro, o seletor do time A listaria o quadro do time B, e criar tarefa ali
- * a mandaria para um quadro que ninguem daquele time ve.
- *
- * ⚠️ O QUADRO PADRAO NUNCA ENTRA. Ele e o Quadro geral, que ja esta
- * representado pela LENTE -- lista-lo de novo poria a mesma coisa duas vezes
- * no mesmo menu, uma delas com afordancia de renomear que a outra nao tem.
- *
- * ⚠️ ORDEM POR NOME, e nao pela ordem que a API devolveu. `GET /boards` nao
- * promete ordem; sem isto o menu se reordenaria sozinho entre dois
- * carregamentos, e o item que a pessoa ia clicar mudaria de lugar.
+ * As opções do seletor de um subtime: a lente primeiro, depois os quadros
+ * avulsos do time por nome. Filtra por `team_id` porque `GET /boards` devolve
+ * tudo que a pessoa alcança; o quadro padrão fica de fora porque a lente já o
+ * representa.
  */
 export function opcoesDoSeletor(
   quadros: readonly Quadro[],
   teamId: string,
   podeGerir: boolean,
-  /**
-   * ⚠️ SEPARADO DE `podeGerir` desde a Spec 049, fatia D: o GESTOR renomeia
-   * quadro e NÃO apaga. Quem calcula é `podeApagarQuadros`, na tela.
-   */
+  /** Separado de `podeGerir`: o gestor renomeia e não apaga. */
   podeApagar: boolean,
 ): OpcaoDeQuadro[] {
   const avulsos = quadros
@@ -152,11 +74,8 @@ export function opcoesDoSeletor(
       id: null,
       nome: "Lente do time",
       descricao: DESCRICAO_DA_LENTE,
-      // ⚠️ SEMPRE `false`, inclusive para ADMIN. Nao ha o que renomear: a
-      // lente nao existe como registro.
+      // A lente não existe como registro: nada a renomear nem apagar.
       podeRenomear: false,
-      // ⚠️ E NEM APAGAR, pelo mesmo motivo -- e o Quadro geral tambem nao
-      // aparece aqui: o filtro acima e `!q.is_default`.
       podeApagar: false,
     },
     ...avulsos.map((q) => ({
@@ -169,16 +88,9 @@ export function opcoesDoSeletor(
 }
 
 /**
- * Pode apagar quadro AVULSO neste nivel? (Spec 049, fatia D)
- *
- * ⚠️ UM VERBO POR NIVEL, igual ao backend: quadro de time RAIZ cobra
- * `board.delete.root`, de subtime cobra `board.delete`. O GESTOR tem os dois
- * de editar e nenhum dos dois de apagar -- sem esta funcao, o botao aparecia
- * para ele junto com o de renomear.
- *
- * ⚠️ NAO SUBSTITUI `podeGerirQuadrosDe`: esta pergunta "o que", aquela
- * "onde". A tela combina as duas (`&&`), porque ter `board.delete` nao da ao
- * supervisor o quadro de outro subtime.
+ * Pode apagar quadro avulso neste nível (`board.delete.root` na raiz,
+ * `board.delete` no subtime). A tela combina com `podeGerirQuadrosDe`, que
+ * responde "onde".
  */
 export function podeApagarQuadros(
   permissoes: readonly Permission[],
@@ -187,40 +99,19 @@ export function podeApagarQuadros(
   return permissoes.includes(ehRaiz ? "board.delete.root" : "board.delete");
 }
 
-/**
- * Pode apagar COLUNA? (Spec 049, fatia D)
- *
- * ⚠️ O GESTOR EDITA COLUNA E NAO APAGA. Sem esta pergunta o modo de edicao
- * oferecia o "x" junto do renomear, e o lote inteiro voltava 403 no Concluir.
- * Como em `podeApagarQuadros`, a tela combina com `podeGerirQuadrosDe`.
- */
+/** Pode apagar coluna. A tela combina com `podeGerirQuadrosDe`. */
 export function podeApagarColunas(permissoes: readonly Permission[]): boolean {
   return permissoes.includes("column.delete");
 }
 
 /**
- * As opcoes do seletor DA RAIZ (Spec 036, fatia 5c).
- *
- * ⚠️ NAO E O `opcoesDoSeletor` COM OUTRO `teamId`, E A DIFERENCA E DE MODELO.
- * Na tela de um subtime, o primeiro item e a LENTE -- que nao existe no banco,
- * e por isso o `opcoesDoSeletor` filtra `!q.is_default`: o Quadro geral ja esta
- * representado por ela. **Na raiz nao ha lente.** O que a lente espelha E o
- * Quadro geral, e na tela dele a coisa e ela mesma.
- *
- * ⚠️ LOGO O PRIMEIRO ITEM E O QUADRO GERAL, PELO NOME DELE, e com `id`
- * de verdade -- nao `null`. Reaproveitar o `id: null` da lente aqui faria a
- * tela do Quadro geral se comportar como espelho de si mesma, e o
- * `resolverQuadroPedido` o recusaria como `is_default`.
- *
- * ⚠️ E ELE NUNCA PODE SER APAGADO (`quadro_padrao_nao_apagavel`), nem quando
- * quem olha e ADMIN. Renomear PODE -- `board_service.py` diz "O QUADRO GERAL
- * PODE SER RENOMEADO", e ate a fatia 5c isso nao tinha caminho de tela.
+ * As opções do seletor da raiz. Na raiz não há lente: o primeiro item é o
+ * próprio Quadro geral, com `id` de verdade, renomeável e nunca apagável.
  */
 export function opcoesDoSeletorDaRaiz(
   quadros: readonly Quadro[],
   rootTeamId: string,
   podeGerir: boolean,
-  /** Ver `opcoesDoSeletor` -- separado de `podeGerir` desde a fatia D. */
   podeApagar: boolean,
 ): OpcaoDeQuadro[] {
   const daRaiz = quadros.filter((q) => q.team_id === rootTeamId);
@@ -237,9 +128,6 @@ export function opcoesDoSeletorDaRaiz(
             id: geral.id,
             nome: geral.name,
             podeRenomear: podeGerir,
-            // ⚠️ FALSO SEMPRE. O backend recusa com `quadro_padrao_nao_apagavel`,
-            // e a ADR 0034 item 2 manda a afordancia ser AUSENTE, nao
-            // desabilitada.
             podeApagar: false,
           },
         ]
@@ -253,14 +141,7 @@ export function opcoesDoSeletorDaRaiz(
   ];
 }
 
-/**
- * A opcao que a tela desenha, dado o id selecionado.
- *
- * ⚠️ CAI NA LENTE QUANDO O ID NAO EXISTE MAIS, e em silencio de proposito. O
- * quadro pode ter sido apagado por outra pessoa, ou o id pode ter vindo de um
- * link velho. Mostrar um erro para quem so abriu a tela seria pior que mostrar
- * o lugar padrao dela.
- */
+/** A opção desenhada; cai na lente, em silêncio, se o id não existe mais. */
 export function opcaoSelecionada(
   opcoes: readonly OpcaoDeQuadro[],
   idSelecionado: string | null,
@@ -268,82 +149,27 @@ export function opcaoSelecionada(
   return opcoes.find((o) => o.id === idSelecionado) ?? opcoes[0];
 }
 
-/**
- * Por que o `?quadro=` da URL nao virou o quadro desenhado (Spec 036, fatia 11).
- *
- * ⚠️ `null` = NAO HA O QUE AVISAR. Cobre os dois casos silenciosos legitimos:
- * nao havia `?quadro=` nenhum, e o pedido foi ACEITO.
- */
+/** Por que o `?quadro=` da URL não virou o quadro desenhado. */
 export type MotivoDaQueda =
-  /**
-   * O id nao esta na lista que a pessoa alcanca.
-   *
-   * ⚠️ TRES CAUSAS INDISTINGUIVEIS DAQUI, e juntar as tres e a decisao: o
-   * quadro foi APAGADO por outra pessoa, o id nunca existiu (link velho, texto
-   * digitado na mao), ou ele existe e esta fora do alcance de quem pergunta.
-   * A lista de quadros nao sabe diferenciar -- e, para quem esta olhando, a
-   * acao e a mesma nos tres. Inventar tres mensagens seria fingir uma precisao
-   * que o dado nao tem.
-   */
+  /** Apagado, inexistente ou fora do alcance: daqui não dá para distinguir. */
   | "fora-de-alcance"
-  /**
-   * O quadro existe e a pessoa alcanca, mas ele e de OUTRO time.
-   *
-   * ⚠️ ESTE MERECE MENSAGEM PROPRIA porque tem conserto: a pessoa esta na
-   * pagina errada, e nao diante de algo que sumiu. Acontece com link colado
-   * entre paginas de times diferentes.
-   */
+  /** O quadro é de outro time (link colado da página errada). */
   | "outro-time"
-  /**
-   * O id aponta para o quadro PADRAO (o Quadro geral).
-   *
-   * ⚠️ Ele nunca entra no seletor (`opcoesDoSeletor` filtra `!q.is_default`),
-   * porque quem o representa nesta tela e a LENTE. Pedir por ele nao e erro --
-   * e pedir pelo lugar onde a pessoa ja esta.
-   */
+  /** É o quadro padrão, que nesta tela a lente representa. */
   | "e-o-quadro-geral";
 
 export type QuadroPedido = {
   /** O id a desenhar, ou `null` para a lente. */
   readonly id: string | null;
-  /** `null` = nada a dizer. Ver `MotivoDaQueda`. */
+  /** `null` = nada a dizer. */
   readonly motivo: MotivoDaQueda | null;
 };
 
 /**
- * Valida o `?quadro=` da URL contra os quadros carregados, e DIZ POR QUE
- * quando o pedido nao vira o quadro desenhado (fatia 11). O `id` devolvido e o
- * que a tela deve desenhar, ou `null` para a lente.
- *
- * ⚠️ POR QUE A URL, E NAO ESTADO DE COMPONENTE (13/08). Ate aqui a escolha do
- * quadro vivia num `useState` da pagina: F5 voltava para a lente, o link
- * mandado para um colega abria a lente, e o botao Voltar do navegador saia da
- * pagina do time em vez de desfazer a troca. E havia um efeito pior que os
- * tres: depois de criar uma tarefa no quadro avulso, um F5 devolvia a pessoa
- * para a lente -- onde a tarefa NAO aparece, porque a lente e espelho do
- * Quadro geral. O sintoma ficava identico ao do `board_id` que faltava no
- * corpo do `POST /tasks`, com causa completamente diferente.
- *
- * ⚠️ CONFERE O **TIME** TAMBEM, e nao so a existencia. `listBoards` devolve
- * tudo que a pessoa alcanca, inclusive quadros de outros times. Sem esta
- * parte, `/quadro/{timeA}?quadro={quadroDoTimeB}` desenharia o quadro de B sob
- * a pagina de A -- e o seletor, que filtra por time, nao teria aba marcada:
- * corpo mostrando um quadro, cabecalho dizendo "Lente do time".
- *
- * ⚠️ ATE A FATIA 7 A QUEDA ERA MUDA, E ERA CERTO ASSIM: link velho ou id
- * digitado na mao nao merecem erro na cara de quem so abriu a tela. **A fatia
- * 7 mudou o mundo**: agora uma pessoa APAGA o quadro que a outra tem aberto,
- * e a tela da segunda troca de lugar sozinha. Silencio, ali, e indistinguivel
- * de defeito.
- *
- * ⚠️ E O CASO DEIXOU DE SER HIPOTETICO EM 18/08: existe quadro avulso em
- * producao, e um ja foi apagado ("Cobertura e captacoes", consulta 5).
- *
- * ⚠️ `quadros === null` NAO PRODUZ MOTIVO, e essa e a linha mais importante
- * desta funcao. `null` e "a lista ainda nao chegou" -- avisar ali poria "este
- * quadro nao esta aqui" na tela de TODO carregamento, por um instante, antes
- * de o quadro aparecer normalmente. O aviso piscaria em quem nao tem problema
- * nenhum.
+ * Valida o `?quadro=` da URL contra os quadros carregados e diz por que caiu.
+ * Confere também o time, porque `listBoards` traz quadros de outros times.
+ * `quadros === null` (ainda carregando) não produz motivo: senão o aviso
+ * piscaria em todo carregamento.
  */
 export function resolverQuadroPedido(
   parametro: string | null | undefined,
@@ -351,7 +177,6 @@ export function resolverQuadroPedido(
   teamId: string,
 ): QuadroPedido {
   if (!parametro) return { id: null, motivo: null };
-  // ⚠️ Ainda carregando: devolve o pedido SEM conferir e SEM motivo. Ver acima.
   if (quadros === null) return { id: parametro, motivo: null };
 
   const achado = quadros.find((q) => q.id === parametro);
@@ -361,13 +186,6 @@ export function resolverQuadroPedido(
   return { id: parametro, motivo: null };
 }
 
-/**
- * O texto que a tela mostra para cada motivo.
- *
- * ⚠️ MORA EM `lib/`, e nao no componente, pelo mesmo motivo do resto deste
- * arquivo: e decisao de produto (o que a pessoa le), e o `include` do vitest
- * so alcanca `lib/**` e `components/**`.
- */
 export const TEXTO_DA_QUEDA: Record<MotivoDaQueda, string> = {
   "fora-de-alcance":
     "O quadro que você pediu não está mais aqui — ele pode ter sido apagado, " +
@@ -378,28 +196,15 @@ export const TEXTO_DA_QUEDA: Record<MotivoDaQueda, string> = {
     "Esse é o Quadro geral, e a lente do time já é o espelho dele.",
 };
 
-/**
- * O endereco de uma escolha do seletor. `null` = lente.
- *
- * ⚠️ MORA AQUI, e nao na pagina, para o teste alcancar. O `include` do
- * `vitest.config.ts` e so `lib/**` e `components/**`: qualquer regra escrita
- * dentro de `app/` nasce sem guardiao nenhum.
- */
+/** O endereço de uma escolha do seletor. `null` = lente. */
 export function urlDoQuadro(teamId: string, boardId: string | null): string {
   const base = `/quadro/${teamId}`;
   return boardId ? `${base}?quadro=${encodeURIComponent(boardId)}` : base;
 }
 
 /**
- * Valida o nome de um quadro ANTES de mandar para a API.
- *
- * Devolve o nome limpo, ou `null` quando nao serve.
- *
- * ⚠️ ESPELHA `BoardService._nome_valido` (255, nao-vazio depois do `trim`), e
- * a duplicacao e o preco de nao mandar uma requisicao que ja se sabe que volta
- * 422. ⚠️ COLUNA TEM OUTRO TETO (120) -- sao duas regras, e reaproveitar esta
- * para coluna deixaria passar um nome que o Postgres recusa com
- * `StringDataRightTruncation`, que sai como 500.
+ * Valida o nome de um quadro antes da API; devolve o nome limpo ou `null`.
+ * Espelha `BoardService._nome_valido` (255). Coluna tem outro teto (120).
  */
 export function nomeDeQuadroValido(nome: string): string | null {
   const limpo = nome.trim();

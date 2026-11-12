@@ -1,28 +1,13 @@
 "use client";
-// components/EditorDeDescricao.tsx
-// O campo de descrição que já mostra o texto formatado (Spec 052, fatia E).
-//
-// ⚠️⚠️ SUBSTITUI O DA FATIA C. Aquele era texto com asteriscos, barra e aba
-// "Visualizar"; ela usou e pediu o jeito do Trello (16/09): *"gostaria que
-// ficasse como veríamos mesmo e só formatar caso cole algo em md (...) hífen
-// espaço gera a lista, número e ponto e espaço também lista numérica (...) não
-// gostei dos asteriscos e afins"*.
-//
-// Então aqui:
-//   - escreve-se e VÊ-SE formatado; `- `, `1. `, `## `, `**x**` formatam ao
-//     digitar (regras do Tiptap);
-//   - Ctrl+B, Ctrl+I e Ctrl+K (link), e uma barra pequena com os mesmos;
-//   - colar HTML (Docs, Trello, página) já entra formatado; colar texto que
-//     PARECE Markdown também (`colarComoMarkdown`); o resto entra como texto;
+// O campo de descrição que já mostra o texto formatado (Tiptap):
+//   - `- `, `1. `, `## `, `**x**` formatam ao digitar;
+//   - Ctrl+B, Ctrl+I e Ctrl+K (link), e uma barra com os mesmos;
+//   - colar HTML entra formatado; colar texto que parece Markdown também
+//     (`colarComoMarkdown`); o resto entra como texto;
 //   - Enter abre parágrafo, Shift+Enter quebra a linha.
-//
-// ⚠️ A INTERFACE CONTINUA SENDO MARKDOWN: `valor` e `onChange` levam o texto
-// guardado. O `TextoFormatado` desenha igual, e não há migração.
-//
-// ⚠️ `onChange` SÓ É CHAMADO QUANDO A PESSOA EDITA. O editor reescreve o texto
-// ao lê-lo (`[x]` vira `\[x\]`, `1)` vira `1.` -- medido em 16/09), e se
-// abrir-e-fechar emitisse essa versão, clicar fora de uma descrição intocada a
-// salvaria reescrita.
+// `valor` e `onChange` são Markdown. `onChange` só dispara quando a pessoa
+// edita: o editor reescreve o texto ao lê-lo, e emitir isso salvaria uma
+// descrição intocada reescrita.
 
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
@@ -53,9 +38,7 @@ const BOTOES: Botao[] = [
     fazer: (e) => e.chain().focus().toggleItalic().run(),
   },
   {
-    // ⚠️ "Cabeçalho", e não "Título": com "Título", o `getByLabelText(/Título/)`
-    // dos testes do modal achava dois campos -- e um leitor de tela também
-    // confundiria com o título da tarefa (fatia C).
+    // "Cabeçalho", não "Título": confundiria com o título da tarefa.
     rotulo: "Cabeçalho",
     icone: <Heading2 size={15} aria-hidden />,
     ativo: (e) => e.isActive("heading"),
@@ -110,14 +93,12 @@ export default function EditorDeDescricao({
   const editorRef = useRef<Editor | null>(null);
 
   const editor = useEditor({
-    // ⚠️ `false` no Next: montar no servidor quebraria a hidratação.
+    // `false` no Next: montar no servidor quebraria a hidratação.
     immediatelyRender: false,
     // A barra mostra negrito/lista ATIVOS conforme o cursor anda.
     shouldRerenderOnTransaction: true,
-    // ⚠️ SEM AS REGRAS DE COLAR do Tiptap: com elas, colar "2 * 3 * 4" virava
-    // itálico no " 3 " (medido em 16/09). Colar Markdown continua formatando --
-    // quem decide é o `handlePaste` abaixo, com `colarComoMarkdown` --, e colar
-    // HTML e link também (não dependem dessas regras).
+    // Sem as regras de colar do Tiptap: "2 * 3 * 4" virava itálico. Quem decide
+    // o colar é o `handlePaste` abaixo.
     enablePasteRules: false,
     editable: !desabilitado,
     extensions: [...extensoesDaDescricao(), Placeholder.configure({ placeholder })],
@@ -133,17 +114,15 @@ export default function EditorDeDescricao({
       },
       handleKeyDown: (_view, e) => {
         if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
-          // ⚠️ Ctrl+K no navegador vai para a barra de busca.
+          // Ctrl+K no navegador vai para a barra de busca.
           e.preventDefault();
           abrirLink();
           return true;
         }
         return false;
       },
-      // ⚠️ COLAR: quem decide é `colarComoMarkdown` (lib). HTML com formatação
-      // de verdade fica com o editor; texto que parece Markdown -- mesmo vindo
-      // do VS Code com um HTML "vazio" ao lado -- é lido como Markdown; o resto
-      // entra como texto (`2 * 3` colado não vira itálico).
+      // HTML com formatação fica com o editor; texto que parece Markdown (mesmo
+      // com um HTML "vazio" ao lado, como no VS Code) é lido como Markdown.
       handlePaste: (_view, e) => {
         const dados = e.clipboardData;
         const ed = editorRef.current;
@@ -174,9 +153,7 @@ export default function EditorDeDescricao({
   }, [editor, valor]);
 
   useEffect(() => {
-    // ⚠️ `false` NO SEGUNDO ARGUMENTO: por padrão `setEditable` emite "update"
-    // -- medido em 16/09, era o `onChange` que chegava ao abrir sem ninguém
-    // mexer, e fazia clicar fora salvar a descrição reescrita pelo editor.
+    // `false`: por padrão `setEditable` emite "update", e isso chamaria `onChange` sem edição.
     editor?.setEditable(!desabilitado, false);
   }, [editor, desabilitado]);
 
@@ -214,9 +191,8 @@ export default function EditorDeDescricao({
     setLinkAberto(false);
   }
 
-  // ⚠️ `preventDefault` no `mousedown` da barra: o editor não perde o foco nem
-  // a seleção, e no bloco que salva ao sair (`useSairDoBloco`) o clique não
-  // parece saída.
+  // `preventDefault` no `mousedown` da barra: o editor não perde foco nem
+  // seleção, e o clique não parece saída do bloco.
   const manterFoco = (e: ReactMouseEvent) => e.preventDefault();
 
   return (
@@ -235,7 +211,7 @@ export default function EditorDeDescricao({
               disabled={!editor || desabilitado}
               onMouseDown={manterFoco}
               onClick={() => editor && b.fazer(editor)}
-              // 28px: o alvo mínimo é 24 (web/AGENTS.md §3).
+              // 28px: o alvo mínimo é 24.
               style={{
                 width: 28,
                 height: 28,

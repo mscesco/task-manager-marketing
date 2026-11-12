@@ -1,14 +1,7 @@
 "use client";
-// components/bases/ControlesDaVisao.tsx
-// Filtro, ordenação, colunas visíveis, agrupar (quadro) e data (calendário)
-// de uma visão da Base (Spec 056, fatia F, §8).
-//
-// ⚠️ MEXER AQUI MUDA A VISÃO DE TODO MUNDO (D14), e por isso só com
-// `can_update_view`. Sem ele os botões continuam aparecendo -- para a pessoa
-// VER qual filtro está valendo --, mas o conteúdo fica só de leitura.
-//
-// O que filtrar e ordenar SIGNIFICA é de `lib/baseViews.ts` (puro, testado);
-// aqui só se monta a configuração.
+// Filtro, ordenação, colunas visíveis, agrupar (quadro) e data (calendário) de uma visão da Base.
+// Mexer aqui muda a visão de todo mundo: só com `can_update_view`; sem ele o conteúdo fica só leitura.
+// O significado de filtrar e ordenar está em `lib/baseViews.ts`.
 
 import { useState, type ReactNode } from "react";
 import { ArrowUpDown, CalendarDays, Columns3, Filter, Group, Plus, Trash2 } from "lucide-react";
@@ -146,13 +139,10 @@ function Painel({
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
     () => setAberto(false),
-    // Fatia J: os controles moram no canto DIREITO da barra; o painel abre
-    // para a esquerda, para dentro da tela.
+    // Os controles ficam à direita da barra; o painel abre para a esquerda.
     { larguraPainel: 420, alinhar: "direita" }
   );
-  // Fatia J: só o ícone (*"achei que ficou muita coisa escrita"*). O rótulo
-  // inteiro -- com a contagem -- fica no `aria-label` e na dica; à vista, só
-  // o número, e o ícone azul quando há algo valendo.
+  // Só o ícone e o número à vista; o rótulo completo fica no `aria-label` e na dica.
   const contagem = rotulo.match(/\((\d+)/)?.[1];
   return (
     <>
@@ -321,9 +311,8 @@ function ValorDoFiltro({
       type={coluna.type === "date" ? "date" : "text"}
       inputMode={coluna.type === "number" ? "decimal" : undefined}
       value={typeof filtro.value === "string" || typeof filtro.value === "number" ? String(filtro.value) : ""}
-      // ⚠️ Texto como veio (só a vírgula vira ponto): converter para número a
-      // cada tecla apagaria o "1," no meio de "1,5". Quem compara é `passa`,
-      // com `Number()`.
+      // Texto como veio (só a vírgula vira ponto): converter a cada tecla apagaria o "1," de "1,5".
+      // Quem compara é `passa`, com `Number()`.
       onChange={(e) =>
         onMudar(coluna.type === "number" ? e.target.value.replace(",", ".") : e.target.value)
       }
@@ -398,9 +387,7 @@ function Ordens({
   );
 }
 
-/** "Agrupar por" (quadro) e "Data" (calendário). Fatia J: era um `<select>`
- *  nativo, que destoava dos outros controles da barra (ela achou ruim). Virou
- *  um botão com o ícone e o nome da coluna escolhida, que abre a lista. */
+/** "Agrupar por" (quadro) e "Data" (calendário): botão com o ícone e o nome da coluna, que abre a lista. */
 function EscolhaDeColuna({
   rotulo,
   icone,

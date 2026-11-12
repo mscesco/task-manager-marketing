@@ -1,15 +1,7 @@
-"""A limpeza diaria das notificacoes (auditoria de 11/11, item 17).
+"""Limpeza diaria: apaga avisos lidos cuja ultima mudanca tem mais de 6 meses.
 
-Apaga o aviso JA LIDO cuja ultima mudanca (`updated_at`, a mesma data que o
-sino mostra) tem mais de 6 meses. Nao lido nunca e apagado, por mais velho que
-seja: a pessoa ainda nao o viu. Decisao da Camila em 11/11.
-
-⚠️ RODA FORA DE CONTEXTO DE TENANT, de proposito: e uma rota de maquina
-(`POST /system/notifications/purge`, `X-System-Token`), chamada pelo n8n, que
-varre TODOS os workspaces -- como o `bases/purge`. Por isso nao passa pelo
-`NotificationRepository`, que exige tenant.
-
-Idempotente: rodar duas vezes no dia apaga nada na segunda.
+Nao lido nunca e apagado. Roda fora de contexto de tenant (rota de sistema que
+varre todos os workspaces), por isso nao usa o `NotificationRepository`.
 """
 
 from __future__ import annotations

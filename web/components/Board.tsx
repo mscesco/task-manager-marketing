@@ -1167,7 +1167,7 @@ export default function Board({
             aria-expanded={painelAberto}
             aria-label="Filtros"
             className="btn"
-            // `.btn` vence o Tailwind (web/AGENTS.md §11): fonte e padding inline.
+            // `.btn` vence o Tailwind: fonte e padding inline.
             style={{ fontSize: 13, padding: "7px 12px", fontWeight: 600 }}
           >
             <SlidersHorizontal size={14} aria-hidden />

@@ -1,11 +1,6 @@
-"""Acesso a `notification_mute` -- os toggles DESLIGADOS (Spec 054, §6.1).
+"""Acesso a `notification_mute`: uma linha = um toggle desligado; ausencia = ligado.
 
-⚠️ UMA LINHA = UM TOGGLE DESLIGADO, e a ausencia = ligado. Ler as preferencias
-e, portanto, ler EXCECOES: quem nunca mexeu em nada nao tem linha nenhuma, e e
-assim que um tipo de aviso criado no futuro nasce ligado para todos (D11).
-
-Sempre do usuario logado (D15): nenhum metodo recebe `user_id`. O repository
-nunca comita (UoW no router).
+Sempre do usuario logado (nenhum metodo recebe `user_id`). Nunca comita.
 """
 
 from __future__ import annotations
@@ -37,9 +32,8 @@ class NotificationMuteRepository(BaseRepository[NotificationMute]):
     async def desligar(self, *, tipos: tuple[str, ...], role: str) -> None:
         """Desliga o toggle: uma linha por tipo do grupo.
 
-        ⚠️ `ON CONFLICT DO NOTHING` contra o UNIQUE, e nao um SELECT antes: a
-        rota e idempotente (§6.5) e dois cliques quase juntos -- ou dois
-        dispositivos -- cairiam entre o SELECT e o INSERT.
+        `ON CONFLICT DO NOTHING` em vez de SELECT antes: dois cliques quase
+        juntos cairiam entre o SELECT e o INSERT.
         """
         tenant = require_tenant()
         await self.session.execute(
@@ -61,8 +55,7 @@ class NotificationMuteRepository(BaseRepository[NotificationMute]):
         )
 
     async def ligar(self, *, tipos: tuple[str, ...], role: str) -> None:
-        """Liga o toggle: apaga as linhas do grupo. Ligar o que ja esta ligado
-        nao apaga nada, e isso e a idempotencia do outro lado."""
+        """Liga o toggle: apaga as linhas do grupo (idempotente)."""
         tenant = require_tenant()
         await self.session.execute(
             delete(NotificationMute).where(

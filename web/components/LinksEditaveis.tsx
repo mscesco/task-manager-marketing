@@ -1,17 +1,7 @@
 "use client";
-// components/LinksEditaveis.tsx
-// Os links com nome da tarefa, editáveis no lugar (Spec 052, fatia D).
-//
-// ⚠️ POR QUE EXISTE: até a fatia D os links se editavam no modal de "Editar"
-// tarefa, e esse modal saiu -- título e descrição passaram a ser editados no
-// próprio detalhe, e o resto já era das pílulas. Os links precisavam de um
-// lugar, e ganharam o mesmo gesto da descrição: "Editar", Salvar e Cancelar,
-// clicar fora salva, Esc desiste.
-//
-// ⚠️ LINK COM ERRO NÃO SALVA AO CLICAR FORA: o editor fica aberto com o erro
-// marcado. Fechar e jogar fora o que a pessoa digitou seria pior que insistir.
-//
-// Toda regra (válido, mudou, https://) continua em `lib/links.ts`.
+// Links com nome da tarefa, editáveis no lugar: clicar fora salva, Esc desiste.
+// Link com erro não salva ao clicar fora: o editor fica aberto com o erro marcado.
+// As regras (válido, mudou, https://) ficam em `lib/links.ts`.
 
 import { useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { Plus } from "lucide-react";
@@ -36,16 +26,12 @@ export default function LinksEditaveis({
   onTentarDeNovo,
   onSalvar,
 }: {
-  /**
-   * Os links salvos. ⚠️ `null` = AINDA NÃO CHEGARAM (ou a busca falhou), e não
-   * "sem links" -- revisão de 16/09: com `[]` no lugar, "Adicionar link" numa
-   * lista que não carregou mandava só o link novo e apagava os que existiam.
-   */
+  /** `null` = ainda não chegaram, não "sem links": salvar sobre `[]` apagaria os existentes. */
   links: readonly LinkItem[] | null;
   /** A busca falhou: nada de editar, e um jeito de tentar de novo. */
   falhou: boolean;
   onTentarDeNovo: () => void;
-  /** Grava a lista inteira. ⚠️ Em erro, LANÇA com a mensagem pronta. */
+  /** Grava a lista inteira; em erro, lança com a mensagem pronta. */
   onSalvar: (novos: { title: string; url: string }[]) => Promise<void>;
 }) {
   const [editando, setEditando] = useState(false);
@@ -54,10 +40,8 @@ export default function LinksEditaveis({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const blocoRef = useRef<HTMLDivElement | null>(null);
-  // ⚠️ AQUI O EDITOR FICA ABERTO DURANTE O ENVIO (são várias linhas, e fechar
-  // antes da resposta esconderia um erro de validação do servidor). A guarda
-  // é "estou enviando", para o `mousedown` e o `focusout` do mesmo clique não
-  // mandarem duas vezes.
+  // O editor fica aberto durante o envio (para mostrar erro do servidor); a guarda
+  // impede que o `mousedown` e o `focusout` do mesmo clique mandem duas vezes.
   const enviandoRef = useRef(false);
 
   // Abrir sem links já traz uma linha vazia -- e o foco vai para ela.
@@ -172,7 +156,7 @@ export default function LinksEditaveis({
         style={{ display: "flex", flexDirection: "column", gap: 8 }}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
-          // ⚠️ Só desiste dos links -- o Esc do detalhe fecharia o modal.
+          // Só desiste dos links: o Esc do detalhe fecharia o modal.
           e.preventDefault();
           e.stopPropagation();
           desistir();

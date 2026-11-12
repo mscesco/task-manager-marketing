@@ -1,17 +1,6 @@
-"""Repository da entidade Task.
+"""Repository da entidade Task (tenant e soft delete via `_base_select`).
 
-Padrao: herda BaseRepository[Task] (filtro automatico de tenant e
-soft delete via `_base_select`).
-
-Metodos especificos:
-
-    - list_page_with_filters: lista com filtros + privacidade do pessoal.
-    - reparent_subtree: SQL textual para atualizar path/depth/project_id
-      de uma subtree. EXCECAO AUTORIZADA ao `_base_select` (ADR 0003).
-    - soft_delete_subtree: SQL textual para soft-delete cascateado.
-      EXCECAO AUTORIZADA (ADR 0003 + 0005). Retorna cascade_count.
-    - detect_cycle: usa LTREE `<@` para detectar ciclo em move.
-    - write_history: insere linhas em task_history.
+As operacoes de subarvore usam SQL textual com o filtro de tenant escrito a mao.
 """
 
 from __future__ import annotations
@@ -77,15 +66,13 @@ from app.shared.pagination import Page, PageParams
 
 @dataclass(frozen=True)
 class DashboardItem:
-    """Uma tarefa citada num card (Spec 058): o bastante para o link."""
+    """Uma tarefa citada num card do painel: o bastante para o link."""
 
     id: uuid.UUID
     title: str
     due_date: date | None
     due_time: time | None
     parent_id: uuid.UUID | None
-    #: A lista mostra onde a tarefa esta e quao urgente e (pedido dela, 14/10:
-    #: "achei meio basico").
     priority: str
     column_name: str
     column_color: str
@@ -101,7 +88,7 @@ class DashboardCounts:
     summary_end: date
     done: int
     total: int
-    #: Abertas e ainda no prazo: as que vencem HOJE, ou as do periodo.
+    #: Abertas e ainda no prazo: as que vencem hoje, ou as do periodo.
     on_time_total: int
     bucket_unit: str
     buckets: list[BucketCounts]
@@ -114,7 +101,7 @@ class DashboardCounts:
 
 @dataclass(frozen=True)
 class DashboardExportRow:
-    """Uma tarefa da planilha do painel (15/10): o que o painel contou."""
+    """Uma tarefa da planilha do painel: o que o painel contou."""
 
     title: str
     state: str  # "done" | "on_time" | "overdue"
@@ -141,50 +128,18 @@ class Workload:
     name: str
     open_count: int
     overdue_count: int
-    #: Conta desativada que ainda tem tarefa aberta (revisao de 15/10): e o
-    #: trabalho orfao que o gestor mais precisa ver, e a tela marca.
+    #: Conta desativada com tarefa aberta: a tela a marca como trabalho orfao.
     is_active: bool
 
 
 def _casa_busca_na_subarvore(
     termo: str, *, pode_ver_arquivada: bool
 ) -> ColumnElement[bool]:
-    """A busca do quadro, em SQL: casa o titulo DELA ou de qualquer descendente.
+    """A busca do quadro: casa o titulo da tarefa ou de qualquer descendente.
 
-    ⚠️ DEVOLVE A RAIZ, e nao a tarefa que casou. O card do quadro e sempre a
-    raiz (ADR 0004) -- subtarefa nao tem card para aparecer, entao a unica
-    forma de "achar" uma subtarefa pela busca e trazer a mae dela. Como o `<@`
-    do LTREE e descendente-OU-IGUAL, um EXISTS so cobre os dois casos: a
-    propria linha entra na subarvore dela mesma.
-
-    ⚠️ SO TITULO, NAO DESCRICAO. Decisao de 05/08/2026 mantida: casando por
-    descricao o card aparece com o termo buscado em lugar nenhum da tela, e a
-    leitura honesta de quem olha e "o filtro bugou". Descricao so entra junto
-    com um "por que este card apareceu" no card.
-
-    ⚠️ A DOBRA DE ACENTO E DO POSTGRES, E DE UM LUGAR SO. O `unaccent(lower())`
-    e aplicado nos DOIS lados -- coluna e termo --, entao o Python NAO replica
-    a regra do `normalizarBusca` do front. Tres copias da mesma normalizacao
-    (JS, Python, SQL) seria a terceira chance de divergirem.
-
-    ⚠️ `pode_ver_arquivada` ACOMPANHA A LISTAGEM. Hoje a busca do cliente
-    enxerga exatamente o que foi carregado, e o quadro so carrega arquivada
-    quando a pessoa pede. Passar o flag mantem o resultado igual ao de hoje.
-
-    ⚠️⚠️ E ELE E `include_archived OR archived_only`, NAO SO O PRIMEIRO --
-    achado no review da Spec 042. O `<@` inclui a PROPRIA linha, entao numa
-    listagem `archived_only` (a tela de Arquivadas) a raiz arquivada nao
-    satisfazia o proprio criterio: a subconsulta exigia um
-    descendente-ou-igual NAO arquivado, e arquivar cascateia a subarvore
-    inteira. Resultado: `?archived_only=true&q=campanha` devolvia SEMPRE
-    vazio, mesmo havendo uma tarefa arquivada chamada "Campanha". Nenhum
-    chamador combinava os dois ainda -- era armadilha esperando a busca chegar
-    na tela de Arquivadas.
-
-    ⚠️ O `%` NAO E ESCAPADO, e isso e conhecido. Termo com `%` ou `_` vira
-    curinga em vez de literal -- comportamento diferente do `includes()` do
-    front. Nao ha caso real (sao titulos de tarefa), e escapar exigiria
-    `ESCAPE` no LIKE; fica registrado para quando alguem buscar "50%".
+    Devolve a raiz, porque o card do quadro e sempre a raiz; o `<@` do LTREE e
+    descendente-ou-igual, entao um EXISTS cobre a propria linha tambem. So
+    titulo, nao descricao. `%` e `_` no termo viram curinga (nao escapados).
     """
     descendente = aliased(Task)
     padrao = f"%{termo.strip()}%"
@@ -192,7 +147,6 @@ def _casa_busca_na_subarvore(
         select(1)
         .select_from(descendente)
         .where(
-            # `<@` = descendente OU IGUAL. E o que faz um EXISTS so bastar.
             descendente.path.op("<@")(Task.path),
             descendente.workspace_id == Task.workspace_id,
             descendente.deleted_at.is_(None),
@@ -207,38 +161,10 @@ def _casa_busca_na_subarvore(
 
 
 def _lente_de_time(visible: frozenset[uuid.UUID]) -> ColumnElement[bool]:
-    """A camada (B): a lente de time, em SQL. UM lugar, DOIS chamadores.
+    """A lente de time em SQL; nao chamar com `visible=None` (admin).
 
-    ⚠️ EXTRAIDA NA SPEC 037 (F6), E A EXTRACAO E PARTE DA ENTREGA. Ate a F6
-    este predicado existia so no `list_page`, e o `list_my_relations` OMITIA a
-    camada (B) de proposito (ADR 0018) para poder marcar a task pela ADR 0017. Com a
-    marca da ADR 0017 apagada (E5), os dois passam a aplicar a MESMA lente -- e
-    duas copias de uma regra de visibilidade sao a forma classica de ela
-    divergir sem ninguem notar (precedente: a regra de alcance ja divergiu
-    antes, ver D2/D4 da Spec 034).
-
-    ⚠️ NAO CHAME COM `visible=None`. `None` significa ADMIN e quer dizer "sem
-    filtro de TIME" -- e nao "sem filtro". O `workspace_id` entra sempre, fora
-    do `if`, no `_base_select`. Uma consulta escrita como "se a lente e None,
-    nao filtra nada" vaza tenant, e vaza SO para o ADMIN, que e o unico caso em
-    que o filtro por `team_id` nao esconde o furo por acidente.
-
-    ⚠️ `created_by` NAO ESTA AQUI, e a ausencia e a E1 (F5). Quem criou nao
-    enxerga mais por ter criado.
-
-    ⚠️⚠️ E ATE 10/09 HAVIA UM RAMO DE `Project.created_by` AQUI -- o "pessoal
-    proprio", que mantinha o dono vendo o projeto pessoal dele fora da lente.
-    Ele saiu junto com o projeto pessoal, e com ele saiu o parametro `me`: hoje
-    esta funcao nao depende de QUEM pergunta, so da lente de time. Se um dia
-    voltar a depender, o parametro volta -- e sera sinal de que uma excecao de
-    visibilidade por pessoa nasceu de novo.
-
-    Exige que `Project` ja esteja no FROM (outerjoin), o que os dois
-    chamadores fazem.
-
-    ⚠️ DELEGA para `_time_efetivo_em` desde a Spec 048: o RECORTE por time
-    ativo faz a mesma pergunta com outro conjunto, e duas escritas da mesma
-    pergunta divergiriam -- ver o bloco de la.
+    `None` quer dizer "sem filtro de time", nao "sem filtro": o tenant vem do
+    `_base_select`. Exige `Project` no FROM (outerjoin).
     """
     return _time_efetivo_em(visible)
 
@@ -246,29 +172,12 @@ def _lente_de_time(visible: frozenset[uuid.UUID]) -> ColumnElement[bool]:
 def _time_efetivo_em(
     times: frozenset[uuid.UUID] | set[uuid.UUID],
 ) -> ColumnElement[bool]:
-    """"O time da tarefa esta neste conjunto?" -- UMA definicao, DOIS usos.
+    """"O time da tarefa esta neste conjunto?" -- usado pela lente e pelo recorte.
 
-    ⚠⚠ EXTRAIDA NA SPEC 048 porque a pergunta passou a ser feita por dois
-    motivos diferentes, e as respostas TEM de coincidir:
-
-        a LENTE      (`_lente_de_time`)      -- "posso ver esta tarefa?"
-        o RECORTE    (`under_team_id`)       -- "ela e do time que estou vendo?"
-
-    Se as duas usassem escritas diferentes de "o time da tarefa", apareceria o
-    pior tipo de defeito: tarefa que passa pela lente e cai no recorte (ou o
-    contrario) por uma diferenca de forma que ninguem ve na tela -- some da
-    lista sem erro nenhum.
-
-    ⚠⚠ E A ESCRITA E ESTA, e nao `coalesce(Project.team_id, Task.team_id)`,
-    embora o `list_my_relations` descreva a regra de alcance com o coalesce
-    (linha ~864). As duas formas DIFEREM em um caso: tarefa com `project_id`
-    preenchido cujo projeto nao esta visivel (apagado, ou fora do tenant). O
-    `outerjoin` nao acha linha, `Project.team_id` fica NULL, e o coalesce
-    CAIRIA para `task.team_id` -- ou seja, mostraria a tarefa de um projeto
-    que a pessoa nao ve. Esta forma exige `project_id IS NULL` para olhar o
-    time da tarefa, e portanto fecha.
-
-    ⚠️ Exige `Project` no FROM (outerjoin). Os tres chamadores fazem.
+    Nao use `coalesce(Project.team_id, Task.team_id)`: com projeto invisivel o
+    outerjoin deixa `Project.team_id` NULL e o coalesce cairia no time da
+    tarefa, mostrando tarefa de projeto que a pessoa nao ve. Exige `Project`
+    no FROM (outerjoin).
     """
     return or_(
         # projeto cujo time esta no conjunto -> vale para todas as tarefas dele
@@ -284,24 +193,10 @@ def _time_efetivo_em(
 def _sob_o_time(
     team_id: uuid.UUID, tree: tuple[TeamNode, ...]
 ) -> ColumnElement[bool]:
-    """O recorte da TELA: tarefas do time e dos DESCENDENTES dele.
+    """O recorte da tela: tarefas do time e dos descendentes dele.
 
-    ⚠⚠ ISTO NAO E O `team_id` QUE JA EXISTE em `GET /tasks`. Aquele casa
-    `Task.team_id == team_id` -- igualdade crua no time da PROPRIA tarefa -- e
-    usar aquele para recortar por raiz teria dois defeitos de uma vez:
-
-      1. esconderia toda tarefa INTERNA de subtime (o time dela e o subtime,
-         nao a raiz);
-      2. ignoraria o time do PROJETO, que e quem decide o alcance de uma
-         tarefa de projeto.
-
-    Foi a armadilha mais provavel desta fatia, porque o parametro existe e
-    usa-lo parecia pronto.
-
-    ⚠️ O `team_id` antigo FICA -- endpoint e contrato. Registrado: o front
-    nao o usa em nenhum lugar (conferido em 11/09, `lib/api.ts` nunca o
-    escreve para `/tasks`), entao ele serve so a clientes externos. Aposentar
-    um parametro de rota e assunto de spec propria.
+    Diferente do filtro `team_id` de `GET /tasks`, que compara so `Task.team_id`
+    e ignoraria subtimes e o time do projeto.
     """
     return _time_efetivo_em({team_id} | team_scope.descendants(team_id, tree))
 
@@ -312,33 +207,19 @@ class TaskRepository(BaseRepository[Task]):
     model = Task
 
     # ----------------------------------------------------
-    # Filhos diretos (Spec 033)
+    # Filhos diretos
     # ----------------------------------------------------
     async def list_children(
         self, *, parent_task_id: uuid.UUID, include_archived: bool = False
     ) -> list[Task]:
-        """Filhos DIRETOS de uma task, em ordem de `position`.
+        """Filhos diretos de uma task, em ordem de `position`.
 
-        Spec 033 (D10 + Fatia 1). Duas coisas que parecem detalhe e nao sao:
-
-        ⚠️ ORDER BY position. A checklist da copia sai na ordem do banco se
-        ninguem mandar ordenar, e "ordem do banco" nao e ordem nenhuma --
-        muda com UPDATE. Sem isto a copia sai embaralhada em relacao a
-        original e nenhum teste de path/depth percebe.
-
-        ⚠️ `include_archived=False` por padrao. Duplicar nao ressuscita
-        trabalho encerrado (D10), e a contagem que a tela mostra ("levar as
-        subtarefas (N diretas)") conta as MESMAS linhas que esta consulta
-        devolve -- se as duas divergirem, a pessoa ve 6 e recebe 4.
-
-        Soft delete e tenant ja vem do `_base_select`.
+        Sem arquivadas por padrao: a contagem da tela conta as mesmas linhas.
         """
         stmt = self._base_select().where(Task.parent_task_id == parent_task_id)
         if not include_archived:
             stmt = stmt.where(Task.is_archived.is_(False))
-        # `Task.id` no fim pelo mesmo motivo do desempate da listagem
-        # paginada: irmas criadas na mesma transacao empatam em position
-        # E em created_at.
+        # `Task.id` desempata irmas criadas na mesma transacao.
         stmt = stmt.order_by(
             Task.position.asc(), Task.created_at.asc(), Task.id
         )
@@ -364,22 +245,14 @@ class TaskRepository(BaseRepository[Task]):
         archived_only: bool = False,
         q: str | None = None,
     ) -> Page[Task]:
-        """Lista tasks com filtros.
+        """Lista tasks com filtros e a lente de time.
 
-        ⚠️ ATE 10/09 HAVIA AQUI UMA CAMADA (A) DE PRIVACIDADE, que escondia
-        pessoal alheio "ate do admin". Ela saiu com o projeto pessoal -- hoje a
-        lente de time e a unica camada.
-
-        `q` (Spec 042, A2): busca por TITULO, casando tambem o titulo de
-        qualquer DESCENDENTE e devolvendo a raiz. Ver
-        `_casa_busca_na_subarvore`.
+        `q` busca por titulo, inclusive de descendentes, e devolve a raiz.
         """
         tenant = require_tenant()
         base = self._base_select()
 
-        # Lente de time (Entrega 3).
-        # LEFT JOIN: tarefa avulsa (project_id NULL) nao some -- e o `Project`
-        # continua no FROM porque `_lente_de_time` le `Project.team_id`.
+        # LEFT JOIN: tarefa avulsa nao some, e `_lente_de_time` le `Project.team_id`.
         visible = team_scope.visible_team_ids(
             tenant.memberships,
             tenant.team_tree,
@@ -394,11 +267,9 @@ class TaskRepository(BaseRepository[Task]):
             ),
         )
 
-        # Lente de time -- pulada para admin (visible is None).
         if visible is not None:
             base = base.where(_lente_de_time(visible))
 
-        # Filtros opcionais.
         if project_id is not None:
             base = base.where(Task.project_id == project_id)
         if root_only:
@@ -419,39 +290,22 @@ class TaskRepository(BaseRepository[Task]):
             base = base.where(
                 _casa_busca_na_subarvore(
                     q,
-                    # ⚠️ `or archived_only`: sem ele, buscar na tela de
-                    # Arquivadas devolve SEMPRE vazio. Ver o docstring.
+                    # sem `or archived_only`, a busca em Arquivadas volta sempre
+                    # vazia: a raiz arquivada nao casaria consigo mesma.
                     pode_ver_arquivada=include_archived or archived_only,
                 )
             )
-        # archived_only tem precedencia: so arquivadas (tela de arquivadas,
-        # Spec 013 fatia 3). Senao, include_archived controla: default so
-        # ativas; True traz ambas.
+        # archived_only tem precedencia; senao, include_archived decide.
         if archived_only:
             base = base.where(Task.is_archived.is_(True))
         elif not include_archived:
             base = base.where(Task.is_archived.is_(False))
 
-        # Count + page seguindo o padrao do BaseRepository.list_page.
         count_stmt = select(func.count()).select_from(base.subquery())
         total = (await self.session.execute(count_stmt)).scalar_one()
 
-        # ⚠️ DESEMPATE OBRIGATORIO (Spec 033, D12). `created_at` usa `now()`,
-        # que no Postgres e o instante da TRANSACAO: toda task criada na mesma
-        # transacao tem o MESMO valor. Sem o `Task.id` como criterio de
-        # desempate, essas linhas saem numa ordem que o planner escolhe -- e
-        # pode sair diferente entre um F5 e outro, com a checklist "pulando"
-        # sem ninguem ter mexido em nada.
-        #
-        # Ate 03/08 isso quase nao aparecia porque toda task nascia numa
-        # transacao propria. Duplicar (033) cria a arvore inteira numa
-        # transacao so e trouxe o empate a tona.
-        #
-        # ⚠️ `id` NAO da ordem semantica -- e UUIDv4, ou seja, aleatorio. A
-        # ordem das copias continua ARBITRARIA; o que este desempate garante e
-        # que ela seja ESTAVEL. Ordem semantica exigiria trocar a ordenacao
-        # por `position`, o que mudaria o quadro inteiro (D12, opcao 2 --
-        # recusada por ser entrega propria).
+        # `created_at` e o instante da transacao e empata entre tasks criadas juntas;
+        # `Task.id` torna a ordem estavel (nao semantica: e UUIDv4).
         page_stmt = (
             base.order_by(Task.created_at.desc(), Task.id)
             .limit(params.limit)
@@ -462,23 +316,14 @@ class TaskRepository(BaseRepository[Task]):
         return Page(items=items, total=total, page=params.page, size=params.size)
 
     # ----------------------------------------------------
-    # /me/assignments -- relacoes do usuario corrente (ADR 0018)
+    # /me/assignments -- relacoes do usuario corrente
     # ----------------------------------------------------
     async def titles_for_ids(
         self, task_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, str]:
-        """Titulos de um conjunto de tasks em UMA query (lote).
+        """Titulos de um conjunto de tasks numa query so (evita N+1).
 
-        Alimenta o selo "Subtarefa de X" em /me/assignments: a pagina pode
-        ter N subtarefas cujas maes NAO estao na lista (a pessoa esta so na
-        filha), e buscar uma a uma seria N+1 -- exatamente o que o ADR 0025
-        rejeitou para o selo de responsavel.
-
-        Passa pelo `_base_select()`, entao herda o filtro de tenant: mae de
-        outro workspace nao volta, e o chamador cai no rotulo generico em vez
-        de vazar titulo alheio.
-
-        Lista vazia -> dict vazio, sem ir ao banco.
+        Filtrado por tenant: mae de outro workspace nao volta.
         """
         if not task_ids:
             return {}
@@ -494,14 +339,10 @@ class TaskRepository(BaseRepository[Task]):
         excluir: Task | None,
         limite: int = 20,
     ) -> list[tuple[Task, list[str]]]:
-        """Tarefas de QUALQUER nivel do quadro, pelo titulo, com o caminho.
+        """Tarefas de qualquer nivel do quadro, pelo titulo, com o caminho.
 
-        Spec 062: o seletor de "Subtarefa de..." do mover. Devolve
-        `(tarefa, titulos das ancestrais da raiz para baixo)`.
-
-        Pela lente de quem busca, como `list_page_with_filters`; sem arquivadas
-        (nao recebem subtarefa); sem a `excluir` e a subarvore dela (mover para
-        dentro de si mesma).
+        Devolve `(tarefa, titulos das ancestrais da raiz para baixo)`, pela lente
+        de quem busca, sem arquivadas e sem a `excluir` e a subarvore dela.
         """
         tenant = require_tenant()
         stmt = self._base_select().outerjoin(
@@ -533,7 +374,7 @@ class TaskRepository(BaseRepository[Task]):
         stmt = stmt.order_by(Task.depth, Task.title, Task.id).limit(limite)
         tarefas = list((await self.session.execute(stmt)).scalars().all())
 
-        # O caminho: os rotulos do `path` sao `t` + hex do id (ADR 0002).
+        # O caminho: os rotulos do `path` sao `t` + hex do id.
         ancestrais = {
             uuid.UUID(hex=rotulo[1:])
             for t in tarefas
@@ -541,8 +382,7 @@ class TaskRepository(BaseRepository[Task]):
         }
         titulos: dict[uuid.UUID, str] = {}
         if ancestrais:
-            # Pela MESMA lente: ancestral que a pessoa nao ve vira "…", e nao
-            # o titulo dele (revisao de 05/11).
+            # Pela mesma lente: ancestral que a pessoa nao ve vira "…".
             consulta = (
                 self._base_select()
                 .with_only_columns(Task.id, Task.title)
@@ -576,36 +416,11 @@ class TaskRepository(BaseRepository[Task]):
         relations: frozenset[str],
         under_team_id: uuid.UUID | None,
     ) -> Page[tuple[Task, Project | None, frozenset[str]]]:
-        """Tasks do tenant (nao deletadas) onde sou assignee/creator/watcher.
+        """Tasks do tenant onde sou assignee/creator/watcher, pela lente de time.
 
-        Parte do `_base_select` (tenant + soft-delete) e aplica as DUAS
-        camadas: (A) pessoal alheio nunca, (B) lente de time. Os 3 vinculos
-        sao computados SEMPRE (preenchem `relations`); o recorte e por OR das
-        relacoes selecionadas.
-
-        ⚠️ A CAMADA (B) ENTROU NA SPEC 037 (F6), E ELA ERA A EXCECAO DA ADR
-        0018. Ate aqui esta consulta OMITIA a lente de propositoo: era o que
-        permitia a task aparecer em /me/assignments com a marca da ADR 0017 --
-        "estou ligado a ela mas nao a enxergo". A ADR 0038
-        (E5/E6) recusou a marca: nao ha excecao por relacao, e ser
-        responsavel ou observador nao concede leitura. Sem a marca, a task
-        simplesmente nao aparece, como em todo o resto do produto.
-
-        ⚠️ NA TELA, NADA MUDA -- E ISSO FOI CONFERIDO, NAO SUPOSTO.
-        `web/app/minhas-tarefas/page.tsx` ja descartava esses itens no
-        CLIENTE, com um `filter` sobre a flag e um comentario dizendo que era
-        temporario porque essas tarefas davam 404 no detalhe. Ou seja:
-        o backend mandava dado que o front jogava fora. Agora ele nao manda.
-
-        ⚠️ E O 404 DO DETALHE DEIXA DE SER INCOERENCIA. Havia um limite
-        conhecido registrado em dois arquivos do front ("bug E6"): a tarefa
-        aparecia na lista e dava 404 ao abrir. Ela some da lista pela mesma
-        regra que produzia o 404, entao os dois passam a concordar. Nao foi
-        consertado o 404 -- foi removido o estado que o tornava visivel.
-
-        Quem cuida de a pessoa nao ficar responsavel por algo que nao alcanca
-        e a E3 (F4), que remove a relacao na movimentacao. As duas fatias sao
-        os dois lados da mesma decisao.
+        Os tres vinculos sao computados sempre (preenchem `relations`); o recorte
+        e o OR das relacoes selecionadas. Ser responsavel ou observador nao
+        concede leitura: a task fora da lente nao aparece.
         """
         tenant = require_tenant()
         me = tenant.user_id
@@ -641,23 +456,17 @@ class TaskRepository(BaseRepository[Task]):
             )
         )
 
-        # Lente de time -- pulada para admin (visible is None), igual ao
-        # `list_page`. MESMO predicado, uma copia so: `_lente_de_time`.
         visible = team_scope.visible_team_ids(tenant.memberships,
             tenant.team_tree,
             org_role=tenant.org_role,)
         if visible is not None:
             base = base.where(_lente_de_time(visible))
 
-        # ⚠️ O RECORTE DA TELA (Spec 048). SEM DEFAULT no parametro: esta lista
-        # e "as minhas tarefas", e a diferenca entre "de todos os times" e "de
-        # um time" e a tela inteira. `None` = sem recorte, e e resposta
-        # legitima -- o filtro "tudo" de Minhas tarefas (§4.3) e exatamente ele.
+        # Recorte do time ativo; `None` = todos os times.
         if under_team_id is not None:
             base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
 
-        # Recorte por relacao selecionada (OR). `relations` nunca vazio
-        # (o router preenche o default com as tres).
+        # Recorte por relacao (OR); o router garante `relations` nao vazio.
         selected: list[ColumnElement[bool]] = []
         if "assignee" in relations:
             selected.append(is_assignee)
@@ -691,7 +500,7 @@ class TaskRepository(BaseRepository[Task]):
         return Page(items=items, total=total, page=params.page, size=params.size)
 
     # ----------------------------------------------------
-    # Operacoes de subtree (excecao autorizada -- ADR 0003)
+    # Operacoes de subtree (SQL textual, tenant explicito)
     # ----------------------------------------------------
     async def reparent_subtree(
         self,
@@ -707,10 +516,7 @@ class TaskRepository(BaseRepository[Task]):
         """Atualiza path/depth/project_id/parent_task_id da task e
         de toda a subtree.
 
-        `new_project_id=None` (Spec 022): task vira avulsa -- SET project_id =
-        NULL na task e na subtree (coluna nullable, SQL valido).
-
-        EXCECAO AUTORIZADA ao `_base_select` (ADR 0003).
+        `new_project_id=None`: a task e a subtree viram avulsas.
         SQL textual com predicado de tenant manual.
 
         Args:
@@ -725,7 +531,6 @@ class TaskRepository(BaseRepository[Task]):
         tenant = require_tenant()
         old_label = old_path.split(".")[-1]
 
-        # Calcula o novo path da PROPRIA task.
         if new_parent_path is None:
             new_self_path = old_label
             new_self_depth = 0
@@ -735,8 +540,7 @@ class TaskRepository(BaseRepository[Task]):
 
         depth_delta = new_self_depth - old_depth
 
-        # UPDATE 1: a PROPRIA task (atualiza tambem parent_task_id e
-        # project_id, alem de path/depth).
+        # UPDATE 1: a propria task.
         await self.session.execute(
             text(
                 """
@@ -759,13 +563,8 @@ class TaskRepository(BaseRepository[Task]):
             },
         )
 
-        # UPDATE 2: DESCENDENTES (se houver). Reescrever path com
-        # subpath() e ajustar depth e project_id.
-        # subpath(path, old_depth + 1) corta o path antigo da task INTEIRO,
-        # rotulo dela incluido: o indice do subpath comeca em 0, e a raiz tem
-        # depth 0. Com `old_depth` sozinho o rotulo da task ficava e saia
-        # repetido em toda filha (auditoria de 21/10; migration 0032 repara).
-        # Excluimos a propria task (ja atualizada acima).
+        # UPDATE 2: descendentes. `subpath(path, old_depth + 1)` corta o path antigo
+        # inteiro, rotulo da task incluido (o indice do subpath comeca em 0).
         await self.session.execute(
             text(
                 """
@@ -791,7 +590,6 @@ class TaskRepository(BaseRepository[Task]):
             },
         )
 
-        # Atualiza o objeto Python para refletir o novo estado.
         task.path = new_self_path
         task.depth = new_self_depth
         task.parent_task_id = new_parent_task_id
@@ -800,15 +598,11 @@ class TaskRepository(BaseRepository[Task]):
     async def soft_delete_subtree(self, *, task: Task) -> int:
         """Soft-delete da task e de toda a subtree.
 
-        EXCECAO AUTORIZADA (ADR 0003 + 0005).
-
-        Retorna o numero de DESCENDENTES apagados (nao inclui a
-        propria task). Esse valor vai para event_metadata.cascade_count.
+        Retorna o numero de descendentes apagados (sem a propria task).
         """
         tenant = require_tenant()
 
-        # UPDATE em massa: a task e todos os descendentes (path <@ task.path).
-        # Filtra deleted_at IS NULL pra nao re-marcar ja apagadas.
+        # A task e todos os descendentes; nao re-marca as ja apagadas.
         result = await self.session.execute(
             text(
                 """
@@ -825,74 +619,23 @@ class TaskRepository(BaseRepository[Task]):
             },
         )
 
-        # rowcount inclui a propria task (1) + descendentes apagados.
-        # cascade_count eh "filhas apagadas junto", sem contar a raiz.
+        # rowcount inclui a propria task.
         total_affected = result.rowcount or 0
         cascade_count = max(0, total_affected - 1)
 
-        # Atualiza o objeto Python.
         task.deleted_at = func.now()  # type: ignore[assignment]
         return cascade_count
 
     async def complete_descendants(self, *, task: Task) -> int:
-        """Marca TODOS os descendentes de `task` como COMPLETED (cascata de
-        conclusao). NAO inclui a propria task (o service ja a concluiu).
+        """Conclui todos os descendentes de `task` (nao a propria task).
 
-        Pula descendentes ja COMPLETED, CANCELLED (decisao deliberada de nao
-        fazer) e arquivados. UPDATE em massa via ltree, mesma transacao do UoW.
-        Seta updated_at = NOW() no SQL porque o onupdate do ORM NAO dispara em
-        UPDATE textual (updated_at nao tem trigger no banco -- e mantido pelo
-        SQLAlchemy). Sem isto os descendentes cascateados ficavam com updated_at
-        velho. Retorna quantos descendentes mudaram.
+        Pula ja concluidos, cancelados e arquivados. Retorna quantos mudaram.
 
-        ⚠️ `terminal_since = NOW()` pela MESMA razao (Spec 035, fatia 2a): o
-        service grava o relogio do arquivamento nas transicoes que passam pelo
-        ORM, e este UPDATE nao passa. Sem a linha aqui, concluir um pai deixaria
-        a subarvore inteira com `terminal_since` NULL -- e o defeito so
-        apareceria na fatia 2b, como "o job arquivou menos do que devia", sem
-        erro nenhum. Nao precisa de condicao: o WHERE ja exclui quem ja e
-        terminal, entao toda linha afetada esta ENTRANDO em terminal agora.
-
-        ⚠️ `column_id` pela MESMA razao, e com uma diferenca importante: ele nao
-        e um valor fixo, e sim a coluna `COMPLETED` DO QUADRO DE CADA
-        DESCENDENTE. Hoje ha um quadro so e a subconsulta sempre devolve o
-        mesmo id -- mas escrever assim agora custa a mesma linha, e escrever
-        depois custa reabrir a cascata (Spec 035, D9). O `board_id` NAO e
-        tocado: a tarefa nao muda de quadro ao ser concluida.
-
-        ⚠️ DOIS DEGRAUS, IGUAIS AOS DE `BoardRepository.coluna_para_status`
-        (ADR 0042): ponte primeiro, `is_default_target` da semantica `DONE`
-        depois. ⚠️ E A MESMA REGRA EM SQL, e nao uma segunda regra -- a cascata
-        e um UPDATE em massa por `ltree` e nao pode chamar o repositorio uma
-        vez por linha. A duplicacao e o preco, e o que a mantem honesta e
-        `test_cascata_em_quadro_de_quatro_colunas_db.py`.
-
-        ⚠️ ATE 11/08 ESTA SUBCONSULTA SO CONHECIA A PONTE, e o levantamento da
-        fatia 5b-2 registrou que "a cascata e segura em quadro de quatro
-        colunas porque `DONE` sempre tem ponte". Verdade para `COLUNAS_BASE`, e
-        FALSA no minuto em que o CRUD de coluna existir: basta alguem criar
-        `Entregue` (semantica `DONE`, sem ponte) e apagar `Concluido` -- a
-        ADR 0042 D4 PERMITE, porque continua havendo uma coluna `DONE`. A
-        subconsulta devolveria NULL, `column_id` e NOT NULL desde a `0011`, e
-        concluir uma tarefa-mae explodiria para quem clicou, num quadro que
-        essa pessoa talvez nem conheca.
-
-        ⚠️ O `status` gravado continua sendo `COMPLETED` cravado, e isso esta
-        CERTO -- nao por sorte: `STATUS_POR_SEMANTICA[DONE]` e `COMPLETED`,
-        entao a reescrita da ADR 0042 D2 daria o mesmo valor. Se um dia a
-        semantica `DONE` deixar de ter status canonico unico, esta linha passa
-        a mentir.
-
-        ⚠️ `DESC NULLS LAST` PELO MESMO MOTIVO DO REPOSITORIO: a comparacao e
-        NULL, e nao FALSE, para coluna sem ponte, e o Postgres ordena NULL
-        primeiro num `DESC`. Sem isso o degrau 2 come o degrau 1.
-
-        ⚠️ A escolha original usava `legacy_status` e nao a semantica. Sao
-        quatro semanticas para oito colunas; `is_default_target` responderia
-        certo para DONE hoje, e a direcao `status -> coluna` e a unica 1:1
-        enquanto o front desenha o quadro por status (ADR 0033). Usar a mesma
-        ponte em todos os pontos de escrita e o que impede duas regras
-        parecidas divergirem.
+        UPDATE textual nao dispara o `onupdate` do ORM: `updated_at`,
+        `terminal_since` e `column_id` sao gravados aqui. A coluna e a do quadro
+        de cada descendente, pela mesma regra de `BoardRepository.coluna_para_status`
+        (ponte `legacy_status` primeiro, depois `is_default_target` da semantica
+        DONE); `DESC NULLS LAST` porque a comparacao e NULL em coluna sem ponte.
         """
         tenant = require_tenant()
         result = await self.session.execute(
@@ -941,32 +684,12 @@ class TaskRepository(BaseRepository[Task]):
         return result.rowcount or 0
 
     async def set_archived_subtree(self, *, task: Task, archived: bool) -> int:
-        """Arquiva (ou desarquiva) TODOS os descendentes de `task` (05/08).
+        """Arquiva (ou desarquiva) todos os descendentes de `task`.
 
-        NAO inclui a propria task -- o service ja mexeu nela. Retorna quantos
-        descendentes REALMENTE mudaram (o `is_archived <> :alvo` no WHERE faz
-        a segunda chamada devolver 0), e esse numero vai para
-        `event_metadata.cascade_count` e para a tela.
-
-        ⚠️ POR QUE A CASCATA EXISTE. Ate 05/08 arquivar era sem cascata: a
-        filha ficava ATIVA debaixo de um pai arquivado. O quadro so desenha
-        `depth === 0` (Board.tsx:580) e a checklist onde ela mora e a de uma
-        tarefa arquivada, que ninguem abre -- ela existia sem nenhuma tela que
-        a mostrasse. E a MESMA porta que a promocao da duplicacao e a trava do
-        desarquivar ja fecharam por outros dois caminhos.
-
-        ⚠️ `updated_at = NOW()` no SQL, igual ao `complete_descendants`: o
-        `onupdate` do ORM NAO dispara em UPDATE textual e `updated_at` nao tem
-        trigger no banco. Sem isto a filha cascateada fica com data velha.
-
-        ⚠️ UPDATE em massa NAO avisa o ORM. Objeto ja carregado na identity
-        map continua com o valor ANTIGO em memoria -- quem testar isto tem de
-        ler do BANCO (`db.refresh(...)`) ou vai medir memoria, nao banco.
-
-        ⚠️ DESARQUIVAR RECOMECA O `terminal_since` (auditoria de 16/10). Sem
-        isto as filhas concluidas voltavam com a data velha e a varredura da
-        madrugada (`list_stale_terminal`) as arquivava de novo, uma a uma --
-        "reativar" o projeto zerava o checklist no dia seguinte.
+        Nao inclui a propria task. Retorna quantos descendentes mudaram.
+        UPDATE em massa nao atualiza objetos ja carregados no ORM; `updated_at`
+        e gravado aqui pelo mesmo motivo. Desarquivar recomeca `terminal_since`,
+        senao a varredura noturna arquivaria as filhas de novo.
         """
         tenant = require_tenant()
         result = await self.session.execute(
@@ -1033,26 +756,9 @@ class TaskRepository(BaseRepository[Task]):
     async def list_stale_terminal(
         self, *, now: datetime, days: int
     ) -> list[Task]:
-        """Tasks terminais paradas ha mais de `days` dias (Spec 013/035).
+        """Tasks terminais paradas ha mais de `days` dias, para o arquivamento.
 
-        Espelha app.modules.tasks.domain.archival.is_stale_terminal:
-        `terminal_since` mais velho que o cutoff, em qualquer status terminal.
-        `_base_select` ja filtra tenant + soft-delete. Excluimos arquivadas
-        (nao reentram). Sem paginacao -- e um job de varredura.
-
-        ⚠️ ESTA QUERY E O PREDICADO PURO SAO UM PAR. Divergiram = o job faz uma
-        coisa e o teste unitario prova outra, e ninguem percebe porque os dois
-        ficam verdes. Mudou aqui, muda la (mesma dupla ja usada em team_scope).
-        O `status IN (...)` e o mesmo cinto do predicado: `terminal_since` numa
-        tarefa viva deve deixar de arquivar, nao arquivar trabalho em
-        andamento.
-
-        ⚠️ SEM INDICE DEDICADO, e de proposito. A varredura roda uma vez por
-        noite sobre a tabela inteira; em 666 linhas (producao, 06/08/2026) o
-        seq scan e irrelevante e um indice seria peso morto mantido para
-        sempre. Se `task` passar da casa das centenas de milhares, o indice e
-        `(workspace_id, terminal_since) WHERE deleted_at IS NULL AND
-        is_archived = false` -- e ai com medicao, nao por precaucao.
+        Par de `domain.archival.is_stale_terminal`: mudou aqui, muda la.
         """
         cutoff = now - timedelta(days=days)
         stmt = (
@@ -1063,9 +769,7 @@ class TaskRepository(BaseRepository[Task]):
                 Task.terminal_since.is_not(None),
                 Task.terminal_since < cutoff,
             )
-            # ⚠️ Duas varreduras ao mesmo tempo (o n8n refazendo o POST)
-            # arquivavam as mesmas tarefas e gravavam o historico em dobro
-            # (auditoria de 16/10). A segunda pula o que a primeira travou.
+            # Duas varreduras simultaneas nao pegam as mesmas tarefas.
             .with_for_update(skip_locked=True)
         )
         result = await self.session.execute(stmt)
@@ -1074,23 +778,11 @@ class TaskRepository(BaseRepository[Task]):
     async def list_history(
         self, *, task_id: uuid.UUID, limit: int, offset: int
     ) -> tuple[list[TaskHistory], int]:
-        """As linhas de historico de UMA tarefa, mais NOVA primeiro (Spec 055).
+        """As linhas de historico de uma tarefa, mais nova primeiro.
 
-        ⚠️ ESTA E A PRIMEIRA LEITURA DE `task_history` DO PRODUTO. A tabela e
-        gravada desde a Entrega 4 e nunca foi lida por ninguem -- o que
-        significa que o dado ali dentro nunca passou por olhos: ha eventos de
-        todas as versoes dos construtores, inclusive de antes de a Spec 053
-        acrescentar `watched`/`unwatched`. Quem traduz (o front) precisa de
-        frase de reserva para tudo; ver §6.2 da spec.
-
-        ⚠️ MAIS NOVA PRIMEIRO (§9.1, aprovado por ela em 30/09): ninguem abre o
-        historico para ler o comeco. Desempate por `id`, pelo mesmo motivo dos
-        comentarios e dos avisos: `func.now()` e constante na transacao, entao
-        duas linhas gravadas no mesmo `commit` empatam em `created_at` -- e sem
-        desempate a paginacao repete ou pula linha entre as paginas.
-
-        ⚠️ SEM `_base_select`: ele e tipado no `model` do repositorio (`Task`).
-        O filtro de tenant esta escrito aqui, na mao, e e obrigatorio.
+        Desempate por `id`: `now()` e constante na transacao, e sem ele a
+        paginacao repete ou pula linha. Sem `_base_select` (tipado em `Task`):
+        o filtro de tenant aqui e obrigatorio.
         """
         tenant = require_tenant()
         onde = (
@@ -1135,13 +827,7 @@ class TaskRepository(BaseRepository[Task]):
         user_id: uuid.UUID,
         entries: list[HistoryEntry],
     ) -> None:
-        """O `write_history` para quem so tem o id da tarefa (Spec 053, B).
-
-        Existe porque a remocao em massa por perda de alcance
-        (`apagar_relacoes`) sabe EM QUAIS tarefas apagou, mas nao carregou
-        nenhuma -- e carregar dezenas de `Task` so para ler o `id` seria a
-        consulta que o `DELETE` em massa existe para evitar.
-        """
+        """O `write_history` para quem so tem o id da tarefa."""
         if not entries:
             return
 
@@ -1160,7 +846,7 @@ class TaskRepository(BaseRepository[Task]):
             self.session.add(row)
 
     # ----------------------------------------------------
-    # Spec 037, fatia 1 (parte 2) -- o predicado da E4/E7
+    # Perda de alcance
     # ----------------------------------------------------
     async def bloqueios_por_perda_de_alcance(
         self,
@@ -1168,58 +854,25 @@ class TaskRepository(BaseRepository[Task]):
         user_id: uuid.UUID,
         times_depois: frozenset[uuid.UUID] | None,
     ) -> list[TarefaBloqueio]:
-        """De quais tarefas ela e a UNICA responsavel e deixaria de alcancar?
+        """De quais tarefas ela e a unica responsavel e deixaria de alcancar?
 
-        Spec 037, E4. `times_depois` e a lente que a pessoa teria DEPOIS da
-        mudanca de vinculo -- quem a calcula e o chamador (a F3), porque so ele
-        sabe qual das quatro mudancas esta acontecendo.
-
-        ⚠️ ESTE E O PREDICADO UNICO. A F3 o chama nos gatilhos que barram
-        (`remove_member_from_team`, `change_member_role`; o terceiro,
-        `move_member_subteam`, saiu com a rota em 17/09/2026).
-        **Se aparecer uma segunda copia desta regra em qualquer fatia, e
-        defeito**, nao otimizacao.
-
-        ⚠️ `times_depois=None` significa ADMIN -- continua alcancando tudo,
-        entao NADA bloqueia, e a consulta nem roda. Nao confundir com o `None`
-        das CONSULTAS de listagem, onde ele nunca dispensa o `workspace_id`:
-        aqui o retorno vazio e a resposta certa, nao um filtro esquecido.
-
-        ⚠️ TERMINAL VEM DA SEMANTICA DA COLUNA (`TERMINAL_SEMANTICS`), nunca de
-        uma lista de status escrita a mao. E o primeiro leitor de verdade de
-        `column.semantic`, que estava sem leitor desde a Spec 035 -- e e o que
-        faz a regra continuar valendo quando existir coluna criada por gente,
-        que nao tem `legacy_status` e portanto nao responde por status.
-
-        ⚠️ O TIME QUE DECIDE O ALCANCE E `COALESCE(project.team_id,
-        task.team_id)`, e isso NAO e preferencia: e a mesma regra que
-        `task_guards.task_visible` aplica hoje (projeto comum -> o time do
-        PROJETO decide; avulsa -> o time da task). Usar so `task.team_id` faria
-        o predicado responder uma pergunta diferente da que o produto responde
-        no dia em que existir projeto em subtime -- e a pessoa seria barrada
-        por uma tarefa que ela continuaria enxergando, ou pior, o contrario.
-        Hoje os dois dao o mesmo resultado: os 20 projetos de producao estao
-        todos na raiz (consulta 6 de `scripts/invariantes.sql`).
-
-        ⚠️ `is_archived` E `deleted_at` os DOIS. Arquivar nao e apagar
-        (`ArchivableMixin`): sao dois estados independentes e cada um sozinho
-        deixaria metade do passivo bloqueando movimentacao a toa.
+        `times_depois` e a lente que a pessoa teria depois da mudanca de vinculo;
+        `None` = admin, nada bloqueia. Terminal vem da semantica da coluna. O time
+        que decide o alcance e `COALESCE(project.team_id, task.team_id)`, igual a
+        `task_guards.task_visible`. Regra unica: nao duplicar.
         """
         tenant = require_tenant()
         if times_depois is None:
             return []
 
-        # Um responsavel SO, e e ela. `having count(*) = 1` sobre o
-        # task_assignment do workspace -- nao sobre o do usuario, senao
-        # qualquer tarefa em que ela aparece uma vez contaria como unica.
+        # Um responsavel so, e e ela: o count e sobre todas as designacoes da
+        # tarefa, nao so as dela.
         unico = (
             select(TaskAssignment.task_id)
             .where(TaskAssignment.workspace_id == tenant.workspace_id)
             .group_by(TaskAssignment.task_id)
             .having(func.count() == 1)
-            # ⚠️ `bool_and`, e nao `min(user_id)`: `min` NAO existe para `uuid`
-            # no Postgres (medido -- `function min(uuid) does not exist`). Com
-            # `count() = 1` ja garantido, `bool_and` diz "o unico e ela".
+            # `bool_and`, nao `min(user_id)`: `min(uuid)` nao existe no Postgres.
             .having(func.bool_and(TaskAssignment.user_id == user_id))
             .subquery()
         )
@@ -1256,7 +909,7 @@ class TaskRepository(BaseRepository[Task]):
                     Team.workspace_id == Task.workspace_id,
                 ),
             )
-            # ⚠️ FORA de qualquer `if`. Ver a docstring: o tenant entra sempre.
+            # Fora de qualquer `if`: o tenant entra sempre.
             .where(Task.workspace_id == tenant.workspace_id)
             .where(Task.deleted_at.is_(None))
             .where(Task.is_archived.is_(False))
@@ -1288,25 +941,11 @@ class TaskRepository(BaseRepository[Task]):
         user_id: uuid.UUID,
         times_depois: frozenset[uuid.UUID] | None,
     ) -> list[RelacaoPerdida]:
-        """Tudo que ela deixa de alcancar e ainda tem relacao (Spec 037, E3).
+        """Tudo que ela deixa de alcancar e ainda tem relacao.
 
-        ⚠️ CONJUNTO DIFERENTE DO `bloqueios_por_perda_de_alcance`, e as duas
-        consultas existem separadas de proposito:
-
-          - o BLOQUEIO (E4) pergunta "isto ficaria orfao?" -> so nao-terminal,
-            so responsavel unica;
-          - a REMOCAO (E3) pergunta "o que ela perde?" -> terminal tambem,
-            com colega tambem, OBSERVADOR tambem.
-
-        Unificar as duas numa consulta com flag faria a regra do bloqueio ser
-        lida dentro da regra da remocao, e sao decisoes diferentes do ADR.
-
-        ⚠️ `deleted_at`/`is_archived` filtram AQUI TAMBEM, e isso e decisao:
-        apagar a designacao de uma tarefa arquivada reescreveria historico que
-        ninguem consegue ver nem desfazer. A E3 fala de "dono invisivel de
-        trabalho vivo" -- trabalho arquivado nao tem dono a procurar.
-
-        ⚠️ `times_depois=None` = ADMIN: nao perde nada, e a consulta nem roda.
+        Conjunto maior que o de `bloqueios_por_perda_de_alcance`: inclui
+        terminal, tarefa com outros responsaveis e observador. Arquivada e
+        apagada ficam fora. `times_depois=None` = admin, nada perde.
         """
         tenant = require_tenant()
         if times_depois is None:
@@ -1382,19 +1021,8 @@ class TaskRepository(BaseRepository[Task]):
     ) -> tuple[int, list[uuid.UUID]]:
         """Apaga responsavel e observador dela nessas tarefas.
 
-        Devolve `(responsaveis apagados, tarefas em que ELA SEGUIA)`. ⚠️ A
-        segunda parte era uma contagem ate a Spec 053 (B): virou a lista de
-        ids porque sair como seguidor passou a entrar no historico (D13), e o
-        historico e por tarefa.
-
-        ⚠️ `DELETE` em massa, e nao `session.delete` linha a linha: sao ate
-        dezenas de tarefas por movimentacao, e o caminho ORM faria um SELECT
-        por linha.
-
-        ⚠️ `UPDATE`/`DELETE` cru NAO avisa o ORM (armadilha herdada). Quem
-        tiver carregado um `TaskAssignment` nesta sessao continua com o objeto
-        em memoria. Os chamadores desta funcao nao carregam -- e o teste
-        confere o BANCO, nao a sessao.
+        Devolve `(responsaveis apagados, tarefas em que ela seguia)`. DELETE em
+        massa: nao atualiza objetos ja carregados na sessao.
         """
         if not task_ids:
             return (0, 0)
@@ -1419,14 +1047,9 @@ class TaskRepository(BaseRepository[Task]):
         return (resp.rowcount or 0, list(obs.scalars().all()))
 
     async def ids_da_subarvore(self, *, path: str) -> list[uuid.UUID]:
-        """Ids VIVOS da tarefa de `path` e de todas as descendentes.
+        """Ids vivos da tarefa de `path` e de todas as descendentes.
 
-        Spec 053 (B): trocar o projeto de uma tarefa troca o da subarvore
-        inteira (`reparent_subtree`), e os seguidores de cada uma podem perder
-        o alcance. ⚠️ Chamar ANTES do reparent: os ids nao mudam, o `path` sim.
-
-        EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), mesma razao do
-        `detect_cycle`: ltree. Tenant explicito.
+        Chamar antes do reparent: os ids nao mudam, o `path` sim.
         """
         rows = await self.session.execute(
             text(
@@ -1444,19 +1067,9 @@ class TaskRepository(BaseRepository[Task]):
     async def travar_subarvore(self, *, path: str) -> None:
         """Trava (`FOR UPDATE`) a tarefa de `path` e todas as descendentes.
 
-        Auditoria de 11/11, item 19: o mover le a lista da subarvore uma vez
-        e reescreve quadro e time de cada uma. Uma subtarefa criada nesse
-        meio-tempo ganhava o path novo (o `reparent_subtree` casa por path)
-        mas ficava com o quadro e o time antigos. Com a subarvore travada, o
-        `create` -- que trava a mae com `FOR SHARE` -- espera o mover acabar.
-
-        ⚠️ CHAMAR ANTES de `ids_da_subarvore`, e nao no lugar dele: se esta
-        consulta esperou por um `create`, a filha que ele gravou nao esta no
-        resultado DESTA consulta (o snapshot e de antes). A consulta seguinte
-        ja a ve, e nenhuma outra pode nascer, porque as maes estao travadas.
-
-        EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), mesma razao do
-        `ids_da_subarvore`: ltree. Tenant explicito.
+        Impede que um `create` (que trava a mae com `FOR SHARE`) ponha filha na
+        subarvore enquanto o mover reescreve quadro e time. Chamar antes de
+        `ids_da_subarvore`, que entao ja enxerga tudo.
         """
         await self.session.execute(
             text(
@@ -1473,37 +1086,19 @@ class TaskRepository(BaseRepository[Task]):
         )
 
     # ----------------------------------------------------
-    # Agregacao de subtarefa para a listagem (Spec 042)
+    # Agregacao de subtarefa para a listagem
     # ----------------------------------------------------
-    # ⚠️ EXCECAO AUTORIZADA ao `_base_select` (ADR 0003), pelo mesmo motivo de
-    # `detect_cycle` e `soft_delete_subtree`: LTREE e agregacao com FILTER nao
-    # se expressam no select generico. O filtro de tenant vem EXPLICITO nas
-    # duas queries, e em toda tabela que elas tocam.
-    #
-    # ⚠️ AS DUAS EXISTEM PARA O QUADRO PARAR DE CARREGAR SUBTAREFA. Medido em
-    # 19/08/2026: 917 tarefas carregadas de teto 1000, sendo 670 subtarefa que
-    # nao desenha card. Ver a Spec 042.
+    # LTREE e agregacao com FILTER, fora do `_base_select`: o filtro de tenant
+    # vem explicito em toda tabela das duas queries.
 
     async def subtask_progress_for_tasks(
         self, parent_ids: list[uuid.UUID]
     ) -> dict[uuid.UUID, Progresso]:
-        """Checklist de VARIAS tasks em UMA query -- pro contador do card.
+        """Checklist de varias tasks numa query -- pro contador do card.
 
-        Devolve `{parent_id: Progresso}` com todo id pedido presente
-        (`Progresso(0, 0)` quando nao ha filha viva).
-
-        ⚠️ FILHA DIRETA, nao subarvore: o contador do card conta um nivel.
-        Profundidade nao e limitada em task, entao os dois conjuntos divergem
-        de verdade.
-
-        ⚠️ ARQUIVADA SEMPRE FORA, independente do toggle da tela -- e a regra
-        (c) do `subtask_progress`, e ela nao depende de o quadro estar
-        mostrando arquivadas. O `progresso()` do front tambem chama `ativas()`
-        sempre.
-
-        ⚠️ LEFT JOIN de proposito: coluna nao resolvida NAO conta como
-        concluida mas ENTRA no total (regra (d)). Na pratica `column_id` e NOT
-        NULL desde a `0011`, entao o LEFT e cinto, nao suspensorio.
+        Devolve `{parent_id: Progresso}` com todo id pedido presente. Conta so
+        filha direta e sempre sem arquivada; coluna nao resolvida entra no total
+        mas nao como concluida.
         """
         if not parent_ids:
             return {}
@@ -1545,26 +1140,10 @@ class TaskRepository(BaseRepository[Task]):
     async def subtree_assignee_ids_for_tasks(
         self, root_ids: list[uuid.UUID], *, include_archived: bool
     ) -> dict[uuid.UUID, list[uuid.UUID]]:
-        """Responsaveis da SUBARVORE de varias tasks, em UMA query.
+        """Responsaveis da subarvore de varias tasks, raiz inclusa, numa query.
 
-        Alimenta o filtro por pessoa do quadro, que hoje o front monta varrendo
-        a subarvore carregada (`filtrosQuadro.ts::responsaveisPorRaiz`). Motivo
-        de existir, nas palavras do proprio arquivo: *"a gestao filtra pela
-        pessoa e espera ver a demanda em que ela trabalha, mesmo que a
-        designacao esteja numa subtarefa -- que e o caso comum"*.
-
-        ⚠️ INCLUI OS RESPONSAVEIS DA PROPRIA RAIZ. O `<@` do LTREE e
-        descendente-OU-IGUAL, e e isso que o front faz (ele varre `tasks`
-        inteiro, raiz junto). Devolver so os das filhas faria a raiz com
-        responsavel proprio sumir do filtro.
-
-        ⚠️ `include_archived` ACOMPANHA O DA LISTAGEM, e nao a regra (c) da
-        checklist. Sao coisas diferentes: a checklist responde "quanto falta do
-        trabalho vivo" e ignora arquivada sempre; o filtro por pessoa responde
-        "esta raiz interessa a fulano?", e hoje enxerga exatamente o que foi
-        carregado. Passar o flag da requisicao mantem o comportamento igual.
-
-        Ordem nao e garantida -- o consumidor e um `Set` no front.
+        Alimenta o filtro por pessoa do quadro. `include_archived` acompanha o
+        da listagem. Ordem nao e garantida.
         """
         if not root_ids:
             return {}
@@ -1610,24 +1189,16 @@ class TaskRepository(BaseRepository[Task]):
         return set((await self.session.execute(stmt)).scalars().all())
 
     # ----------------------------------------------------
-    # Tela inicial do time (Spec 058)
+    # Tela inicial do time
     # ----------------------------------------------------
     def _dashboard_tasks(
         self, under_team_id: uuid.UUID | None, assignee_id: uuid.UUID | None = None
     ) -> Subquery:
-        """As tarefas que o painel conta: a MESMA consulta-base da listagem.
+        """As tarefas que o painel conta: a mesma consulta-base da listagem.
 
-        ⚠️⚠️ COPIADA DE `list_page_with_filters`, e nao reescrita (AGENTS.md
-        §3): tenant e apagada pelo `_base_select`, a LENTE (`_lente_de_time`) e
-        o RECORTE do time ativo (`_sob_o_time`). Uma segunda regra de "o que a
-        pessoa ve" divergiria da primeira, e o painel contaria tarefa que a
-        pessoa nao consegue abrir.
-
-        ⚠️ SEM o filtro de arquivada: a concluida arquivada CONTA na semana
-        (§10.6). Cada pergunta (`_DashboardPredicates`) diz o que quer.
-
-        `assignee_id` (14/10, pedido da chefe dela): so as tarefas em que a
-        pessoa e responsavel -- e o relatorio INTEIRO passa a ser dela.
+        Tenant, lente e recorte iguais aos de `list_page_with_filters`, para o
+        painel nao contar tarefa que a pessoa nao abre. Sem filtro de arquivada:
+        concluida arquivada conta. `assignee_id` restringe as tarefas dela.
         """
         tenant = require_tenant()
         visible = team_scope.visible_team_ids(
@@ -1679,11 +1250,7 @@ class TaskRepository(BaseRepository[Task]):
         assignee_id: uuid.UUID | None = None,
         period: Period | None = None,
     ) -> DashboardCounts:
-        """Os numeros dos cards que todos veem.
-
-        `period` (15/10): tudo passa a ser das tarefas com prazo nele, no
-        estado de hoje -- ver `_DashboardPredicates`.
-        """
+        """Os numeros dos cards que todos veem; `period` recorta pelo prazo."""
         t = self._dashboard_tasks(under_team_id, assignee_id)
         p = _DashboardPredicates(t, now, period)
 
@@ -1720,9 +1287,7 @@ class TaskRepository(BaseRepository[Task]):
             )
 
         oldest_first = (t.c.due_date, t.c.due_time.asc().nulls_last(), t.c.id)
-        # ⚠️ As listas ROLAM DENTRO do card (14/10, pedido dela: "conseguir ver
-        # tudo"). O teto e so uma rede para nao mandar milhares de linhas; o
-        # total de verdade vem nas contagens.
+        # As listas rolam dentro do card; o teto so evita milhares de linhas.
         list_cap = 50
         oldest_overdue = await self._dashboard_items(
             item_columns().where(p.overdue).order_by(*oldest_first).limit(list_cap)
@@ -1776,9 +1341,9 @@ class TaskRepository(BaseRepository[Task]):
         assignee_id: uuid.UUID | None = None,
         period: Period | None = None,
     ) -> list[DashboardExportRow]:
-        """As tarefas que o painel CONTOU (a planilha, 15/10): as do resumo
-        (concluidas e as que cobram prazo na janela) e as atrasadas do recorte.
-        Os MESMOS predicados dos numeros -- a planilha tem de bater com a tela."""
+        """As tarefas que o painel contou, para a planilha.
+
+        Os mesmos predicados dos numeros: a planilha tem de bater com a tela."""
         tenant = require_tenant()
         t = self._dashboard_tasks(under_team_id, assignee_id)
         p = _DashboardPredicates(t, now, period)
@@ -1841,8 +1406,7 @@ class TaskRepository(BaseRepository[Task]):
     ) -> list[BucketCounts]:
         """Concluidas, no prazo e atrasadas por coluna do grafico, numa ida so.
 
-        ⚠️ O GRAFICO OLHA A SUA PROPRIA JANELA, e nao o recorte do periodo: sem
-        periodo, ele e "os proximos 7 dias", que nao e a semana do resumo.
+        O grafico usa a propria janela, nao o recorte do periodo.
         """
         if not buckets:
             return []
@@ -1888,14 +1452,11 @@ class TaskRepository(BaseRepository[Task]):
         member_teams: frozenset[uuid.UUID] | None,
         period: Period | None = None,
     ) -> list[Workload]:
-        """Card 1: tarefas ABERTAS de cada pessoa, e quantas delas atrasadas.
+        """Tarefas abertas de cada pessoa, e quantas delas atrasadas.
 
-        ⚠️ QUEM ESTA COM ZERO APARECE (§10.5): a lista parte dos MEMBROS do
-        time (`times_dos_membros`; `None` = a organizacao inteira), e nao das
-        tarefas. Quem tem tarefa no time sem ser membro dele (um gestor da
-        organizacao designado) entra tambem -- a carga dele e real.
-
-        ⚠️ Tarefa com dois responsaveis conta para os DOIS.
+        Parte dos membros do time (`None` = organizacao inteira), entao quem tem
+        zero aparece; quem tem tarefa no time sem ser membro entra tambem. Tarefa
+        com dois responsaveis conta para os dois.
         """
         tenant = require_tenant()
         t = self._dashboard_tasks(under_team_id)
@@ -1930,9 +1491,7 @@ class TaskRepository(BaseRepository[Task]):
                 .outerjoin(counts_by_user, counts_by_user.c.user_id == User.id)
                 .where(
                     User.workspace_id == tenant.workspace_id,
-                    # ⚠️ Desativado so entra se ainda tiver tarefa aberta no
-                    # time (revisao de 15/10): sumir com ele escondia o
-                    # trabalho orfao, que continuava contando nas atrasadas.
+                    # Desativado so entra se ainda tiver tarefa aberta.
                     or_(
                         and_(User.is_active.is_(True), User.id.in_(members)),
                         counts_by_user.c.user_id.is_not(None),
@@ -1963,15 +1522,10 @@ class TaskRepository(BaseRepository[Task]):
 
 
 class _DashboardPredicates:
-    """As definicoes da Spec 058 §5.1, em SQL, sobre a subconsulta `t`.
+    """As definicoes do painel em SQL, sobre a subconsulta `t`, escritas uma vez.
 
-    ⚠️ ESTE E O LUGAR ONDE O PAINEL PODE MENTIR, e por isso cada pergunta tem
-    nome e esta escrita uma vez: os cards reusam, e nao reescrevem.
-
-    ⚠️ COM PERIODO (15/10), o recorte e "prazo dentro do periodo" em TODAS as
-    perguntas que os cards usam -- atrasadas, carga, as minhas, o resumo. O
-    ESTADO e sempre o de hoje (decisao dela): `overdue` continua sendo "vencida
-    AGORA e ainda aberta".
+    Com periodo, o recorte e "prazo dentro do periodo" em todas as perguntas; o
+    estado e sempre o de hoje.
     """
 
     def __init__(self, t: Subquery, now: WorkspaceNow, period: Period | None = None) -> None:
@@ -1980,13 +1534,10 @@ class _DashboardPredicates:
         self.open = and_(
             c.semantic.not_in(TERMINAL_SEMANTICS), c.is_archived.is_(False)
         )
-        #: ⚠️ A mesma pergunta do selo de prazo (`avisaPrazo`). E por aqui que a
-        #: BLOQUEADA sai do total da semana (decisao dela, §10.4): a coluna
-        #: Bloqueado nasce com o aviso de prazo desligado.
+        #: A mesma pergunta do selo de prazo; a coluna Bloqueado nasce sem aviso.
         self.charges_deadline = and_(self.open, c.notify_deadline.is_(True))
-        #: `estaAtrasada` do front (e `dashboard.is_overdue`): sem hora vence
-        #: quando o dia acaba; com hora, no minuto seguinte. SEM o recorte do
-        #: periodo -- o grafico usa esta, na janela dele.
+        #: `estaAtrasada` do front: sem hora vence quando o dia acaba; com hora,
+        #: no minuto seguinte. Sem o recorte do periodo (o grafico usa esta).
         self.overdue_any = and_(
             self.charges_deadline,
             c.due_date.is_not(None),
@@ -2014,8 +1565,8 @@ class _DashboardPredicates:
         self.overdue = and_(self.overdue_any, in_scope)
         #: A carga: as abertas (inclusive a bloqueada -- ainda e dela).
         self.open_scoped = and_(self.open, in_scope)
-        #: concluida arquivada CONTA (§10.6).
+        #: concluida arquivada conta.
         self.done = and_(c.semantic == ColumnSemantic.DONE, in_summary)
-        #: cancelada e bloqueada ficam fora (§10.4).
+        #: cancelada e bloqueada ficam fora.
         self.counted = or_(self.done, and_(self.charges_deadline, in_summary))
         self.on_time = and_(self.charges_deadline, on_time_window, not_(self.overdue_any))

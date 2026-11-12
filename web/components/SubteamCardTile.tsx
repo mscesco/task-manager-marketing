@@ -1,26 +1,7 @@
 "use client";
-// components/SubteamCardTile.tsx
-// Um cartão de subtime na grade — Spec 047, revisão de 10/09.
-//
-// ⚠️⚠️ O CARTÃO INTEIRO É CLICÁVEL, e a pergunta dela foi essa: *"o card
-// inteiro poderia ser clicável né? em todas as versões de permissão"*. Antes
-// só o NOME era link, e o resto do cartão era área morta — o alvo de clique
-// era uma linha de texto dentro de uma caixa de 200px.
-//
-// ⚠️⚠️ E O LINK É UMA CAMADA, e não um `<a>` em volta de tudo: `<button>`
-// dentro de `<a>` é HTML inválido, e o navegador desfaz o aninhamento por
-// conta própria — o lápis deixaria de funcionar. A camada (`absolute inset-0`)
-// cobre o cartão, e o lápis fica ACIMA dela num `z-10`. É o "stretched link":
-// o cartão inteiro vira alvo, e o link continua sendo um link de verdade —
-// abre em nova aba com o meio do mouse, e o teclado o alcança.
-//
-// ⚠️ O LÁPIS SÓ PARA QUEM ADMINISTRA: *"eu como operador deve aparecer somente
-// os cards clicáveis para eu ver quem está no time e o cargo, nada mais"*.
-// Sem a permissão, a gaveta abriria só para leitura — e um botão que leva a
-// uma tela onde não há nada a fazer é pior que a ausência dele.
-//
-// ⚠️ MORA EM `components/`, então tem guardião — `app/` fica fora do
-// `include` do vitest.
+// Cartão de subtime na grade, todo clicável. O link é uma camada (`absolute inset-0`),
+// não um `<a>` em volta: `<button>` dentro de `<a>` é inválido e quebraria o lápis.
+// O lápis (abre a gaveta) só aparece para quem administra.
 
 import Link from "next/link";
 import { Pencil } from "lucide-react";
@@ -36,14 +17,7 @@ export default function SubteamCardTile({
   canManage: boolean;
   onEdit: () => void;
 }) {
-  // ⚠️ O contorno acende no hover DO CARTÃO e no foco DO LINK -- os dois são
-  // "este é o alvo", e um só dos dois deixaria o teclado sem destaque.
-  //
-  // ⚠️ A MECÂNICA SAIU DAQUI em 10/09: este cartão foi o primeiro a ter o
-  // contorno desenhado, e o `useState` + os dois `onMouse*` viviam aqui. Com o
-  // contorno virando o do produto inteiro (sete superfícies), a mecânica
-  // passou a morar em `useDrawnOutline` -- senão eram sete cópias do mesmo par
-  // de handlers, e a sétima erraria um deles.
+  // O contorno acende no hover do cartão e no foco do link (teclado).
   const { target, outline } = useDrawnOutline();
 
   return (
@@ -52,8 +26,6 @@ export default function SubteamCardTile({
       onMouseEnter={target.onMouseEnter}
       onMouseLeave={target.onMouseLeave}
     >
-      {/* ⚠️ O contorno DESENHADO substitui o `outline` do CSS, que aparecia
-          inteiro de uma vez e não acompanhava o raio do cartão. */}
       {outline}
 
       <div className="flex items-center gap-2">
@@ -63,8 +35,7 @@ export default function SubteamCardTile({
         {canManage && (
           <button
             type="button"
-            // ⚠️ `relative z-10`: ele precisa ficar ACIMA da camada do link,
-            // senão o clique no lápis navega em vez de abrir a gaveta.
+            // `z-10`: acima da camada do link, senão o clique navega.
             className="btn btn-ghost relative z-10"
             aria-label={`Editar ${card.team.name}`}
             onClick={onEdit}
@@ -80,10 +51,7 @@ export default function SubteamCardTile({
           ` · ${card.subteams} ${card.subteams === 1 ? "subtime" : "subtimes"}`}
       </div>
 
-      {/* ⚠️ A CAMADA DO LINK VEM POR ÚLTIMO no DOM e cobre o cartão inteiro.
-          O texto de dentro continua selecionável? Não — e é o preço conhecido
-          do stretched link. Vale: o alvo de clique passa de uma linha de texto
-          para a caixa toda, que é o que ela pediu. */}
+      {/* Camada do link: por último no DOM, cobre o cartão (o texto deixa de ser selecionável). */}
       <Link
         href={`/times/${card.team.id}`}
         aria-label={`Abrir ${card.team.name}`}

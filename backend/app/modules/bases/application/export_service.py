@@ -1,13 +1,10 @@
-"""Exportar uma Base em planilha (Spec 057, 15/10).
+"""Exportar uma Base em planilha.
 
-⚠️ A TELA MANDA AS LINHAS E AS COLUNAS, NA ORDEM DA VISAO: filtro e ordenacao
-da visao moram no navegador (`lib/baseViews.ts`), e reescrever aqui seria uma
-segunda regra que divergiria da primeira. O servidor so confere que cada id e
-desta base -- id de fora e ignorado, e nao vira erro.
+A tela manda as linhas e as colunas na ordem da visao (filtro e ordenacao
+moram no navegador); o servidor so ignora id que nao e desta base.
 
-O texto de cada celula e o que a tela mostra (rotulo da opcao, nome da pessoa,
-data `14/10/2026`), e os separadores sao os que a IMPORTACAO entende (`; `):
-exportar e importar de volta da o mesmo.
+O texto de cada celula e o que a tela mostra, com os separadores que a
+importacao entende (`; `): exportar e importar de volta da o mesmo.
 """
 
 from __future__ import annotations
@@ -63,9 +60,7 @@ class BaseExportService:
             raise ValidationError("Formato: xlsx ou csv.", details={"field": "format"})
         base = await visible_base(self._bases, base_id)
         colunas = await self._columns.list_for(base.id)
-        # ⚠️ `is not None`, e nao "tem algo": a visao com filtro que nao casa
-        # nada manda `[]`, e lista vazia lida como "sem filtro" exportava a
-        # base inteira -- inclusive o que a visao esconde.
+        # `is not None`: `[]` e uma visao cujo filtro nao casa nada, nao "sem filtro".
         if column_ids is not None:
             por_id = {c.id: c for c in colunas}
             colunas = [por_id[i] for i in column_ids if i in por_id]
@@ -75,8 +70,7 @@ class BaseExportService:
             linhas = [por_id_l[i] for i in row_ids if i in por_id_l]
         nomes = await self._nomes(linhas, colunas)
 
-        # Montar a planilha e CPU puro (5 mil linhas x 20 colunas = segundos):
-        # no loop async, congelava o worker inteiro (auditoria 11/11, item 9).
+        # Montar a planilha e CPU puro: numa thread, para nao travar o loop async.
         return await asyncio.to_thread(_arquivo, base.name, colunas, linhas, nomes, fmt)
 
     async def _nomes(self, linhas, colunas) -> dict[str, str]:
@@ -107,13 +101,12 @@ def _celula(coluna: Any, valor: Any, nomes: dict[str, str], fmt: str) -> Any:
     tipo = coluna.type
     if tipo == "date" and isinstance(valor, str):
         d = date.fromisoformat(valor)
-        # No Excel, data DE VERDADE (filtra e ordena); no CSV, como a tela.
+        # No Excel, data de verdade (filtra e ordena); no CSV, como a tela.
         return d if fmt == "xlsx" else d.strftime("%d/%m/%Y")
     if tipo == "checkbox":
         return "Sim" if valor else "Não"
     if tipo == "number":
-        # No CSV, virgula decimal (auditoria de 21/10, item 7): "2.125" volta
-        # pela importacao -- e pelo Excel em portugues -- como dois mil e cento.
+        # No CSV, virgula decimal: "2.125" seria lido como dois mil e cento.
         if fmt == "csv" and isinstance(valor, float):
             return str(valor).replace(".", ",")
         return valor
@@ -141,7 +134,7 @@ def _arquivo(nome_base: str, colunas, linhas, nomes: dict[str, str], fmt: str):
     nome = _slug(nome_base)
     if fmt == "csv":
         buf = io.StringIO()
-        # ⚠️ `;` e BOM: e o que o Excel em portugues abre sem perguntar nada.
+        # `;` e BOM: o que o Excel em portugues abre sem perguntar nada.
         w = csv.writer(buf, delimiter=";")
         w.writerow(cabecalho)
         w.writerows(corpo)
@@ -156,9 +149,7 @@ def _arquivo(nome_base: str, colunas, linhas, nomes: dict[str, str], fmt: str):
         cell.fill = PatternFill("solid", fgColor="0075DE")
     for linha in corpo:
         ws.append(linha)
-    # O openpyxl le texto que comeca com `=` como FORMULA: `=HYPERLINK(...)`
-    # digitado numa celula virava link vivo no arquivo do gestor, e
-    # `=== Secao ===` virava arquivo "corrompido". Texto fica texto.
+    # O openpyxl le texto que comeca com `=` como formula; texto fica texto.
     for row in ws.iter_rows():
         for cell in row:
             if cell.data_type == "f":
@@ -178,8 +169,7 @@ def _texto(valor: Any, fmt: str) -> Any:
     """Texto que o Excel aceita e nao executa."""
     if not isinstance(valor, str):
         return valor
-    # Caractere de controle (o `\x0b` que vem colado do PowerPoint) o openpyxl
-    # recusa com erro -- e o export inteiro dava 500.
+    # Caractere de controle (ex.: `\x0b` colado do PowerPoint) o openpyxl recusa.
     valor = ILLEGAL_CHARACTERS_RE.sub("", valor)
     # No CSV nao ha como marcar "isto e texto": o apostrofo e a marca do
     # proprio Excel, e a importacao o tira na volta (`spreadsheet.to_text`).
@@ -190,7 +180,7 @@ def _texto(valor: Any, fmt: str) -> Any:
 
 def _aba(nome: str) -> str:
     """Nome de aba valido: ate 31 caracteres, sem `/ \\ ? * : [ ]` e sem
-    apostrofo nas pontas -- "Pautas 2026/1" dava 500 no export."""
+    apostrofo nas pontas."""
     limpo = re.sub(r"[\\/?*:\[\]]", " ", nome)[:31].strip().strip("'").strip()
     return limpo or "Base"
 

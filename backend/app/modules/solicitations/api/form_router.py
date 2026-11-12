@@ -1,4 +1,4 @@
-"""Router do FORMULARIO de solicitacao (Spec 043, fatia A).
+"""Router do editor de formularios de solicitacao (autenticado, verbos `form.*`).
 
     GET    /solicitacoes/formularios              -- os que o papel alcanca
     POST   /solicitacoes/formularios              -- cria (nasce despublicado)
@@ -16,16 +16,6 @@
     PATCH  /solicitacoes/perguntas/{id}
     POST   /solicitacoes/perguntas/{id}/condicional
     DELETE /solicitacoes/perguntas/{id}
-
-⚠️ TODAS AUTENTICADAS, E COM PERMISSAO PROPRIA. `solicitation_form.manage` e
-distinta de `solicitation.review`: triar o que chegou e definir o que se
-pergunta sao trabalhos diferentes, e frequentemente de pessoas diferentes.
-
-⚠️ E NENHUMA DELAS E LIDA PELO FORMULARIO PUBLICO AINDA. A fatia A entrega a
-estrutura; a fatia B e que troca a fonte do `/solicitar`. Ate la o publico
-continua no `web/lib/solicitacaoForm.ts` e nada muda para quem usa -- o que
-tambem significa que estas rotas nascem sem chamador no front, de propósito e
-por uma fatia so.
 """
 
 from __future__ import annotations
@@ -59,14 +49,9 @@ from app.modules.solicitations.application.form_service import (
     SolicitationFormService,
 )
 
-#: Spec 049, fatia A: `solicitation_form.manage` cortado em cinco verbos.
 _FORM_PERMISSIONS = ("form.read", "form.create", "form.update", "form.publish", "form.delete")
 
-# ⚠️⚠️ O PORTAO DO ROUTER FICA, alem do verbo de cada rota. Ate a fatia A ele
-# era a UNICA trava de todas as rotas daqui, numa linha so. Trocando por um
-# verbo por rota, uma rota nova esquecida sem `dependencies` nasceria ABERTA a
-# qualquer pessoa logada; com este piso, nasce fechada a quem nao tem nenhum
-# verbo de formulario.
+# Piso no router alem do verbo de cada rota: rota nova sem `dependencies` nasce fechada.
 router = APIRouter(
     prefix="/solicitacoes",
     tags=["solicitacoes"],
@@ -88,12 +73,7 @@ async def listar_formularios(
         ),
     ),
 ) -> list[FormResponse]:
-    """Os formularios de um time (Spec 048, fatia E).
-
-    ⚠️ `team_id` opcional no CONTRATO, obrigatorio no SERVICO: a rota tem de
-    aceitar a ausencia (e a fila da organizacao), e o servico nao pode ter um
-    default que deixe chamador errado em silencio.
-    """
+    """Os formularios de um time e descendentes (ausente = todos que a lente permite)."""
     formularios = await SolicitationFormService(uow.session).listar_formularios(
         team_id
     )
@@ -121,13 +101,7 @@ async def criar_formulario(
 
 
 def _secao_para_resposta(secao, perguntas) -> SectionResponse:
-    """⚠️ UM SO LUGAR MONTA `SectionResponse`, e isso e o ponto.
-
-    Sao cinco rotas que devolvem uma secao. Montar o dicionario em cada uma
-    faria o dia em que um campo novo nascer virar "quatro rotas passaram a
-    devolver, uma nao" -- e a que nao devolve seria descoberta pela tela
-    piscando um valor velho.
-    """
+    """Unico lugar que monta `SectionResponse`, para as rotas nao divergirem."""
     return SectionResponse(
         id=secao.id,
         slug=secao.slug,
@@ -146,13 +120,7 @@ def _secao_para_resposta(secao, perguntas) -> SectionResponse:
     "/formularios/{form_id}", response_model=FormDetailResponse, dependencies=_LER
 )
 async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailResponse:
-    """O formulario com as secoes e perguntas VIVAS, em ordem.
-
-    ⚠️ AS PERGUNTAS VEM ANINHADAS POR SECAO, e nao numa lista solta com
-    `section_id`. Quem monta a tela precisa da arvore; devolver plano faria
-    cada cliente reagrupar -- e o primeiro que agrupasse errado desenharia
-    pergunta na secao errada, sem erro nenhum.
-    """
+    """O formulario com as secoes e perguntas vivas, em ordem, aninhadas por secao."""
     servico = SolicitationFormService(uow.session)
     form = await servico.obter_formulario(form_id)
     secoes, perguntas = await servico.perguntas_do_form(form_id)
@@ -173,9 +141,7 @@ async def obter_formulario(form_id: uuid.UUID, uow: UoWDep) -> FormDetailRespons
 async def renomear_formulario(
     form_id: uuid.UUID, payload: FormUpdateRequest, uow: UoWDep
 ) -> FormResponse:
-    # ⚠️ SO O QUE VEIO NO CORPO. Para os rotulos, `null` significa DESLIGUE o
-    # campo -- entao "nao mandou" e "mandou null" precisam ser coisas
-    # diferentes, e `model_fields_set` e quem sabe isso.
+    # So o que veio no corpo: para os rotulos, `null` desliga o campo.
     rotulos = {
         campo: getattr(payload, campo)
         for campo in ("phone_label", "department_label", "polo_label")
@@ -209,13 +175,9 @@ async def publicar_formulario(
     return resposta
 
 
-# ⚠️ `response_class=Response` E O RETORNO `-> Response` NAO SAO ENFEITE, e eu
-# aprendi isso derrubando a COLETA INTEIRA da suite (24 arquivos, 22/08). Com
-# `-> None` e `from __future__ import annotations`, o FastAPI infere um modelo
-# de resposta a partir da anotacao e cai em
-# `AssertionError: Status code 204 must not have a response body` -- no IMPORT,
-# nao numa chamada. O padrao correto ja existia em `notifications/api/router.py`
-# e em `comment_router.py`; eu escrevi do zero em vez de copiar o vizinho.
+# `response_class=Response` e `-> Response` sao obrigatorios: com `-> None` e
+# `from __future__ import annotations`, o FastAPI quebra no import com
+# "Status code 204 must not have a response body".
 @router.delete(
     "/formularios/{form_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -249,10 +211,6 @@ async def criar_secao(
     return resposta
 
 
-# ⚠️ `/secoes/ordem` VEM ANTES DE NADA PARAMETRIZADO NESTE BLOCO? Nao precisa:
-# ela tem tres segmentos (`formularios/{id}/secoes/ordem`) e a irma tem dois,
-# entao nao ha como uma engolir a outra. A conferencia foi feita -- e o motivo
-# de estar escrita e o 422 de 26/08, que nasceu de nao fazer esta conta.
 @router.post(
     "/formularios/{form_id}/secoes/ordem",
     response_model=list[SectionResponse],
@@ -279,7 +237,7 @@ async def reordenar_secoes(
 async def editar_secao(
     section_id: uuid.UUID, payload: SectionUpdateRequest, uow: UoWDep
 ) -> SectionResponse:
-    """⚠️ SEM `slug` NO CORPO -- veja `SectionUpdateRequest`."""
+    """Sem `slug` no corpo -- veja `SectionUpdateRequest`."""
     servico = SolicitationFormService(uow.session)
     secao = await servico.editar_secao(
         section_id=section_id,
@@ -356,10 +314,7 @@ async def criar_pergunta(
 async def reordenar_perguntas(
     section_id: uuid.UUID, payload: OrdemRequest, uow: UoWDep
 ) -> list[QuestionResponse]:
-    """⚠️ PODE RECUSAR POR CAUSA DE CONDICIONAL -- arrastar a dependente para
-    cima do alvo faz dela uma pergunta que se revela por algo ainda nao
-    perguntado. A mensagem nomeia qual pergunta travou.
-    """
+    """Pode recusar se a ordem puser uma condicional antes da pergunta-alvo."""
     perguntas = await SolicitationFormService(uow.session).reordenar_perguntas(
         section_id=section_id, ids=payload.ids
     )

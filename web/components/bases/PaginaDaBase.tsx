@@ -1,15 +1,8 @@
 "use client";
-// components/bases/PaginaDaBase.tsx
-// Uma Base aberta (Spec 056, fatia E): nome, o texto do topo (D15), a tabela,
-// o aviso de linhas (D23) e excluir pedindo o nome (D26).
-//
-// ⚠️⚠️ AO VIVO (fatia G): o canal (`useAoVivo`) avisa quando outra pessoa
-// mexe, e a página recarrega. A recarga de 10 s da fatia E FICOU, mas só vale
-// com o canal fora do ar -- ele é um atalho, nunca o único caminho. Mesmo
-// desenho do sino (`NotificationBell`): pula com a aba escondida, volta ao
-// reaparecer, para no 401. ⚠️ E NADA RECARREGA ENQUANTO ALGUÉM EDITA uma
-// célula: trocar as linhas por baixo de um editor aberto o fecharia no meio da
-// digitação -- o aviso fica pendente e vale quando a edição acaba.
+// Uma Base aberta: nome, texto do topo, visões, tabela, aviso de linhas e excluir pedindo o nome.
+// Ao vivo: o canal (`useAoVivo`) avisa quando outra pessoa mexe e a página recarrega; a recarga
+// de 10 s só vale com o canal fora do ar. Nada recarrega enquanto alguém edita uma célula:
+// o aviso fica pendente até a edição acabar.
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -73,10 +66,9 @@ export default function PaginaDaBase({ id }: { id: string }) {
   const [importando, setImportando] = useState(false);
   useDocumentTitle(base?.name);
 
-  // --- a visão (fatia F) ---
-  // ⚠️ A URL diz a visão aberta (web/AGENTS.md §5): `?visao=<id>`. Lida e
-  // escrita por `window.location`/`history`, e não por `useSearchParams` --
-  // o mesmo cuidado das outras telas com o build.
+  // --- a visão ---
+  // A URL diz a visão aberta (`?visao=<id>`), lida e escrita por `window.location`/`history`,
+  // e não por `useSearchParams`, por causa do build.
   const [pedida, setPedida] = useState<string | null>(null);
   useEffect(() => {
     setPedida(new URLSearchParams(window.location.search).get("visao"));
@@ -89,12 +81,9 @@ export default function PaginaDaBase({ id }: { id: string }) {
   }
   // Linhas criadas nesta tela passam pelo filtro (ver `aplicarVisao`).
   const [fixadas, setFixadas] = useState<ReadonlySet<string>>(new Set());
-  // ⚠️ A config grava com ATRASO: digitar o valor de um filtro seria uma
-  // gravação (e uma entrada no diário) por tecla. E a recarga de 10 s espera,
-  // senão traria a config velha por cima da que está para ser gravada.
+  // A config grava com atraso (senão seria uma gravação por tecla), e a recarga de 10 s espera.
   const gravacaoDaVisao = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // ⚠️ Trava PRÓPRIA, e não o `ocupadoRef`: a tabela reescreve aquele a cada
-  // render (editando ou não), e apagaria esta no meio do atraso.
+  // Trava própria, e não o `ocupadoRef`: a tabela reescreve aquele a cada render.
   const salvandoVisao = useRef(false);
   const avisarErro = useAvisar();
   const visaoPendente = useRef<{ viewId: string; config: ConfigDaVisao } | null>(null);
@@ -133,9 +122,8 @@ export default function PaginaDaBase({ id }: { id: string }) {
     const g = geracao(id);
     const [b, l] = await Promise.all([getBase(id), listBaseRows(id)]);
     setBase(b);
-    // ⚠️ Uma gravação de linha começou no meio da leitura: estas linhas podem
-    // ser de ANTES dela e desfariam a edição na tela (ver
-    // `lib/gravacoesDaBase`). Fica pendente, e a próxima volta relê.
+    // Uma gravação de linha começou no meio da leitura: estas linhas podem ser de antes
+    // dela (ver `lib/gravacoesDaBase`). Fica pendente, e a próxima volta relê.
     if (geracao(id) !== g || haGravando(id)) {
       pendente.current = true;
       return b;
@@ -170,10 +158,8 @@ export default function PaginaDaBase({ id }: { id: string }) {
     };
   }, [carregar]);
 
-  // --- o ao vivo (fatia G) ---
-  // ⚠️ Um aviso que chega com alguém EDITANDO fica PENDENTE, e a recarga
-  // acontece quando a edição acaba: trocar as linhas por baixo de um editor
-  // aberto o faria perder o que está sendo digitado.
+  // --- o ao vivo ---
+  // Aviso que chega com alguém editando fica pendente até a edição acabar.
   const [meuId, setMeuId] = useState<string | null>(null);
   useEffect(() => {
     currentUser()
@@ -193,10 +179,8 @@ export default function PaginaDaBase({ id }: { id: string }) {
     recarregar();
   }, [id, recarregar]);
   const aoVivo = useAoVivo(id, meuId, aoMudar);
-  // Fatia H: o Ctrl+Z. Desfeito, recarrega -- o eco da própria ação não chega
-  // pelo canal (ver `useAoVivo`), então a recarga é daqui.
-  // ⚠️ E espera as gravações de linha em voo: sem isso, Ctrl+Z logo depois
-  // de editar desfazia a ação ANTERIOR (revisão de 08/10).
+  // Ctrl+Z: desfeito, recarrega daqui (o eco da própria ação não chega pelo canal).
+  // Espera as gravações de linha em voo, senão desfaria a ação anterior.
   const antesDeDesfazer = useCallback(async () => {
     await gravarVisaoAgora();
     await esperarGravacoes(id);
@@ -212,7 +196,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
     return () => clearInterval(t);
   }, [id, recarregar]);
 
-  // A recarga de 10 s (ver o topo) -- SÓ com o canal fora do ar.
+  // A recarga de 10 s, só com o canal fora do ar.
   const aoVivoRef = useRef(aoVivo);
   aoVivoRef.current = aoVivo;
   useEffect(() => {
@@ -303,8 +287,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
       )}
 
       {visao && (
-        // Fatia J: uma linha só, como no Notion -- as abas à esquerda, e
-        // filtro, ordem, colunas e desfazer à direita, só com ícone.
+        // Uma linha só: abas à esquerda; filtro, ordem, colunas e desfazer à direita.
         <div className="flex min-w-0 flex-wrap items-end gap-2 border-b border-border">
           <div className="min-w-0 flex-1">
             <BarraDeVisoes
@@ -349,7 +332,7 @@ export default function PaginaDaBase({ id }: { id: string }) {
               <Redo2 size={14} aria-hidden="true" />
             </button>
             <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
-            {/* Spec 057: exportar O QUE A VISÃO MOSTRA, e importar. */}
+            {/* Exporta o que a visão mostra, e importa. */}
             <BaseFileMenu
               baseId={base.id}
               rowIds={daVisao.map((l) => l.id)}

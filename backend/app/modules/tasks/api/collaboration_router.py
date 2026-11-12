@@ -1,23 +1,7 @@
-"""Router de colaboracao: responsaveis e observadores de uma task -- Entrega 4.
+"""Router de responsaveis e seguidores de uma task (sob /tasks/{task_id}).
 
-Rotas (sob /tasks/{task_id}):
-    POST   /assignees                 -- designa (task.assign)
-    DELETE /assignees/{user_id}       -- desatribui (task.assign)
-    GET    /watchers                  -- lista IDs (exige ver a task)
-    POST   /watchers                  -- observa (self: sem perm; 3o: task.assign)
-    DELETE /watchers/{user_id}        -- deixa de observar
-
-⚠️ `GET /assignees` SAIU EM 17/09/2026, sem chamador: quadro e detalhe leem
-`assignee_ids` do proprio payload da tarefa. `CollaborationService.list_assignees`
-FICOU -- o `POST` e o `DELETE` daqui devolvem a lista atual por ele.
-
-NOTA (ADR 0011): o POST/DELETE de watcher NAO usa require_permission no
-router -- a distincao self vs terceiro (e a permissao do terceiro) e
-resolvida no service. Proteger a rota aqui quebraria o self-watch de quem
-nao tem task.assign. Por isso essas rotas dependem de TenantContextDep
-(autenticacao) explicitamente.
-
-Regra de negocio mora no CollaborationService. Commit no UoW.
+As rotas de watcher nao usam require_permission: self vs terceiro (que exige
+task.assign) e resolvido no CollaborationService.
 """
 
 from __future__ import annotations

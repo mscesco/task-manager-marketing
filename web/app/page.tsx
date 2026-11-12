@@ -1,6 +1,5 @@
 "use client";
-// Rota raiz: decide pra onde mandar. Tem token -> a tela inicial (Spec 058,
-// §10.1: ela substituiu o quadro como entrada); senao -> login.
+// Rota raiz: com token vai para a tela inicial, sem token para o login.
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { getToken } from "@/lib/api";

@@ -1,9 +1,8 @@
 """Router de SISTEMA -- rotas de maquina-a-maquina (sem sessao de usuario).
 
-Diferente dos demais routers: NAO usa JWT/TenantContext. A unica rota e a
-varredura de auto-arquivamento (Spec 013), disparada por um job agendado
-(n8n) com o header X-System-Token. Trancada por segredo compartilhado, fail
-closed (sem token configurado -> 401 em tudo).
+Diferente dos demais routers: NAO usa JWT/TenantContext. As rotas sao
+varreduras disparadas por jobs agendados (n8n) com o header X-System-Token.
+Trancada por segredo compartilhado, fail closed (sem token configurado -> 401 em tudo).
 """
 
 from __future__ import annotations
@@ -42,9 +41,7 @@ def require_system_token(
     expected = settings.system_api_token
     if not expected:
         raise AuthenticationError("Endpoint de sistema indisponivel.")
-    # ⚠️ EM BYTES: com `str`, um caractere fora do ASCII no cabecalho fazia o
-    # `compare_digest` levantar `TypeError` -- 500 com stack no log, a partir
-    # de qualquer um na internet (auditoria de 16/10).
+    # Em bytes: com `str`, caractere fora do ASCII faz `compare_digest` levantar TypeError (500).
     if not x_system_token or not secrets.compare_digest(
         x_system_token.encode(), expected.encode()
     ):
@@ -68,7 +65,7 @@ async def archive_stale(session: SessionDep) -> dict:
     dependencies=[Depends(require_system_token)],
 )
 async def purge_bases(session: SessionDep) -> dict:
-    """A rotina diaria da Base (Spec 056, §11): apaga de vez a base excluida
+    """A rotina diaria da Base: apaga de vez a base excluida
     ha mais de 10 dias, e linha, coluna, opcao e diario com mais de 1 dia.
 
     Idempotente. Disparada por job diario (n8n), como o `archive-stale`.
@@ -81,7 +78,7 @@ async def purge_bases(session: SessionDep) -> dict:
     dependencies=[Depends(require_system_token)],
 )
 async def notify_deadlines(session: SessionDep) -> dict:
-    """Varre todos os workspaces emitindo avisos de prazo (Spec 023).
+    """Varre todos os workspaces emitindo avisos de prazo.
 
     due-soon (2 dias antes) + overdue (no dia que atrasa). Idempotente (dedup
     por coluna). Disparada por job diario (n8n). `now` resolvido no servidor;
@@ -95,8 +92,7 @@ async def notify_deadlines(session: SessionDep) -> dict:
     dependencies=[Depends(require_system_token)],
 )
 async def purge_notifications(session: SessionDep) -> dict:
-    """Apaga os avisos ja lidos com mais de 6 meses (auditoria de 11/11, item
-    17). Nao lido nunca sai.
+    """Apaga os avisos ja lidos com mais de 6 meses. Nao lido nunca sai.
 
     Idempotente. Disparada por job diario (n8n), como o `bases/purge`.
     """

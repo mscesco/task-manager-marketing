@@ -1,20 +1,8 @@
 "use client";
-// components/TelaDeNotificacoes.tsx
-// A tela `/notificacoes` (Spec 053, fatia F): tudo, paginado, agrupado por dia,
-// com abas Nao lidas / Todas, filtro por tipo e por tarefa ou projeto, e
-// "marcar estas como lidas".
-//
-// Pedido dela, 17/09: *"um 'ver todas' no dropdown das notificacoes que leva
-// pra uma tela que mostre (...) uma paginacao com as notificacoes, sabe?
-// porque a galera que recebe muitas acaba perdendo"*.
-//
-// ⚠️ MORA EM `components/` e nao em `app/`, para ter guardiao (o `include` do
-// vitest nao le `app/`). A regra esta em `lib/telaDeNotificacoes.ts`.
-//
-// ⚠️ ESTADO NA URL SEM `useSearchParams`: `/notificacoes` e rota ESTATICA, e o
-// hook derruba o `next build` sem `Suspense` (AGENTS.md §6). Le
-// `window.location` na montagem e grava com `history.replaceState` -- o mesmo
-// desenho de `lib/estadoDaTela.ts`.
+// A tela `/notificacoes`: tudo, paginado, agrupado por dia, com abas, filtros e
+// "marcar estas como lidas". A regra está em `lib/telaDeNotificacoes.ts`.
+// Estado na URL sem `useSearchParams` (rota estática; o hook derruba o `next build` sem `Suspense`):
+// lê `window.location` na montagem e grava com `history.replaceState`.
 
 import { useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 import Link from "next/link";
@@ -32,7 +20,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-/** O ícone e a cor de cada tipo de aviso (redesign, fatia 7). */
+/** O ícone e a cor de cada tipo de aviso. */
 const ICONE_DO_TIPO: Partial<Record<string, { Icone: LucideIcon; cor: string }>> = {
   TASK_COMMENTED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
   TASK_MENTIONED: { Icone: MessageCircle, cor: "bg-violet-soft text-violet" },
@@ -86,13 +74,12 @@ import {
 const ABAS = [
   { id: "nao-lidas" as const, label: "Não lidas" },
   { id: "todas" as const, label: "Todas" },
-  // Spec 054 (D5): o que a pessoa desligou continua aqui, e SO aqui.
+  // O que a pessoa desligou aparece aqui, e só aqui.
   { id: "silenciadas" as const, label: "Silenciadas" },
 ];
 
 export default function TelaDeNotificacoes() {
-  // ⚠️ `null` ate ler a URL: carregar com o estado inicial e depois com o da
-  // URL faria duas buscas e a lista piscaria.
+  // `null` até ler a URL: senão seriam duas buscas e a lista piscaria.
   const [estado, setEstado] = useState<EstadoDaTelaDeNotificacoes | null>(null);
   const [itens, setItens] = useState<AppNotification[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -114,12 +101,8 @@ export default function TelaDeNotificacoes() {
     });
   }, []);
 
-  // A URL espelha o estado. ⚠️ NUM EFEITO, e NAO dentro do `setEstado(atual
-  // => ...)`: a funcao de atualizacao roda durante o render, e o
-  // `replaceState` avisa o roteador do Next -- "Cannot update a component
-  // (Router) while rendering a different component", que o Next 15 passou a
-  // mostrar na tela (print dela de 07/10). So grava quando muda: na
-  // montagem, o estado acabou de ser LIDO da URL.
+  // A URL espelha o estado num efeito, e não no `setEstado`: `replaceState` durante o render
+  // dispara "Cannot update a component (Router) while rendering". Na montagem não grava.
   useEffect(() => {
     if (!estado) return;
     const query = queryDoEstado(estado);
@@ -144,7 +127,7 @@ export default function TelaDeNotificacoes() {
         page: estado.pagina,
         size: POR_PAGINA,
       }),
-      // Quantas NAO LIDAS ha no recorte -- o numero do botao de marcar (D25).
+      // Quantas não lidas há no recorte: o número do botão de marcar.
       listNotifications({ ...filtro, unread_only: true, page: 1, size: 1 }),
     ])
       .then(([pagina, contagem]) => {
@@ -186,8 +169,6 @@ export default function TelaDeNotificacoes() {
         count={naoLidas === 1 ? "1 não lida" : `${naoLidas} não lidas`}
         actions={
           <div className="ml-auto flex max-w-full flex-wrap items-center gap-2">
-            {/* Redesign (fatia 7): as abas em pílula, no cabeçalho, com a
-                contagem de não lidas. */}
             <AbasEmPilula<Aba>
               abas={ABAS.map((a) => (a.id === "nao-lidas" ? { ...a, count: naoLidas } : a))}
               ativa={estado.aba}
@@ -195,8 +176,7 @@ export default function TelaDeNotificacoes() {
               aria-label="Quais notificações"
               group="notificacoes"
             />
-            {/* Spec 054 (§9.6): o link mora AQUI, e nao no sino -- o sino e
-                para ler o aviso, nao para configurar. */}
+            {/* O link de preferências mora aqui, e não no sino. */}
             <Link href="/perfil#notificacoes" className="btn btn-ghost">
               Configurar
             </Link>
@@ -239,7 +219,7 @@ export default function TelaDeNotificacoes() {
             <button
               type="button"
               className="btn btn-ghost"
-              // ⚠️ Padding INLINE: o `.btn` do globals.css nao esta em camada e
+              // Padding inline: o `.btn` do globals.css não está em camada e
               // vence `px-*`/`py-*` do Tailwind.
               style={{ padding: "0 4px" }}
               aria-label="Tirar o filtro de tarefa ou projeto"
@@ -279,9 +259,7 @@ export default function TelaDeNotificacoes() {
                 ? "Nenhuma notificação com esses filtros"
                 : estado.aba === "nao-lidas"
                   ? "Nenhuma notificação não lida"
-                  : // Spec 054: vazio aqui é bom sinal -- nada foi silenciado.
-                    // "Nenhuma notificação" seria mentira: elas estão nas
-                    // outras abas.
+                  : // Vazio aqui é bom sinal: nada foi silenciado.
                     estado.aba === "silenciadas"
                     ? "Nenhuma notificação silenciada"
                     : "Nenhuma notificação"
@@ -373,7 +351,6 @@ function LinhaDeAviso({
     markNotificationRead(aviso.id).catch(() => {});
   }
 
-  // Redesign (fatia 7): um ícone por tipo, na cor da família, como na prancha.
   const { Icone, cor } = ICONE_DO_TIPO[aviso.type] ?? ICONE_PADRAO;
   const conteudo = (
     <>
@@ -402,27 +379,25 @@ function LinhaDeAviso({
 
   return (
     <li
-      // Redesign (fatias 5 e 7): cada aviso e um cartao; nao lida = filete no
-      // bordo esquerdo, e nao a linha inteira tingida.
+      // Não lida = filete no bordo esquerdo.
       className={`flex items-start gap-3 rounded-xl border border-border bg-surface py-3 pr-3 transition-[border-color] duration-200 hover:border-accent ${
         naoLida ? "border-l-[3px] border-l-accent pl-3" : "border-l-[3px] border-l-transparent pl-3"
       }`}
     >
       {destino ? (
-        // ⚠️ `<Link>`, e nao `<div onClick>` (web/AGENTS.md §5): abrir numa
-        // aba nova com Ctrl/clique do meio tem de funcionar.
+        // `<Link>`, e não `<div onClick>`: abrir em aba nova tem de funcionar.
         <Link href={destino} onClick={marcarLida} className="flex min-w-0 flex-1 items-start gap-2">
           {conteudo}
         </Link>
       ) : (
-        // D27: tarefa excluida ou fora do alcance -> apagado e SEM link.
+        // Tarefa excluída ou fora do alcance: apagado e sem link.
         <div className="flex min-w-0 flex-1 items-start gap-2 opacity-80">{conteudo}</div>
       )}
       {aviso.task_id && !filtrandoEstaTarefa && (
         <button
           type="button"
           className="btn btn-ghost shrink-0"
-          // ⚠️ Inline pelo mesmo motivo do `×` do filtro (o `.btn` vence o Tailwind).
+          // Inline pelo mesmo motivo do `×` do filtro (o `.btn` vence o Tailwind).
           style={{ padding: "2px 8px", fontSize: 12 }}
           onClick={onSoDestaTarefa}
         >
@@ -433,7 +408,7 @@ function LinhaDeAviso({
   );
 }
 
-/** O campo "Tarefa ou projeto", com sugestoes enquanto se digita (D23). */
+/** O campo "Tarefa ou projeto", com sugestões enquanto se digita. */
 function BuscaDeAlvo({ onEscolher }: { onEscolher: (a: AlvoDeNotificacao) => void }) {
   const [termo, setTermo] = useState("");
   const [sugestoes, setSugestoes] = useState<AlvoDeNotificacao[]>([]);

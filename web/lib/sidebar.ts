@@ -1,25 +1,7 @@
-// Estado da barra lateral, persistido no localStorage.
-//
-// ⚠️ POR QUE PRECISA SER PERSISTIDO, e nao e capricho: a navegacao do app e
-// por `<a href>` -- RECARGA TOTAL a cada troca de tela (o mesmo fato que
-// obriga o script bloqueante de tema no `layout.tsx`). Sem isto, todo
-// `useState` da barra volta ao inicial: quem retrai a barra em "Projetos" a
-// encontra aberta de novo em "Membros", e outra vez em "Times". Relatado pela
-// Camila em 21/08.
-//
-// FRONTEIRA (Spec 027): ler e validar preferencia e DECISAO -- mora aqui, com
-// teste proprio; a tela so chama.
-//
-// ⚠️ ESPELHA `lib/tema.ts` DE PROPOSITO, ate no try/catch: `localStorage`
-// LANCA em modo privado com cookies bloqueados, e preferencia de barra lateral
-// nao vale derrubar a pagina. Valor invalido ou ausente cai no padrao.
-//
-// ⚠️ NAO PRECISA DE SCRIPT BLOQUEANTE, diferente do tema. O `AppShell` comeca
-// com `loading = true` e so desenha a barra depois do check de auth, ja no
-// cliente -- entao ler no inicializador do `useState` nao diverge do SSR e nao
-// produz piscada. O mesmo raciocinio ja esta escrito no `AppShell` para o
-// tema. Se um dia a barra passar a renderizar antes do check, isto vira flash
-// e precisa do script.
+// Estado da barra lateral, persistido no localStorage: a navegação é por
+// `<a href>` (recarga total), e sem isso a barra voltaria ao inicial a cada
+// tela. `localStorage` lança em modo privado, daí o try/catch. Não precisa de
+// script bloqueante: o `AppShell` só desenha a barra depois do check de auth.
 
 export const CHAVE_BARRA_ABERTA = "tm_sidebar_open";
 export const CHAVE_QUADROS_ABERTO = "tm_sidebar_boards_open";
@@ -32,10 +14,7 @@ function lerBooleano(chave: string, padrao: boolean): boolean {
   if (typeof window === "undefined") return padrao;
   try {
     const v = window.localStorage.getItem(chave);
-    // ⚠️ Comparacao EXPLICITA com as duas strings, e nao `v === "true"`
-    // sozinho: assim um valor corrompido ("1", "sim", lixo de outra versao)
-    // cai no PADRAO em vez de virar `false` em silencio. Barra fechada sem
-    // ninguem ter fechado e mais confuso que barra aberta.
+    // As duas strings explícitas: valor corrompido cai no padrão, não em `false`.
     if (v === "true") return true;
     if (v === "false") return false;
     return padrao;
@@ -72,7 +51,7 @@ export function gravarQuadrosAberto(aberto: boolean): void {
 }
 
 // ---------------------------------------------------------------
-// Spec 063: o menu muda de forma com a largura da tela.
+// O menu muda de forma com a largura da tela.
 // ---------------------------------------------------------------
 
 export type FaixaDeTela = "celular" | "tablet" | "computador";
@@ -87,9 +66,8 @@ export function faixaDaLargura(largura: number): FaixaDeTela {
 /**
  * O menu mostra os rotulos?
  *
- * ⚠️ `preferencia` (o "Retrair" gravado no localStorage) SO VALE NO COMPUTADOR.
- * Quem abre o Oniros no celular nao pode mudar como o menu aparece na mesa: por
- * isso a gaveta e um estado a parte, que nao e gravado.
+ * `preferencia` (o "Retrair" gravado) só vale no computador; a gaveta do
+ * celular/tablet é estado à parte, não gravado.
  */
 export function barraExpandida(
   faixa: FaixaDeTela,

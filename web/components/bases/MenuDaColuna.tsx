@@ -1,12 +1,6 @@
 "use client";
-// components/bases/MenuDaColuna.tsx
-// Peças de coluna da Base que sobraram do menu do "⋯" (Spec 056, fatia E):
-// a linha de uma opção (nome, cor, apagar), o "+" que cria coluna no fim, e o
-// criar opção digitando.
-//
-// ⚠️ O MENU DA COLUNA EM SI SAIU NA FATIA I (07/10): o cabeçalho inteiro virou
-// o botão, com o menu do Notion -- `CabecalhoDaColuna.tsx`. O "⋯" não existe
-// mais, a pedido dela: *"nada de ter que clicar em 3 pontos pra editar"*.
+// Peças de coluna da Base: a linha de uma opção (nome, cor, apagar), o "+" que
+// cria coluna no fim e o criar opção digitando. O menu da coluna é `CabecalhoDaColuna.tsx`.
 
 import { useRef, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -188,8 +182,7 @@ export function NovaColuna({
 }
 
 /** A opção nova que a célula de seleção cria digitando. Devolve a coluna. */
-/** Várias opções novas numa ida só (Spec 057: colar rótulos que a coluna
- *  ainda não tem -- os chips do Google Planilhas, por exemplo). */
+/** Várias opções novas numa ida só (ex.: colar rótulos que a coluna ainda não tem). */
 export async function criarOpcoes(
   baseId: string,
   coluna: BaseColumn,

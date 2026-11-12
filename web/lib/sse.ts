@@ -1,11 +1,7 @@
-// lib/sse.ts
-// Ler Server-Sent Events de um texto que chega aos pedaços (Spec 056, fatia G).
-//
-// ⚠️ POR QUE NÃO O `EventSource` DO NAVEGADOR: ele não manda cabeçalho, e o
-// token deste sistema vai no `Authorization` (ele mora no localStorage -- a
-// revisão de segurança de 23/09 deixou assim). Pôr o token na URL o deixaria
-// nos logs do Traefik. Então o canal é um `fetch` lido em fluxo, e o formato
-// SSE é lido aqui -- puro, testado em `lib/__tests__/sse.test.ts`.
+// Ler Server-Sent Events de um texto que chega aos pedaços. Não usa o
+// `EventSource` porque ele não manda cabeçalho, e o token vai no
+// `Authorization` (na URL ficaria nos logs do proxy). O canal é um `fetch`
+// lido em fluxo.
 
 export type EventoSSE = { evento: string; dados: string };
 

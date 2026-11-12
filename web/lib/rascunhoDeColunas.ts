@@ -1,22 +1,8 @@
 /**
- * O RASCUNHO da edição de colunas (Spec 036, fatia 6c-1).
- *
- * ⚠️ NO MODO DE EDIÇÃO NADA VAI AO SERVIDOR. A pessoa renomeia, arrasta, marca
- * colunas para sumir e cria colunas -- tudo aqui dentro, em memória --, e só ao
- * concluir sai **um** pedido (`PUT /boards/{id}/columns`). Este arquivo é esse
- * "aqui dentro", e ele é puro: nenhuma linha toca em rede, DOM ou React.
- *
- * ⚠️ POR QUE PURO, E NÃO ESTADO DENTRO DO COMPONENTE. O arraste de cabeçalho é
- * `onDragEnd`, que **não roda em jsdom** -- o produto já tem dois assim, e este
- * é o terceiro. Se a regra de "o que a edição virou" morasse no handler, ela
- * nasceria sem guardião. Aqui, o arraste e as setas chamam a MESMA função, e o
- * caminho testável exercita a linha que o não testável usa.
- *
- * ⚠️ O QUE O LOTE PERMITE, E É A RAZÃO DE ELE EXISTIR: trocar uma coluna por
- * outra num gesto. Criar "Entregue", mandar as tarefas de "Aprovação" para ela
- * e apagar "Aprovação" -- tudo antes de existir id nenhum. É daí que vem o
- * `tmp:`, e é por isso que este módulo trabalha com REFERÊNCIA (`string`) e não
- * com `Coluna`.
+ * O rascunho da edição de colunas: tudo fica em memória e só ao concluir sai um
+ * `PUT /boards/{id}/columns`. Puro (sem rede, DOM ou React) porque `onDragEnd`
+ * não roda em jsdom: arraste e setas chamam as mesmas funções testáveis. Usa
+ * referência (`string`) porque colunas novas ainda não têm id (`tmp:`).
  */
 
 import type { Coluna, ColumnSemantic } from "@/lib/coluna";
@@ -31,85 +17,39 @@ export interface ColunaNova {
   readonly ref: string;
   readonly name: string;
   readonly semantic: ColumnSemantic;
-  /**
-   * Spec 039 (F9). Token da paleta escolhido no formulário.
-   *
-   * ⚠️ `undefined` É "NÃO ESCOLHI", e vira ausência no corpo do lote — o
-   * backend cai na rotação dele. Não trocar por uma cor concreta aqui: isso
-   * faria a tela decidir uma coisa que é do servidor, e as duas discordariam
-   * na primeira vez que a rotação mudasse.
-   */
+  /** Token da paleta. `undefined` = não escolheu: vai ausente no lote e o backend usa a rotação. */
   readonly color?: string;
-  /** Spec 039 (F9). `undefined` = `true`, o comportamento de sempre. */
+  /** `undefined` = `true`. */
   readonly notifyDeadline?: boolean;
 }
 
-/**
- * A edição pendente inteira.
- *
- * ⚠️ IMUTÁVEL, e toda função devolve um novo. É o que faz o React repintar sem
- * comparação profunda, e o que permite "descartar" jogando o objeto fora.
- */
+/** A edição pendente inteira. Imutável: toda função devolve um novo. */
 export interface Rascunho {
   /** Referências na ordem desejada. Inclui as `tmp:` e exclui as apagadas. */
   readonly ordem: readonly string[];
   /** ref -> nome novo. Só entra quem foi renomeado. */
   readonly nomes: Readonly<Record<string, string>>;
-  /** Ids reais marcados para sumir. ⚠️ Coluna nova apagada some do rascunho. */
+  /** Ids reais marcados para sumir. Coluna nova apagada some do rascunho. */
   readonly apagadas: readonly string[];
   readonly novas: readonly ColunaNova[];
   /**
-   * ref -> cobra prazo? Só entra quem a pessoa MEXEU (Spec 039, F9).
-   *
-   * ⚠️ SÓ ID REAL, e a ausência é a regra — igual a `alvos`. Coluna nova
-   * carrega o valor dela em `ColunaNova.notifyDeadline`; pôr as duas fontes
-   * aqui faria a ordem das etapas do backend virar regra invisível.
-   *
-   * ⚠️ E "SÓ QUEM MEXEU" NÃO É ECONOMIA DE BYTES. Mandar todas as colunas em
-   * todo lote faria cada edição de nome reescrever `notify_deadline` de 19
-   * colunas — e, se outra pessoa tivesse mudado uma delas nesse meio-tempo,
-   * esta edição a desfaria sem ninguém pedir.
+   * ref -> cobra prazo? Só ids reais que a pessoa mexeu: mandar todas
+   * desfaria mudanças concorrentes de outra pessoa.
    */
   readonly avisos: Readonly<Record<string, boolean>>;
   /**
-   * Ids reais que passam a ser o ALVO da semântica deles (Spec 036, fatia 12).
-   *
-   * ⚠️ SÓ ID REAL — `tmp:` NUNCA ENTRA AQUI. Coluna nova não tem id no momento
-   * em que a pessoa monta o lote, e amarrar o alvo a uma coluna que nasce no
-   * mesmo pedido faria a ORDEM DAS ETAPAS do backend virar regra invisível.
-   * `comAlvo` recusa, e há teste.
-   *
-   * ⚠️ É UMA LISTA, e não um id só: a pessoa pode trocar o alvo de `OPEN` e o
-   * de `DONE` no mesmo gesto. O backend aplica um por um, cada um tirando de
-   * quem era o alvo DAQUELA semântica.
+   * Ids reais que passam a ser o alvo da semântica deles; `tmp:` nunca entra
+   * (`comAlvo` recusa). Lista porque várias semânticas podem trocar no mesmo lote.
    */
   readonly alvos: readonly string[];
-  /** Contador do apelido. ⚠️ Não reaproveita número: ver `comColunaNova`. */
+  /** Contador do apelido. Não reaproveita número: ver `comColunaNova`. */
   readonly proximoTmp: number;
 }
 
 /**
- * Prefixo do id de arraste do CABEÇALHO, no `dnd-kit`.
- *
- * ⚠️⚠️ **ELE EXISTE PARA IMPEDIR UMA COLISÃO DE ID QUE APAGAVA O ARRASTE DE
- * CARD (achado na conferência de 18/08).** Dentro do mesmo `DndContext`, cada
- * coluna registrava DUAS coisas com o MESMO id:
- *
- *   - `ColunaKanban` -> `useDroppable({ id: coluna.id })`, o alvo do card;
- *   - `CabecalhoSortavel` -> `useSortable({ id: ref })`, no modo de edição.
- *
- * O `dnd-kit` guarda os alvos por id. O segundo registro sobrescrevia o
- * primeiro, e **ao sair do modo de edição o cabeçalho desmontava e removia a
- * entrada — levando junto o alvo do card.** O sintoma era exato: depois de
- * entrar e sair da edição, arrastar tarefa não fazia nada, o card voltava sem
- * aviso, e **F5 consertava** (a árvore inteira era remontada).
- *
- * ⚠️ O SINTOMA NÃO ACUSA A CAUSA. "O card volta sem aviso" parece regra de
- * negócio recusando o destino -- e o `onDragEnd` até tem três `return` mudos
- * que produziriam o mesmo. O que acontecia é que `e.over` chegava `null`.
- *
- * ⚠️ NENHUM PORTÃO PEGA ISTO, e não vai pegar: `onDragEnd` não roda em jsdom.
- * O que dá para prender é o par de funções abaixo, e é o que os testes fazem.
+ * Prefixo do id de arraste do cabeçalho no `dnd-kit`. Sem ele o cabeçalho
+ * (`useSortable`) e o corpo da coluna (`useDroppable`) teriam o mesmo id, e ao
+ * sair do modo de edição o desmonte do cabeçalho levava junto o alvo do card.
  */
 export const PREFIXO_ARRASTE_DE_CABECALHO = "cab:";
 
@@ -118,14 +58,7 @@ export function idDeArrasteDoCabecalho(ref: string): string {
   return `${PREFIXO_ARRASTE_DE_CABECALHO}${ref}`;
 }
 
-/**
- * A `ref` da coluna a partir do id de arraste -- ou `null` se não for um.
- *
- * ⚠️ `null` PARA QUALQUER OUTRA COISA, e não um `replace` cego. No mesmo
- * contexto viajam ids de CARD (uuid de tarefa) e de COLUNA; um `replace`
- * devolveria o id do card intacto e o `onDragEnd` de coluna trataria uma
- * tarefa como coluna.
- */
+/** A `ref` da coluna a partir do id de arraste, ou `null` se não for um (ids de card viajam no mesmo contexto). */
 export function refDoArrasteDeCabecalho(id: string): string | null {
   return id.startsWith(PREFIXO_ARRASTE_DE_CABECALHO)
     ? id.slice(PREFIXO_ARRASTE_DE_CABECALHO.length)
@@ -133,30 +66,10 @@ export function refDoArrasteDeCabecalho(id: string): string | null {
 }
 
 /**
- * A coluna sobre a qual o arraste terminou, a partir do id que o `dnd-kit`
- * devolveu em `over`.
- *
- * ⚠️⚠️ EXISTE PORQUE O MESMO `DndContext` REGISTRA **DOIS** ALVOS POR COLUNA, e
- * eu só descobri isso quando a Camila reportou (22/08): *"ao tentar arrastar
- * uma coluna nova pra reordenar, não consigo, só pelas setas funciona"*.
- *
- *   - o CORPO da coluna, por `useDroppable({ id: coluna.id })` -- o retângulo
- *     inteiro, que existe para receber CARD;
- *   - o CABEÇALHO, por `useSortable({ id: PREFIXO + ref })` -- a tira do topo,
- *     que existe para reordenar COLUNA.
- *
- * O cabeçalho fica DENTRO do corpo. Com a detecção padrão (`rectIntersection`),
- * os dois intersectam o ponteiro e o desempate acaba caindo na ordem de
- * registro -- que é justamente onde a coluna recém-criada é diferente: ela
- * entra por último. O handler antigo exigia o id COM prefixo e desistia calado
- * quando vinha o do corpo.
- *
- * ⚠️ E ELE DEVOLVE `null` PARA O QUE NÃO É COLUNA DESTE RASCUNHO. No mesmo
- * contexto viajam ids de card; tratá-los como coluna moveria a coluna errada.
- *
- * ⚠️ NÃO TESTÁVEL PELO ARRASTE: `onDragEnd` não roda em jsdom, e sem layout não
- * há colisão a simular. É por isso que a decisão de qual id aceitar mora aqui,
- * numa função pura com teste, e não dentro do handler.
+ * A coluna sobre a qual o arraste terminou, a partir do `over` do `dnd-kit`.
+ * Aceita os dois alvos de cada coluna (cabeçalho com prefixo e corpo sem), pois
+ * o desempate entre eles depende da ordem de registro. `null` se não for coluna
+ * deste rascunho.
  */
 export function refDeColunaDoDrop(
   idDoDrop: string,
@@ -172,52 +85,21 @@ export function ehNova(ref: string): boolean {
 }
 
 /**
- * A cor de uma coluna nova **de que ninguém escolheu a cor**.
- *
- * ⚠️ NEUTRA DE PROPÓSITO, E NÃO UM PALPITE. Sem escolha, quem decide é o
- * servidor (`_cor_por_rotacao(len(existentes))`, em `board_service.py`), e num
- * lote com duas criações o índice de cada uma depende da ordem em que o backend
- * as grava -- o front não tem como acertar. Mostrar uma cor que vai mudar
- * sozinha depois de concluir seria a tela prometendo o que não entrega.
- *
- * ⚠️⚠️ E ISTO DEIXOU DE VALER PARA QUEM ESCOLHE (Spec 039, F9, corrigido em
- * 22/08). A Camila viu na tela: *"a cor que escolhi fica transparente ao criar,
- * só volta certa depois"*. Estava certa, e o defeito era meu -- eu dei a
- * escolha à pessoa e continuei desenhando o cinza, porque a regra acima foi
- * escrita quando o front NÃO PODIA saber a cor. Agora ele pode: escolheu, é
- * exatamente esse token que o backend vai gravar.
- *
- * A regra virou duas, e cada metade tem o dono certo:
- *   - **escolheu** -> desenha a escolhida, porque o front sabe;
- *   - **automática** -> desenha este cinza, porque o servidor é que sabe.
- *
- * ⚠️ E O CINZA CONTINUA COMUNICANDO no segundo caso: no meio de colunas
- * coloridas ele é o sinal de "esta ainda não existe" sem precisar de legenda.
- * O que ele NÃO pode fazer é apagar uma decisão que a pessoa acabou de tomar.
+ * A cor de uma coluna nova sem cor escolhida: neutra, porque quem decide é a
+ * rotação do servidor. Com cor escolhida, desenha a escolhida.
  */
 export const COR_DA_COLUNA_NOVA = "var(--border)";
 
 /**
- * A `Coluna` de mentira que representa um `tmp:` para quem só sabe ler `Coluna`.
- *
- * ⚠️ FONTE ÚNICA, E ESSE É O PONTO. Esta forma já existia escrita à mão em
- * TRÊS lugares -- `linhasDeEdicao` (sobrantes), o `Board.tsx` e a
- * `RevisaoDaEdicao` --, e as três precisavam concordar em `is_default_target:
- * false`, que é o que faz a conta do impedimento bater com a do servidor. Três
- * cópias de uma regra é exatamente como a ADR 0042 divergiu.
- *
- * ⚠️ `is_default_target: false` PORQUE É ASSIM QUE O BACKEND CRIA
- * (`criar_coluna` crava `False`). Criar uma segunda coluna de conclusão **não**
- * libera apagar a atual, e é aqui que isso fica verdadeiro.
- *
- * ⚠️ `position: 0` É LIXO E NÃO É LIDO. A posição de verdade é o índice em
- * `rascunho.ordem`; o campo existe só porque o tipo `Coluna` o exige.
+ * A `Coluna` de mentira que representa um `tmp:` para quem só lê `Coluna`.
+ * `is_default_target: false` como o backend cria (é o que faz a conta do
+ * impedimento bater); `position` não é lido.
  */
 export function colunaDoRascunho(
   ref: string,
   nome: string,
   semantic: ColumnSemantic,
-  /** Spec 039 (F9). `undefined` = automática -> cai no cinza de "ainda não existe". */
+  /** `undefined` = automática -> cinza de "ainda não existe". */
   cor?: string,
 ): Coluna {
   return {
@@ -227,34 +109,15 @@ export function colunaDoRascunho(
     position: 0,
     semantic,
     notify_deadline: true,
-    // ⚠️ COLUNA CRIADA POR GENTE NUNCA E PONTE (`criar_coluna` crava
-    // `legacy_status=None`). Logo, ela e apagavel ate no Quadro geral -- e e
-    // isso que torna a trava da ponte estreita em vez de simbolica.
+    // Coluna criada por gente nunca e ponte.
     is_status_bridge: false,
     is_default_target: false,
   } satisfies Coluna;
 }
 
 /**
- * As colunas que o kanban desenha com o modo de edição ligado, na ordem do
- * rascunho e **incluindo as `tmp:`**.
- *
- * ⚠️ ATÉ 17/08 A COLUNA NOVA FICAVA NA `ordem` E FORA DA TELA, e isso era um
- * meio-termo que não se sustentava. O ref entrava em `rascunho.ordem` (então
- * `comOrdem` a movia) e era filtrado do que o `Board.tsx` desenhava -- logo:
- * as setas ← → moviam uma coluna invisível, o `SortableContext` não a conhecia,
- * e `indice`/`total` de TODOS os cabeçalhos ficavam errados a partir dela,
- * porque um contava com a nova e o outro sem. **Não dava para posicionar a
- * coluna criada antes de concluir** -- que é metade do gesto que o lote existe
- * para permitir.
- *
- * ⚠️ ELA NASCE VAZIA E CONTINUA VAZIA. Não tem id real, então nenhuma tarefa
- * aponta para ela e nenhum card cai ali. Isso é honesto: no modo de edição os
- * cards estão travados de qualquer forma, e a coluna só passa a receber tarefa
- * depois de existir no servidor.
- *
- * ⚠️ AS MARCADAS PARA APAGAR CONTINUAM AQUI, riscadas pelo cabeçalho. Mesma
- * razão de `linhasDeEdicao`: sumir no clique quebraria o desfazer.
+ * As colunas que o kanban desenha no modo de edição, na ordem do rascunho,
+ * incluindo as `tmp:` (vazias) e as marcadas para apagar (riscadas).
  */
 export function colunasParaDesenhar(
   rascunho: Rascunho,
@@ -269,10 +132,7 @@ export function colunasParaDesenhar(
       saida.push(colunaDoRascunho(ref, nova.name, nova.semantic, nova.color));
       continue;
     }
-    // ⚠️ SEM `!`. Um ref sem coluna real acontece de verdade: trocar de quadro
-    // com o modo ligado deixa o rascunho do quadro anterior em pé por um
-    // render. Aquele `!` foi o `TypeError` de 17/08; aqui a linha some da tela
-    // em vez de derrubar a página.
+    // Sem `!`: ao trocar de quadro o rascunho anterior sobrevive um render.
     const real = porId.get(ref);
     if (real) saida.push(real);
   }
@@ -292,21 +152,13 @@ export function rascunhoInicial(colunas: readonly Coluna[]): Rascunho {
   };
 }
 
-/**
- * Há algo para salvar?
- *
- * ⚠️ É O QUE DECIDE SE SAIR DO MODO PRECISA AVISAR. Sem isto, fechar a edição
- * descartaria em silêncio uma coluna que a pessoa acabou de criar -- e ela
- * some sem explicação, porque nunca chegou a existir no servidor.
- */
+/** Há algo para salvar? Decide se sair do modo precisa avisar. */
 export function temPendencias(
   rascunho: Rascunho,
   colunas: readonly Coluna[],
 ): boolean {
   if (
     rascunho.novas.length > 0 ||
-    // ⚠️ SEM ESTA LINHA, desmarcar "Cobrar prazo" e clicar em "Sair" sairia
-    // SEM PERGUNTAR, e a pessoa perderia a mudança achando que salvou.
     Object.keys(rascunho.avisos).length > 0 ||
     rascunho.apagadas.length > 0 ||
     Object.keys(rascunho.nomes).length > 0
@@ -327,10 +179,7 @@ export function comRenome(
   nome: string,
 ): Rascunho {
   if (ehNova(ref)) {
-    // ⚠️ COLUNA NOVA GUARDA O NOME NELA MESMA, e não em `nomes`. Se fosse nos
-    // dois, o lote diria duas coisas sobre a mesma linha -- `criar` com um nome
-    // e `renomear` com outro -- e a ordem entre as etapas viraria regra
-    // invisível. O backend nem aceitaria: `renomear` só recebe UUID.
+    // Coluna nova guarda o nome nela mesma; `renomear` do backend só aceita UUID.
     return {
       ...rascunho,
       novas: rascunho.novas.map((n) =>
@@ -341,13 +190,7 @@ export function comRenome(
   return { ...rascunho, nomes: { ...rascunho.nomes, [ref]: nome } };
 }
 
-/**
- * Marca ou desmarca uma coluna para sumir.
- *
- * ⚠️ COLUNA NOVA NÃO É "MARCADA", É REMOVIDA. Ela nunca existiu no servidor;
- * marcá-la produziria um lote que pede para apagar um id que ele mesmo acabou
- * de criar. O backend recusaria -- e com razão.
- */
+/** Marca ou desmarca uma coluna para sumir. Coluna nova é removida, não marcada. */
 export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
   if (ehNova(ref)) {
     return {
@@ -362,15 +205,7 @@ export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
     apagadas: marcada
       ? rascunho.apagadas.filter((r) => r !== ref)
       : [...rascunho.apagadas, ref],
-    // ⚠️ MARCAR PARA APAGAR TIRA O ALVO PEDIDO (Spec 036, fatia 12). Sem isto,
-    // o lote mandaria "põe o alvo em X" e "apague X" no mesmo pedido, e a
-    // ORDEM DAS ETAPAS do backend decidiria o resultado em silêncio. O gesto
-    // se desfaz sozinho porque é o que a pessoa quis dizer: ela mudou de
-    // ideia sobre aquela coluna.
-    //
-    // ⚠️ DESMARCAR NÃO DEVOLVE O ALVO. Marcar e desmarcar não é uma operação
-    // reversível de estado -- é a pessoa reconsiderando duas vezes. Devolver
-    // um alvo que ela pediu antes de mudar de ideia seria adivinhar.
+    // Marcar para apagar tira o alvo pedido; desmarcar não o devolve.
     alvos: marcada
       ? rascunho.alvos
       : rascunho.alvos.filter((r) => r !== ref),
@@ -378,31 +213,8 @@ export function comMarcacao(rascunho: Rascunho, ref: string): Rascunho {
 }
 
 /**
- * Marca uma coluna como o ALVO da semântica dela (Spec 036, fatia 12).
- *
- * ⚠️ NÃO EXISTE "DESMARCAR", e a ausência é a trava. `OPEN` e `DONE` são as
- * semânticas em que o SISTEMA escreve sozinho: sem alvo, `_assert_ponte_sobrevive`
- * passa a recusar toda criação de tarefa naquele quadro -- **dias depois, para
- * outra pessoa**. Trocar é trocar. Clicar de novo no selo da coluna que já é o
- * alvo é no-op.
- *
- * ⚠️ COLUNA NOVA (`tmp:`) É RECUSADA. Ela não tem id, e a etapa de criar roda
- * depois no backend. A pessoa cria, conclui, e marca depois.
- *
- * ⚠️ MARCAR DESFAZ A EXCLUSÃO, se houver. É o par simétrico do `comMarcacao`:
- * pedir que uma coluna seja o alvo é dizer que ela fica.
- */
-/**
- * Liga ou desliga a cobrança de prazo de uma coluna (Spec 039, F9).
- *
- * ⚠️ VOLTAR AO VALOR ORIGINAL TIRA A ENTRADA DO MAPA, em vez de gravar o valor
- * de novo. Sem isso, marcar e desmarcar deixaria o rascunho "sujo": o botão
- * "Sair" perguntaria se quer descartar, e o lote mandaria uma escrita que não
- * muda nada -- gastando uma ida e uma linha de log por um gesto que a pessoa
- * desfez.
- *
- * ⚠️ COLUNA NOVA MEXE NO `novas`, e não neste mapa. Ela ainda não tem id, e o
- * schema de `avisos` do backend não aceita `tmp:`.
+ * Liga ou desliga a cobrança de prazo. Voltar ao valor original tira a entrada
+ * do mapa (senão o rascunho fica "sujo"). Coluna nova mexe em `novas`.
  */
 export function comAviso(
   rascunho: Rascunho,
@@ -426,19 +238,15 @@ export function comAviso(
 }
 
 /**
- * Desfaz um "tornar padrão" ainda não salvo (08/10, pedido dela: "só consigo
- * tornar uma coluna padrão, não consigo desfazer").
- *
- * ⚠️ SÓ O PEDIDO DESTE RASCUNHO. O padrão que o servidor já tem não se
- * desmarca: cada semântica precisa de um, porque é para ele que o sistema manda
- * as tarefas quando escolhe sozinho. Tirar o pedido devolve o selo à coluna que
- * já era a padrão (ver `semanticasReclamadas`).
+ * Desfaz um "tornar padrão" ainda não salvo. O padrão que o servidor já tem não
+ * se desmarca: cada semântica precisa de um.
  */
 export function semAlvo(rascunho: Rascunho, ref: string): Rascunho {
   if (!rascunho.alvos.includes(ref)) return rascunho;
   return { ...rascunho, alvos: rascunho.alvos.filter((r) => r !== ref) };
 }
 
+/** Marca uma coluna como alvo da semântica dela (não existe desmarcar; `tmp:` é recusada). Desfaz a exclusão. */
 export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
   if (ehNova(ref)) return rascunho;
   if (rascunho.alvos.includes(ref)) return rascunho;
@@ -450,26 +258,14 @@ export function comAlvo(rascunho: Rascunho, ref: string): Rascunho {
 }
 
 /**
- * Uma coluna nova, no fim da ordem.
- *
- * ⚠️ NO FIM, IGUAL AO BACKEND (`position=len(existentes)`). A pessoa arrasta
- * depois. Nascer no meio exigiria uma segunda mecânica de posição, e um segundo
- * lugar para errar.
- *
- * ⚠️ `proximoTmp` NUNCA RECUA, mesmo quando uma coluna nova é removida. Se
- * recuasse, criar-apagar-criar reaproveitaria o apelido -- e um `destino`
- * apontando para `tmp:1` passaria a significar outra coluna, sem nada na tela
- * mudar. O backend recusa apelido repetido, mas isso aqui nem chega lá.
+ * Uma coluna nova, no fim da ordem (como o backend). `proximoTmp` nunca recua:
+ * reaproveitar o apelido faria um `destino` apontar para outra coluna.
  */
 export function comColunaNova(
   rascunho: Rascunho,
   nome: string,
   semantica: ColumnSemantic,
-  /**
-   * Spec 039 (F9). ⚠️ OPCIONAIS, e não por preguiça de call-site: omitir é
-   * "deixa como sempre foi" -- a rotação escolhe a cor e a coluna cobra prazo.
-   * Um default concreto aqui faria a tela decidir o que é do servidor.
-   */
+  /** Omitidos = a rotação escolhe a cor e a coluna cobra prazo. */
   cor?: string,
   avisaPrazo?: boolean,
 ): Rascunho {
@@ -486,10 +282,8 @@ export function comColunaNova(
 }
 
 /**
- * Reposiciona `ref` no índice pedido. `null` = nada muda.
- *
- * ⚠️ `null` quando nada muda, e destino grampeado na faixa. É o que impede a seta na ponta de virar edição pendente
- * -- e, com ela, um aviso de "há alterações não salvas" sobre nada.
+ * Reposiciona `ref` no índice pedido (grampeado na faixa). `null` quando nada
+ * muda, para a seta na ponta não virar edição pendente.
  */
 export function comOrdem(
   rascunho: Rascunho,
@@ -520,44 +314,22 @@ export interface LinhaDeEdicao {
   readonly nova: boolean;
   /** Recebe as tarefas quando o sistema decide sozinho. */
   readonly alvo: boolean;
-  /**
-   * O `alvo` veio de um "tornar padrão" DESTE rascunho, ainda não salvo (08/10).
-   * É o que a tela oferece para desfazer: o padrão salvo não se desmarca (cada
-   * semântica tem sempre um), mas o clique errado de agora volta atrás.
-   */
+  /** O `alvo` veio de um "tornar padrão" deste rascunho, ainda não salvo (pode desfazer). */
   readonly alvoPedido: boolean;
   /** `null` se pode ser apagada; o motivo, se não. */
   readonly impedimento: string | null;
-  /**
-   * Cobra prazo? (Spec 039, F9.) ⚠️ É O VALOR EFETIVO -- rascunho primeiro,
-   * servidor depois. A tela é de lote: a caixa tem de refletir o clique na
-   * hora, e não só depois de "Concluir edição".
-   */
+  /** Cobra prazo? Valor efetivo: rascunho primeiro, servidor depois. */
   readonly avisaPrazo: boolean;
 }
 
 /**
- * O que a tela desenha, na ordem do rascunho.
- *
- * ⚠️ AS APAGADAS CONTINUAM NA LISTA, riscadas. Tirá-las faria a coluna sumir no
- * clique -- e o modelo é de lote: enquanto não concluir, nada aconteceu, e a
- * pessoa precisa poder desmarcar.
- *
- * ⚠️ O IMPEDIMENTO É CALCULADO CONTRA O ESTADO FINAL, e não contra o quadro de
- * agora. É a mesma conta que o backend fará no lote. Repare que criar uma
- * segunda coluna de conclusão **não** libera apagar a atual: coluna nova nasce
- * com `is_default_target: false`, e o que tem de sobrar é um ALVO. É aqui que a
- * ausência de "trocar o alvo de uma semântica" aparece para quem usa.
+ * O que a tela desenha, na ordem do rascunho. As apagadas continuam (riscadas).
+ * O impedimento é calculado contra o estado final, como o backend fará no lote.
  */
 export function linhasDeEdicao(
   rascunho: Rascunho,
   colunas: readonly Coluna[],
-  /**
-   * O quadro editado e o PADRAO do time. ⚠️ Repassado a
-   * `impedimentoDeExclusao`, que precisa das DUAS metades da trava da ponte --
-   * ver o parametro homonimo la. `false` por padrao pelo mesmo motivo: o
-   * caminho perigoso e o que exige ser escrito.
-   */
+  /** O quadro editado e o padrao do time (repassado a `impedimentoDeExclusao`). */
   quadroPadrao = false,
 ): LinhaDeEdicao[] {
   const porId = new Map(colunas.map((c) => [c.id, c]));
@@ -575,11 +347,7 @@ export function linhasDeEdicao(
     })
     .filter(Boolean);
 
-  // ⚠️ AS SEMÂNTICAS QUE O RASCUNHO JÁ RECLAMOU (Spec 036, fatia 12). Sem
-  // isto, marcar "Ideias" como alvo desenharia DOIS selos "padrão" em `OPEN`:
-  // o novo, vindo do rascunho, e o antigo, ainda vindo do servidor. Dois selos
-  // é o estado que o índice parcial do banco proíbe -- a tela mostraria algo
-  // que não pode existir, e a pessoa não saberia qual vale.
+  // Semânticas cujo alvo o rascunho já trocou: o selo antigo some na hora.
   const semanticasReclamadas = new Set(
     rascunho.alvos
       .map((r) => porId.get(r)?.semantic)
@@ -600,31 +368,18 @@ export function linhasDeEdicao(
       semantic: (base?.semantic ?? "IN_PROGRESS") as ColumnSemantic,
       apagada,
       nova: nova !== undefined,
-      // ⚠️ O RASCUNHO GANHA DO SERVIDOR (Spec 036, fatia 12). Uma coluna que a
-      // pessoa acabou de marcar como alvo tem de mostrar o selo NA HORA -- o
-      // modelo é de lote, e nada foi salvo ainda. Ler só o `real` deixaria o
-      // selo no lugar antigo até "Concluir edição", e a pessoa clicaria de
-      // novo achando que não funcionou.
+      // O rascunho ganha do servidor.
       alvoPedido: rascunho.alvos.includes(ref),
       alvo:
         rascunho.alvos.includes(ref) ||
         ((real?.is_default_target ?? false) &&
-          // ⚠️ ...E NINGUÉM MAIS RECLAMOU ESTA SEMÂNTICA. Ver
-          // `semanticasReclamadas`: o selo antigo apaga no instante em que a
-          // pessoa marca outro, porque é o que vai acontecer ao concluir.
           !(real && semanticasReclamadas.has(real.semantic))),
-      // ⚠️ A CADEIA TEM QUATRO DEGRAUS E CADA UM TEM DONO: o que a pessoa
-      // acabou de clicar, o que ela escolheu ao criar a coluna, o que o
-      // servidor diz, e o default do produto. Pular o primeiro deixaria a
-      // caixa desmarcando sozinha ao repintar.
+      // Clique de agora > escolha ao criar > servidor > default.
       avisaPrazo:
         rascunho.avisos[ref] ??
         nova?.notifyDeadline ??
         real?.notify_deadline ??
         true,
-      // ⚠️ SÓ PARA QUEM AINDA NÃO ESTÁ MARCADA: o impedimento de quem já está
-      // riscada não interessa, e calculá-lo contra uma lista que já a exclui
-      // daria sempre `null`.
       impedimento:
         apagada || base === undefined
           ? null
@@ -635,31 +390,10 @@ export function linhasDeEdicao(
 }
 
 /**
- * O nome que ficaria repetido se este rascunho fosse aplicado -- ou `null`.
- *
- * ⚠️ ESPELHA `BoardService._assert_nomes_do_lote`, e a duplicacao e a mesma de
- * `nomeDeQuadroValido`: existe para nao gastar um pedido que ja se sabe que
- * volta 422. **Aqui ela vale muito mais que la.** No lote, a recusa perde a
- * edicao INTEIRA -- a pessoa renomeia quatro colunas, cria uma, arrasta duas, e
- * descobre no "Concluir edicao" que dois nomes bateram. O backend continua
- * sendo a autoridade; isto e o que impede a pessoa de chegar ate ele.
- *
- * ⚠️ CONFERE O RESULTADO FINAL, e nao cada mexida. Trocar dois nomes entre si
- * e apagar-e-recriar com o mesmo nome sao gestos LEGITIMOS que passam pelo
- * estado repetido no meio do caminho -- ver o docstring do metodo do backend.
- * Barrar durante a digitacao acusaria a pessoa no meio de uma troca valida.
- *
- * ⚠️ IGNORA AS MARCADAS PARA APAGAR: uma coluna que vai sumir nao ocupa nome.
- * E usa o nome do RASCUNHO, nao o do servidor.
- *
- * ⚠️ `trim()` PORQUE O BACKEND GRAVA COM `strip()`. Sem isto `"Feito "` passa
- * daqui como nome diferente e chega la como o mesmo -- 422 exatamente no caso
- * que esta funcao existe para evitar.
- *
- * ⚠️ MAIUSCULA CONTA, igual ao backend (decisao de 18/08): "Feito" e "feito"
- * convivem. Comparar em minusculas deixaria a tela mais restritiva que o
- * servidor -- ela recusaria um nome que o backend aceita, e ninguem
- * descobriria, porque o caminho feliz nunca e exercitado contra o servidor.
+ * O nome que ficaria repetido se este rascunho fosse aplicado, ou `null`.
+ * Espelha `BoardService._assert_nomes_do_lote` para não perder o lote inteiro
+ * num 422: confere o resultado final, ignora as marcadas, usa `trim()` (o
+ * backend grava com `strip()`) e diferencia maiúsculas, como o backend.
  */
 export function nomeRepetidoNoRascunho(
   rascunho: Rascunho,
@@ -691,26 +425,8 @@ export interface DestinoPossivel {
 }
 
 /**
- * As colunas que a revisão pode oferecer como destino.
- *
- * ⚠️ SUBSTITUI O `destinosPara` DE `edicaoDeColunas` (13/08), e a diferença é a
- * única que importa: **inclui as colunas `tmp:`**. Sem elas, apagar "Aprovação"
- * mandando as tarefas para a "Entregue" que a pessoa acabou de criar não
- * funciona -- e esse gesto é a razão de ser do lote inteiro.
- *
- * ⚠️ NASCEU COMO DUPLICATA DENTRO DO `Board.tsx`, e virou isto. O `plan.md` já
- * dizia que `destinosPara` precisaria aceitar `tmp:`; em vez disso apareceu uma
- * segunda versão da mesma ideia num arquivo de 2000 linhas, sem guardião. É a
- * mesma forma pela qual a regra da ADR 0042 divergiu em três lugares.
- *
- * ⚠️ NÃO FILTRA AS MARCADAS. Quem faz isso é a revisão, que precisa saber quais
- * são para não oferecer uma como destino da outra -- e o motivo é que a ordem
- * das exclusões no lote decidiria o resultado, e ela vem da ordem dos cliques.
- *
- * ⚠️ USA O NOME DO RASCUNHO, e não o do servidor. Renomear "Concluído" para
- * "Entregue" e no mesmo lote apagar outra coluna mandando tarefas para lá tem
- * de mostrar o nome novo -- senão a revisão descreve um quadro que já não é o
- * que a pessoa está vendo.
+ * As colunas que a revisão pode oferecer como destino, incluindo as `tmp:` e
+ * com o nome do rascunho. Não filtra as marcadas: isso fica com a revisão.
  */
 export function destinosDoRascunho(
   rascunho: Rascunho,
@@ -723,12 +439,7 @@ export function destinosDoRascunho(
       saida.push({ ref, nome: nova.name, semantic: nova.semantic });
       continue;
     }
-    // ⚠️ AQUI MORAVA UM `!`, E ELE ESTOUROU EM PRODUÇÃO DE MENTIRA (17/08):
-    // `TypeError: Cannot read properties of undefined (reading 'name')`,
-    // linha 312. O caminho é trocar de quadro com o modo de edição ligado --
-    // o rascunho do quadro anterior sobrevive um render contra as colunas do
-    // novo, e nenhum ref casa. **O `!` não é uma afirmação sobre o mundo, é um
-    // pedido para o `tsc` calar.** Mesma correção de `colunasParaDesenhar`.
+    // Sem `!`: mesmo motivo de `colunasParaDesenhar`.
     const real = colunas.find((c) => c.id === ref);
     if (!real) continue;
     saida.push({
@@ -741,12 +452,8 @@ export function destinosDoRascunho(
 }
 
 /**
- * Quantas tarefas o lote diz que vai mover, somando as marcadas.
- *
- * ⚠️ EXISTE PARA COMPARAR COM O `movidas` QUE O SERVIDOR DEVOLVE. Se os dois
- * discordarem, alguém mexeu no quadro entre a revisão e a confirmação -- e o
- * `mensagemDeDivergencia` de `edicaoDeColunas` é quem diz isso. **Este aviso
- * existia no painel antigo e se perdeu no redesenho; isto o traz de volta.**
+ * Quantas tarefas o lote diz que vai mover. Comparado com o `movidas` do
+ * servidor para detectar que alguém mexeu no quadro no meio.
  */
 export function totalPrevisto(
   rascunho: Rascunho,
@@ -766,13 +473,8 @@ export function marcadasParaApagar(
 /**
  * O corpo do `PUT /boards/{id}/columns`.
  *
- * `destinos` é `id da apagada -> referência de destino` (UUID ou `tmp:`),
- * respondido na revisão. Ausente = a coluna está vazia.
- *
- * ⚠️ `ordem` VAI VAZIA QUANDO A ORDEM NÃO MUDOU. O backend lê vazio como "não
- * mexer"; mandar a lista igual funcionaria, mas transformaria toda edição num
- * pedido de reordenação, e o log do servidor deixaria de distinguir quem
- * arrastou de quem só renomeou.
+ * `destinos` é `id da apagada -> referência de destino` (UUID ou `tmp:`);
+ * ausente = a coluna está vazia. `ordem` vai vazia quando não mudou ("não mexer").
  */
 export function paraLote(
   rascunho: Rascunho,
@@ -797,34 +499,19 @@ export function paraLote(
       tmp: n.ref.slice(PREFIXO_TMP.length),
       name: n.name,
       semantic: n.semantic,
-      // ⚠️ ESPALHADOS CONDICIONALMENTE, e não `color: n.color`. Mandar
-      // `color: undefined` num objeto que vira JSON some na serialização e dá
-      // no mesmo -- mas mandar `color: null` NÃO daria, e a diferença entre os
-      // dois é fácil de introduzir sem perceber. Assim a chave simplesmente
-      // não existe quando ninguém escolheu, que é o que o backend espera para
-      // cair na rotação dele.
+      // Chave ausente (não `null`) quando ninguém escolheu: o backend cai na rotação.
       ...(n.color !== undefined ? { color: n.color } : {}),
       ...(n.notifyDeadline !== undefined
         ? { notify_deadline: n.notifyDeadline }
         : {}),
     })),
-    // ⚠️ SÓ COLUNA QUE SOBREVIVE. Renomear e apagar a mesma coluna no mesmo
-    // lote faria o backend renomear uma linha que a etapa seguinte remove --
-    // trabalho e uma entrada de log que não aconteceu do ponto de vista de quem
-    // usa.
+    // Só coluna que sobrevive.
     renomear: Object.entries(rascunho.nomes)
       .filter(([ref]) => !rascunho.apagadas.includes(ref) && !ehNova(ref))
       .map(([id, name]) => ({ id, name })),
-    // ⚠️ Spec 036, fatia 12. Só ids reais -- `comAlvo` já recusa `tmp:`, e o
-    // schema do backend também não aceita.
+    // Só ids reais.
     alvos: [...rascunho.alvos],
-    // ⚠️ SÓ COLUNA QUE SOBREVIVE, mesma regra do `renomear` logo acima: mexer
-    // na flag de uma coluna que a etapa seguinte apaga é trabalho e uma linha
-    // de log que não aconteceu do ponto de vista de quem usa.
-    //
-    // ⚠️ E `ehNova` FORA: coluna nova leva o valor dela no `criar`. Mandar nos
-    // dois lugares seria dizer duas coisas sobre a mesma linha -- e o `tmp:`
-    // nem é aceito pelo schema de `avisos`.
+    // Só coluna que sobrevive e real (coluna nova leva o valor no `criar`).
     avisos: Object.entries(rascunho.avisos)
       .filter(([ref]) => !rascunho.apagadas.includes(ref) && !ehNova(ref))
       .map(([id, notify_deadline]) => ({ id, notify_deadline })),

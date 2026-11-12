@@ -1,11 +1,7 @@
 """Schemas de request/response do modulo de solicitacoes.
 
-O request PUBLICO tem limites defensivos rigorosos: e a unica
-porta da API alcancavel sem credencial. Limites (60 respostas,
-label 300, valor 5000) comportam com folga a maior ramificacao
-do formulario e cortam payload abusivo. O teto do ENVIO INTEIRO e do
-servico (`MAX_CARACTERES_POR_ENVIO`): por campo, 60 x 60 x 5000 ainda
-dava ~19 MB por POST.
+O request publico (sem credencial) tem limites defensivos por campo; o teto do
+envio inteiro fica no servico (`MAX_CARACTERES_POR_ENVIO`).
 """
 
 from __future__ import annotations
@@ -19,9 +15,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field
 class AnswerItem(BaseModel):
     """Par pergunta/resposta exatamente como exibido no formulario."""
 
-    # ⚠️ O MESMO TETO DO ENUNCIADO DA PERGUNTA (`form_schemas.QuestionCreateRequest`,
-    # 300): o label E o enunciado. Com 200, pergunta de 201 a 300 caracteres
-    # travava o envio inteiro com 422, numa rota sem login para avisar alguem.
+    # Mesmo teto do enunciado da pergunta (`QuestionCreateRequest`): o label e o enunciado.
     label: str = Field(min_length=1, max_length=300)
     value: str = Field(max_length=5000)
 
@@ -42,37 +36,17 @@ class PublicSolicitationCreateRequest(BaseModel):
     """
 
     workspace_slug: str = Field(min_length=1, max_length=120)
-    #: De qual formulario veio o envio (Spec 043, fatia B).
-    #:
-    #: ⚠️ OBRIGATORIO DESDE 16/10 (auditoria). Era opcional para a aba aberta
-    #: durante o deploy da Spec 043 (agosto) nao levar 422 -- e esse motivo ja
-    #: passou, mas a porta ficou: qualquer um criava pedido ORFAO, sem o
-    #: cabecalho do formulario e visivel na fila da organizacao inteira. O
-    #: front manda sempre (`web/lib/api.ts`). O SERVICO ainda trata pedido sem
-    #: formulario (ha pedidos assim no banco, de antes da 043).
-    #:
-    #: ⚠️ E ELE E CONFERIDO CONTRA O WORKSPACE DO SLUG. Aceitar um `form_id`
-    #: qualquer deixaria alguem pendurar solicitacao no formulario de outro
-    #: cliente -- ver `SolicitationService.create_public`.
+    #: De qual formulario veio o envio; conferido contra o workspace do slug no servico.
     form_id: uuid.UUID
 
     requester_name: str = Field(min_length=2, max_length=255)
     requester_email: EmailStr
-    # ⚠️ OS TRES VIRARAM OPCIONAIS NO SCHEMA (Spec 043, fatia G), e a
-    # obrigatoriedade mudou de lugar: quem decide se sao exigidos e o
-    # FORMULARIO, no servico. Um `min_length` aqui recusaria antes de o
-    # servidor sequer saber por qual porta o pedido entrou -- e o formulario de
-    # TI, que nao pergunta polo, levaria 422 em toda submissao.
-    #
-    # ⚠️ E `requester_name`/`requester_email` CONTINUAM COM `min_length` acima:
-    # eles nao sao configuraveis, porque a fila e organizada por quem pediu e a
-    # resposta automatica precisa do endereco.
+    # Opcionais aqui: quem decide se sao exigidos e o formulario, no servico.
     requester_phone: str | None = Field(default=None, max_length=50)
     requester_department: str | None = Field(default=None, max_length=255)
     requester_polo: str | None = Field(default=None, max_length=255)
 
-    # Teto de payload. ⚠️ DEIXOU DE SER O TAMANHO DO MENU (11) com a secao
-    # repetivel (Spec 059): a regra fina (20 por secao) e do servico.
+    # Teto de payload; a regra fina por secao fica no servico.
     items: list[SolicitationItemRequest] = Field(min_length=1, max_length=60)
 
     # Honeypot anti-bot: input invisivel no form. Humano nao preenche.
@@ -112,8 +86,7 @@ class SolicitationResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
-    #: A tarefa vinculada (Spec 043, fatia E). `None` em tudo que foi marcado
-    #: antes desta fatia -- essas guardam so o `task_ref` de texto livre.
+    #: A tarefa vinculada. `None` nas marcacoes antigas, que so tem `task_ref`.
     task_id: uuid.UUID | None = None
     created_at: datetime
 
@@ -127,13 +100,7 @@ class BatchItemResponse(BaseModel):
     id: uuid.UUID
     batch_seq: int
     category: str
-    # ⚠️ O ROTULO VEM DO BANCO, E ANTES VINHA DE UM ARQUIVO NO FRONT.
-    # `web/lib/solicitacaoForm.ts` mapeava slug -> titulo/emoji, e funcionava
-    # so porque a migration 0017 copiou os mesmos slugs. A primeira secao
-    # criada pelo editor apareceria na fila como slug cru e "❓".
-    #
-    # ⚠️ `None` E LEGITIMO: secao apagada, ou pedido de uma categoria que nao
-    # existe mais. O front cai no `category` cru -- que e o que ele ja fazia.
+    # Rotulos da secao, vindos do banco. `None` se a secao foi apagada: o front usa `category`.
     category_title: str | None = None
     category_emoji: str | None = None
     category_sla: str | None = None
@@ -144,11 +111,7 @@ class BatchItemResponse(BaseModel):
     reviewed_at: datetime | None
     task_created_at: datetime | None
     task_ref: str | None
-    #: A tarefa vinculada (Spec 043, fatia E), e o titulo dela para a tela
-    #: mostrar um link legivel em vez de um uuid.
-    #:
-    #: ⚠️ `task_title` E RESOLVIDO NA HORA, e nao gravado: renomear a tarefa
-    #: no quadro arruma o link na fila. Mesma regra do rotulo da categoria.
+    #: A tarefa vinculada; `task_title` e resolvido na hora, nao gravado.
     task_id: uuid.UUID | None = None
     task_title: str | None = None
 
@@ -168,8 +131,7 @@ class BatchResponse(BaseModel):
     requester_department: str | None
     requester_polo: str | None
     created_at: datetime
-    #: Por qual formulario o envio entrou. `None` = pedido de antes da Spec
-    #: 043, sem formulario.
+    #: Por qual formulario o envio entrou. `None` = pedido sem formulario.
     form_id: uuid.UUID | None = None
     form_title: str | None = None
     items: list[BatchItemResponse]
@@ -187,21 +149,18 @@ class BatchListResponse(BaseModel):
     size: int
     pending_total: int
     approved_without_task_total: int
-    #: Os numeros das abas (15/10), em demandas, com a mesma busca e o mesmo
-    #: formulario da lista: PENDING, ACTIVE, DONE, REJECTED, ALL, WITHOUT_TASK.
+    #: Os numeros das abas, em demandas, com a mesma busca e formulario da lista:
+    #: PENDING, ACTIVE, DONE, REJECTED, ALL, WITHOUT_TASK.
     tab_totals: dict[str, int] = Field(default_factory=dict)
     #: Os formularios que tem pedido nesta fila -- as opcoes do filtro.
     form_options: list[FormOption] = Field(default_factory=list)
 
 
 class AndarRequest(BaseModel):
-    """Corpo de `POST /solicitacoes/{id}/andamento` (Spec 043, fatia D).
+    """Corpo de `POST /solicitacoes/{id}/andamento`.
 
-    ⚠️ SEM `Literal` E SEM VALIDADOR: valor fora do conjunto e recusado no
-    servico, com `ValidationError` de dominio. Validador custom neste projeto
-    devolve **500 no lugar de 422** -- o `_validation_error_handler` poe
-    `exc.errors()` cru no envelope, e o `ctx` carrega o `ValueError`, que o
-    `json.dumps` do Starlette recusa (medido em 10/08).
+    Sem `Literal` nem validador: valor invalido e recusado no servico, porque
+    validador custom aqui vira 500 em vez de 422.
     """
 
     status: str = Field(max_length=20)
@@ -209,46 +168,25 @@ class AndarRequest(BaseModel):
 
 class MarkTaskRequest(BaseModel):
     created: bool = True
-    # Link ou identificador da tarefa criada no quadro. Texto livre porque
-    # a criacao e manual -- nao ha id garantido pra validar.
-    #
-    # ⚠️ LEGADO A PARTIR DA FATIA E: use `task_id`. Este campo fica porque as
-    # marcacoes antigas moram nele como texto, e nao ha como converte-las.
+    # Legado (texto livre das marcacoes antigas); use `task_id`.
     task_ref: str | None = Field(default=None, max_length=500)
-    #: A tarefa DE VERDADE (Spec 043, fatia E).
-    #:
-    #: ⚠️ CONFERIDA CONTRA O WORKSPACE no servico: a FK composta ja impediria
-    #: apontar para outro cliente, mas o erro viria do banco como violacao de
-    #: integridade -- feio e sem explicacao.
+    #: A tarefa vinculada; conferida contra o workspace no servico.
     task_id: uuid.UUID | None = None
 
 
 class CriarTarefaRequest(BaseModel):
     """Corpo de `POST /solicitacoes/{id}/criar-tarefa`.
 
-    ⚠️ SO O QUADRO E ESCOLHA. O time vem do FORMULARIO por onde o pedido
-    entrou -- deixar quem tria escolher faria a tarefa nascer longe de quem vai
-    faze-la sempre que um ADMIN triasse a fila de outra equipe.
-
-    ⚠️ E `None` E O QUADRO GERAL, o mesmo contrato do `CreateTaskCommand`.
+    So o quadro e escolha (`None` = quadro geral); o time vem do formulario.
     """
 
     board_id: uuid.UUID | None = None
-    #: Quem fica responsável. Vazio = quem está triando.
-    #:
-    #: ⚠️ TODA TAREFA PRECISA DE AO MENOS UM RESPONSÁVEL neste produto, e o
-    #: padrão ser quem tria é a única opção honesta: é a pessoa que acabou de
-    #: aceitar o pedido, e portanto quem responde por ele até repassar.
+    #: Responsaveis. Vazio = quem esta triando.
     assignee_ids: list[uuid.UUID] = Field(default_factory=list)
 
 
 class TarefaCriadaResponse(BaseModel):
-    """A solicitacao ja vinculada, MAIS o id da tarefa que nasceu.
-
-    ⚠️ OS DOIS NA MESMA RESPOSTA para a tela poder oferecer "abrir a tarefa"
-    sem um segundo request -- e o passo seguinte natural de quem acabou de
-    criar uma.
-    """
+    """A solicitacao ja vinculada e a tarefa que nasceu, para a tela oferecer "abrir"."""
 
     solicitacao: SolicitationResponse
     task_id: uuid.UUID

@@ -1,8 +1,7 @@
-"""Dominio de notificacoes (Spec 018).
+"""Dominio de notificacoes: tipos e DTO de leitura.
 
-NotificationType : tipos suportados. No banco `type` e String; este enum e
-    a fonte de verdade dos valores validos no codigo (e o que a emissao usa).
-NotificationDTO  : forma de leitura exposta pela API (F4).
+No banco `notification.type` e `String(40)`, nao ENUM nativo: tipo novo nao
+precisa de migration.
 """
 
 from __future__ import annotations
@@ -14,35 +13,25 @@ from enum import Enum
 
 
 class NotificationType(str, Enum):
-    """Tipos de notificacao in-app suportados nesta entrega."""
+    """Tipos de notificacao in-app."""
 
     TASK_ASSIGNED = "TASK_ASSIGNED"
     TASK_COMMENTED = "TASK_COMMENTED"
     TASK_MENTIONED = "TASK_MENTIONED"
-    # Spec 023: avisos de prazo (gerados por job de sistema, sem ator).
+    # Avisos de prazo (job de sistema, sem ator).
     TASK_DUE_SOON = "TASK_DUE_SOON"
     TASK_OVERDUE = "TASK_OVERDUE"
-    # Spec 037 (E9): a pessoa perdeu alcance por mudanca de vinculo e deixou
-    # de ser responsavel/observadora. UMA por movimentacao, nunca uma por
-    # tarefa -- ver `NotificationEmitter.alcance_perdido`.
-    #
-    # ⚠️ SEM MIGRATION: `notification.type` e `String(40)` no banco, nao ENUM
-    # nativo. Este enum e a fonte de verdade do CODIGO, e so dele.
+    # Perda de alcance por mudanca de vinculo; ver `NotificationEmitter.alcance_perdido`.
     ACCESS_LOST = "ACCESS_LOST"
-    # Spec 050 (fatia B): alguem reagiu ao comentario da pessoa. So quando a
-    # reacao NASCE -- trocar o emoji nao notifica (decisao da Camila, 15/09).
+    # Reacao nova ao comentario da pessoa; trocar o emoji nao notifica.
     TASK_COMMENT_REACTED = "TASK_COMMENT_REACTED"
-    # Auditoria 11/11 (item 13): alguem respondeu ao comentario da pessoa --
-    # mesmo que ela nao siga a tarefa. Tipo proprio, silenciavel a parte
-    # (decisao da Camila).
+    # Resposta ao comentario da pessoa, mesmo que ela nao siga a tarefa.
     TASK_COMMENT_REPLIED = "TASK_COMMENT_REPLIED"
-    # Spec 053, fatia B (D17): OUTRA pessoa colocou ou tirou alguem como
-    # seguidor. Quem se inscreve sozinho nao se avisa.
+    # Outra pessoa colocou ou tirou alguem como seguidor.
     TASK_WATCH_ADDED = "TASK_WATCH_ADDED"
     TASK_WATCH_REMOVED = "TASK_WATCH_REMOVED"
-    # Spec 053, fatia C (D14): o que acontece na tarefa, para seguidores +
-    # responsaveis + criador. So o GESTO DIRETO avisa (D16) -- ver
-    # `tasks/application/task_notices.py`.
+    # Mudancas na tarefa, para seguidores, responsaveis e criador; so o gesto
+    # direto avisa (ver `tasks/application/task_notices.py`).
     TASK_COLUMN_CHANGED = "TASK_COLUMN_CHANGED"
     TASK_DUE_CHANGED = "TASK_DUE_CHANGED"
     TASK_DESCRIPTION_CHANGED = "TASK_DESCRIPTION_CHANGED"
@@ -53,7 +42,7 @@ class NotificationType(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class AlvoDeFiltro:
-    """Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23)."""
+    """Uma sugestao do campo "Tarefa ou projeto"."""
 
     kind: str  # "task" | "project"
     id: uuid.UUID
@@ -73,6 +62,6 @@ class NotificationDTO:
     read_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    #: Spec 053 (E, D27): "ok" = a tarefa existe e quem le ainda a alcanca;
+    #: "ok" = a tarefa existe e quem le ainda a alcanca;
     #: "gone" = excluida ou fora do alcance; None = aviso sem tarefa.
     task_access: str | None = None

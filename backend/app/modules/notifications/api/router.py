@@ -1,19 +1,7 @@
-"""Router de notificacoes in-app (Spec 018, F4).
+"""Router de notificacoes in-app (/notifications): feed, contagem, marcar como lida.
 
-Rotas (sob /notifications):
-    GET    /                       -- feed paginado (unread_only, type, task_id,
-                                      project_id -- Spec 053, fatia E; muted --
-                                      Spec 054, D5)
-    GET    /targets?q=             -- sugestoes do filtro "Tarefa ou projeto"
-    GET    /unread-count           -- contagem de nao-lidas (badge)
-    POST   /read-all               -- marca como lidas (todas, ou as do filtro)
-    POST   /{notification_id}/read -- marca uma como lida (404 se nao e sua)
-
-Notificacao e PESSOAL: SEM require_permission no router -- a unica trava e
-recipient == usuario logado, resolvida server-side no service/repository.
-Por isso as rotas dependem so de TenantContextDep (autenticacao). Leitura
-usa SessionDep; mutacao usa UoWDep (commit). Rotas estaticas vem antes da
-dinamica para nao haver ambiguidade de match.
+Notificacao e pessoal: sem require_permission; a trava e recipient == usuario
+logado, aplicada no service/repository. Rotas estaticas vem antes da dinamica.
 """
 
 from __future__ import annotations
@@ -47,12 +35,11 @@ async def list_notifications(
     unread_only: bool = False,
     page: int = 1,
     size: int = 20,
-    # Spec 053, fatia E (D22). `type` repete: ?type=A&type=B.
+    # `type` repete: ?type=A&type=B.
     type: list[str] = Query(default_factory=list),
     task_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
-    # Spec 054 (D5): a aba "Silenciadas". Ausente = o de sempre, que
-    # ESCONDE as silenciadas.
+    # A aba "Silenciadas"; sem ele, as silenciadas ficam escondidas.
     muted: bool = False,
 ) -> NotificationListResponse:
     """Feed do usuario logado, ultima mudanca primeiro."""
@@ -76,11 +63,7 @@ async def list_notifications(
 async def unread_count(
     _: TenantContextDep, session: SessionDep, muted: bool = False
 ) -> UnreadCountResponse:
-    """Contagem de nao-lidas (barato; o front polla isto pro badge).
-
-    ⚠️ O padrao NAO conta silenciadas (Spec 054, D14) -- e o numero do
-    sino. `muted=true` conta as da aba "Silenciadas".
-    """
+    """Contagem de nao-lidas do sino (sem as silenciadas; `muted=true` conta so elas)."""
     count = await NotificationService(session).count_unread(muted=muted)
     return UnreadCountResponse(count=count)
 
@@ -89,7 +72,7 @@ async def unread_count(
 async def list_targets(
     _: TenantContextDep, session: SessionDep, q: str = ""
 ) -> AlvosResponse:
-    """Sugestoes do filtro "Tarefa ou projeto" (Spec 053, D23)."""
+    """Sugestoes do filtro "Tarefa ou projeto"."""
     alvos = await NotificationService(session).alvos(q)
     return AlvosResponse(items=[AlvoResponse.model_validate(a) for a in alvos])
 
@@ -98,12 +81,10 @@ async def list_targets(
 async def mark_all_read(
     _: TenantContextDep,
     uow: UoWDep,
-    # Spec 053, fatia E (D25): os MESMOS filtros do GET. Sem nenhum, marca
-    # todas -- o comportamento de sempre, que o sino usa.
+    # Os mesmos filtros do GET; sem nenhum, marca todas.
     type: list[str] = Query(default_factory=list),
     task_id: uuid.UUID | None = None,
     project_id: uuid.UUID | None = None,
-    # Spec 054 (D14): o mesmo recorte da aba que mostrou a lista.
     muted: bool = False,
 ) -> MarkAllReadResponse:
     """Marca as nao-lidas do usuario como lidas -- todas, ou as do filtro."""
@@ -125,7 +106,7 @@ async def mark_all_read(
 async def mark_read(
     notification_id: uuid.UUID, _: TenantContextDep, uow: UoWDep
 ) -> Response:
-    """Marca UMA notificacao do usuario como lida. 404 se nao e dele."""
+    """Marca uma notificacao do usuario como lida. 404 se nao e dele."""
     await NotificationService(uow.session).mark_read(notification_id)
     await uow.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

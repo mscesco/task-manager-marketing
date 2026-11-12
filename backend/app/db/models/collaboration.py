@@ -38,8 +38,7 @@ from app.db.mixins import (
 
 
 class TaskAssignment(UUIDPrimaryKeyMixin, Base):
-    """Pivot task<->users. O banco suporta N responsaveis;
-    o frontend inicialmente usa apenas 1 (decisao de UI)."""
+    """Pivot task<->users. O banco suporta N responsaveis; o limite de 1 e da tela."""
 
     __tablename__ = "task_assignment"
     __table_args__ = (
@@ -62,8 +61,7 @@ class TaskAssignment(UUIDPrimaryKeyMixin, Base):
             name="task_assignment_assigned_by",
         ),
         UniqueConstraint("task_id", "user_id", name="uq_assignment_task_user"),
-        # COMMENT da TABELA no schema v5 -- declarado pra o autogenerate
-        # nao propor drop_table_comment. Dict de opcoes vai por ULTIMO.
+        # COMMENT da tabela no banco; o dict de opcoes vai por ultimo.
         {
             "comment": (
                 "PIVOT task<->users. O frontend inicialmente usa apenas 1 "
@@ -81,10 +79,8 @@ class TaskAssignment(UUIDPrimaryKeyMixin, Base):
     assigned_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # ⚠️ Coluna do baseline 0001, redundante com assigned_at (as duas
-    # nascem now()). Mapeada aqui SO pra o autogenerate parar de propor
-    # `drop_column`. Nada le este valor; remover de verdade e migration
-    # propria, com quem confirme que nenhum relatorio depende dela.
+    # Redundante com assigned_at e sem leitor; mapeada so para o autogenerate
+    # nao propor `drop_column`.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -113,8 +109,7 @@ class TaskWatcher(UUIDPrimaryKeyMixin, Base):
     workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     task_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    # ⚠️ Mesma historia do created_at de task_assignment: existe no banco
-    # desde 0001, ninguem le, mapeada pra evitar o drop_column.
+    # Sem leitor; mapeada so para o autogenerate nao propor `drop_column`.
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -159,25 +154,15 @@ class Comment(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 
 
 class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Reacao de uma pessoa a um comentario (Spec 050).
+    """Reacao a um comentario: uma por pessoa, reagir de novo troca o emoji.
 
-    Uma por pessoa por comentario -- reagir de novo TROCA o emoji. Quem ve a
-    task, reage (sem permissao, como comentar).
-
-    ⚠️ SEM soft-delete PROPRIO, de proposito (spec §4.6): as reacoes seguem a
-    marca do COMENTARIO. Comentario apagado nao mostra reacao, e voltam se
-    ele voltar (`restaurar_quadro.sql`). Uma segunda marca aqui teria de ser
-    lembrada no servico, no SQL cru da cascata de tarefa e no script.
-
-    ⚠️ `updated_at` ORDENA a fileira (§4.4): trocar conta como reacao nova no
-    emoji de destino. O upsert do repository o seta explicitamente -- o
-    `onupdate` do mixin so vale para UPDATE pelo ORM.
+    Sem soft delete proprio: segue a marca do comentario.
+    `updated_at` ordena a fileira; o upsert do repository o seta (o
+    `onupdate` do mixin so vale para UPDATE pelo ORM).
     """
 
     __tablename__ = "comment_reaction"
     __table_args__ = (
-        # CASCADE: se um dia um comentario for apagado DE VERDADE, as reacoes
-        # nao seguram a linha.
         ForeignKeyConstraint(
             ["comment_id", "workspace_id"],
             ["comment.id", "comment.workspace_id"],
@@ -190,8 +175,8 @@ class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             ondelete="CASCADE",
             name="comment_reaction_user",
         ),
-        # ⚠️ "Uma por pessoa" MORA AQUI, e nao no servico (§4.2): dois cliques
-        # rapidos sao duas requisicoes. O upsert do repository cita este nome.
+        # "Uma por pessoa" fica no banco (dois cliques sao duas requisicoes);
+        # o upsert do repository cita este nome.
         UniqueConstraint(
             "comment_id", "user_id", name="uq_comment_reaction_comment_user"
         ),
@@ -200,29 +185,16 @@ class CommentReaction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     workspace_id: Mapped[uuid.UUID] = workspace_fk_column()
     comment_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     user_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
-    #: A forma fully-qualified (`normalize_emoji`). 16 cabe folgado: o maior
-    #: emoji da biblioteca tem 10 code points (medido em 15/09).
+    #: Forma fully-qualified (`normalize_emoji`); o maior emoji do catalogo tem 10 code points.
     emoji: Mapped[str] = mapped_column(String(16), nullable=False)
 
 
 class Attachment(UUIDPrimaryKeyMixin, Base):
-    """Anexo de um PROJETO ou de uma TAREFA -- link ou arquivo. Spec 052, fatia B.
+    """Anexo (link ou arquivo) de um projeto ou de uma tarefa.
 
-    ⚠️⚠️ ERA "anexo de arquivo de task", do schema v5, e nunca foi usado (0
-    linhas em producao em 16/09). A `0026` o reformou em vez de criar tabelas
-    novas, por decisao da Camila. Ver o cabecalho da migration.
-
-    Regras que moram no BANCO (CHECKs da `0026`):
-      - exatamente um dono: `task_id` OU `project_id`;
-      - `kind` LINK exige `url` e nao tem `storage_key`;
-      - `kind` FILE exige `storage_key`, `mime_type` e `file_size`, sem `url`.
-
-    ⚠️ SEM soft-delete PROPRIO: o anexo segue a marca do dono, como as reacoes
-    seguem a do comentario. Tarefa ou projeto apagados somem das telas e levam
-    os anexos junto.
-
-    `created_at` explicito, sem `TimestampMixin`: o schema nunca teve
-    `updated_at` aqui, e a lista e substituida inteira (nao ha edicao de linha).
+    CHECKs no banco: exatamente um dono; LINK exige `url`; FILE exige
+    `storage_key`, `mime_type` e `file_size`. Sem soft delete proprio (segue o
+    dono) e sem `updated_at`: a lista e substituida inteira.
     """
 
     __tablename__ = "attachment"
@@ -261,7 +233,6 @@ class Attachment(UUIDPrimaryKeyMixin, Base):
     )
     uploaded_by: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     kind: Mapped[str] = mapped_column(String(10), nullable=False)
-    #: O nome que aparece (era `file_name`).
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     storage_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
@@ -324,9 +295,7 @@ class TimeEntry(UUIDPrimaryKeyMixin, Base):
 
 
 class TaskHistory(UUIDPrimaryKeyMixin, Base):
-    """Auditoria append-only. IMUTAVEL: o banco bloqueia
-    UPDATE/DELETE via trigger. O backend NUNCA deve tentar
-    atualizar ou remover linhas desta tabela -- apenas INSERT."""
+    """Auditoria append-only: um trigger no banco bloqueia UPDATE/DELETE."""
 
     __tablename__ = "task_history"
     __table_args__ = (

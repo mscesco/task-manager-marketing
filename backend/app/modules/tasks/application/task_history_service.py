@@ -1,20 +1,7 @@
-"""Leitura do historico de uma tarefa (Spec 055, fatia A).
+"""Leitura do historico de uma tarefa (quem escreve e `TaskRepository.write_history`).
 
-⚠️ A TABELA E ESCRITA DESDE A ENTREGA 4 E NUNCA FOI LIDA. Este servico e a
-primeira porta de leitura de `task_history` -- ate aqui ela so crescia. Quem
-escreve continua sendo o `TaskRepository.write_history`, chamado pelos
-servicos de dominio; aqui so se le.
-
-⚠️ QUEM VE A TAREFA, VE O HISTORICO DELA -- a MESMA regra dos comentarios
-(Entrega 14, D6), e nao uma permissao nova. Historico e o que ja aconteceu na
-tarefa que a pessoa ja enxerga; exigir um verbo a mais criaria uma tarefa que
-se pode ler mas cujo passado e secreto, que nao e distincao que este produto
-faca em lugar nenhum.
-
-⚠️ NAO TRADUZ NADA. O evento sai cru (`event_type`, `field_name`, os valores e
-o `metadata`), e quem vira frase e o front (`lib/historicoDaTarefa.ts`, fatia
-B). Resolver nome de pessoa ou de coluna aqui seria uma SEGUNDA fonte para o
-que a tela ja tem em maos -- e as duas divergiriam no primeiro rename.
+Quem ve a tarefa ve o historico. O evento sai cru; quem vira frase e o front
+(`lib/historicoDaTarefa.ts`).
 """
 
 from __future__ import annotations
@@ -55,11 +42,9 @@ class TaskHistoryService:
     async def list_for_task(
         self, *, task_id: uuid.UUID, params: PageParams
     ) -> Page[HistoryEventDTO]:
-        """Os eventos da tarefa, mais NOVO primeiro. 404 se nao ve a tarefa."""
+        """Os eventos da tarefa, mais novo primeiro. 404 se nao ve a tarefa."""
         task = await self._tasks.get_by_id_or_raise(task_id)
-        # ⚠️ 404 ANTES DE QUALQUER LEITURA: sem esta linha o historico de uma
-        # tarefa de outro time responderia 200 com a vida dela inteira --
-        # titulo velho, quem foi designado, quando mudou de coluna.
+        # 404 antes de qualquer leitura: senao vaza o historico de tarefa de outro time.
         await self._guards.assert_visible(task)
 
         linhas, total = await self._tasks.list_history(

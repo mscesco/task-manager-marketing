@@ -1,71 +1,12 @@
-"""Router de QUADROS. Spec 036 fatia 2 -- a primeira superficie de API de
-quadro do produto.
+"""Router de quadros e colunas.
 
-Rotas:
-    GET   /boards        -- lista os quadros que quem pergunta ALCANCA
-    POST  /boards        -- cria quadro avulso (Spec 036, fatia 5b)
-    PATCH /boards/{id}   -- renomeia quadro (Spec 036, fatia 5b)
+As rotas de escrita nao tem `require_permission`: a permissao depende do time
+do alvo (raiz: `board.manage.root`; subtime: `board.manage.subteam` + ser
+supervisor dele), e quem sabe o alvo e `BoardService._assert_pode_gerir`.
+A leitura e restrita pela lente na consulta do repositorio.
 
-⚠️ APAGAR QUADRO NAO EXISTE AQUI, e a ausencia e decisao de 11/08: a lixeira e
-fatia propria, com confirmacao digitada, contagem de SUBARVORE no aviso (excluir
-uma mae leva as filhas) e o `UPDATE` de restauracao escrito em
-`backend/scripts/` no mesmo commit. Nao ha tela de restaurar.
-
-⚠️ AS DUAS ROTAS DE ESCRITA NAO TEM `require_permission`, E ISSO E DELIBERADO
--- LEIA ANTES DE "CONSERTAR". `require_permission` recebe UMA permissao, e a
-autorizacao aqui depende do ALVO: quadro de time raiz exige
-`board.manage.root`; de subtime, `board.manage.subteam` MAIS ser supervisor
-daquele subtime. Quem sabe o `team_id` do alvo e o servico, nao a porta.
-
-    Por que nao pendurar `board.manage.subteam` na porta como filtro grosso:
-    o nome mentiria. A rota que cria quadro NA RAIZ estaria anunciando
-    `subteam`, e a proxima pessoa a ler "conserta" trocando a regra do servico
-    para casar com a porta -- e aí o supervisor cria quadro na raiz.
-
-    ⚠️ CONSEQUENCIA: um OPERATOR chega a fazer UM SELECT (o do time) antes do
-    403. Custo aceito e medido em uma consulta.
-
-⚠️ MAS `TenantContextDep` CONTINUA OBRIGATORIO NAS DUAS ROTAS, E ELE PARECE NAO
-USADO -- E O `_`. Nao apague. `set_tenant` e chamado num lugar so do produto
-(`auth/api/dependencies.py`, dentro de `get_tenant_context`), e nao ha
-middleware que popule o contexto. Rota que nao declara a dependencia roda SEM
-tenant, e o primeiro `require_tenant()` la dentro estoura com
-`missing_tenant_context`.
-
-    ⚠️ ESTE DEFEITO EXISTIU, em 11/08, e nao foi hipotese: a primeira versao
-    destas duas rotas tirou `require_permission` e nao pos nada no lugar. Os
-    11 testes de `test_boards_escrita_http_db.py` falharam TODOS com
-    `missing_tenant_context` -- e teriam falhado igual em producao, em 100%
-    das requisicoes, com a matriz de autorizacao inteira verde no servico.
-
-    ⚠️ A LICAO: `require_permission` faz DUAS coisas -- gate de permissao e
-    `Depends(get_tenant_context)`. Tirar o gate NAO e tirar a dependencia.
-
-⚠️ ENTAO O GATE DE ESCRITA E `BoardService._assert_pode_gerir`, e a matriz de
-4 papeis x 3 alvos vive em `test_board_service_escrita_db.py`. Um teste HTTP
-que so confirme 201/200 NAO prova autorizacao nenhuma; o que este arquivo
-precisa cobrir e que a rota CHAMA o servico e que o erro dele vira o status
-certo.
-
-⚠️ SEM `require_permission`, E ISSO E DELIBERADO. O padrao da casa para
-LEITURA e exatamente este: `GET /tasks` tambem pede so `TenantContextDep`, e
-quem restringe e a lente dentro do repositorio. Acrescentar uma permissao
-`board.read` aqui criaria um segundo eixo de autorizacao para a mesma pergunta
--- que e o que a ADR 0035 (D3) recusou explicitamente ao decidir que a
-visibilidade do quadro sai de graca do `team_id` dele.
-
-⚠️ ENTAO A TRAVA INTEIRA MORA NA CONSULTA, e nao na porta. Isso e o oposto do
-caso da Spec 028, onde a trava era o gate da rota. Consequencia pratica para
-quem for mexer: um teste que chame `BoardRepository.list_visible` direto prova
-esta fatia; o teste HTTP (`test_boards_list_http_db.py`) existe para pegar o
-dia em que alguem acrescentar um caminho alternativo de leitura no router.
-
-⚠️ SEM PAGINACAO, e o numero esta medido: producao tem UM quadro em 06/08/2026
-(`backend/scripts/invariantes.sql`, consulta 5), e a ADR 0034 preve poucas
-dezenas no pior caso -- um por subtime. Paginar uma lista que o front precisa
-inteira para desenhar o seletor de quadro seria complexidade a favor de um
-volume que nao existe. Se a consulta 5 passar das dezenas, o lugar de rever e
-este comentario.
+`_: TenantContextDep` parece nao usado mas e obrigatorio: e ele que popula o
+contexto de tenant; sem ele `require_tenant()` estoura `missing_tenant_context`.
 """
 
 from __future__ import annotations
@@ -107,18 +48,7 @@ router = APIRouter(prefix="/boards", tags=["boards"])
 async def list_boards(
     _: TenantContextDep, session: SessionDep
 ) -> list[BoardResponse]:
-    """Quadros que o usuario alcanca, pela lente (`visible_team_ids`).
-
-    ADMIN ve todos os do PROPRIO workspace. MANAGER da raiz ve a raiz e os
-    descendentes -- portanto os quadros internos. SUPERVISOR/OPERATOR de X ve
-    X e a raiz, portanto o quadro geral e os do proprio subtime, e nao os de
-    outro subtime (ADR 0035, D3).
-
-    ⚠️ Quadro APAGADO nao aparece, e o filtro esta na consulta, nao aqui.
-    Filtrar em Python depois de trazer tudo funcionaria e seria a versao que
-    vaza no dia em que alguem acrescentar paginacao: a pagina viria cheia de
-    quadro apagado e curta na tela.
-    """
+    """Quadros que o usuario alcanca pela lente, sem os apagados. Sem paginacao."""
     quadros = await BoardRepository(session).list_visible()
     return [
         BoardResponse(
@@ -135,16 +65,7 @@ async def list_boards(
 
 
 async def _resposta(session, quadro: Board) -> BoardResponse:
-    """Monta o `BoardResponse` lendo as colunas DO BANCO.
-
-    ⚠️ LE, e nao ecoa `COLUNAS_BASE`. Se um dia a criacao filtrar, reordenar ou
-    deduplicar coluna, a resposta acompanha sozinha -- mesmo raciocinio do
-    `assignee_ids` no `POST /tasks`, que a Spec 021 aprendeu na marra.
-
-    ⚠️ ORDER BY `position`. Sem ele a ordem e a do banco, que nao e ordem
-    nenhuma e muda com UPDATE -- o seletor de coluna do front sairia
-    embaralhado em relacao ao quadro, sem erro.
-    """
+    """Monta o `BoardResponse` lendo as colunas do banco, ordenadas por `position`."""
     colunas = (
         (
             await session.execute(
@@ -173,27 +94,7 @@ async def _resposta(session, quadro: Board) -> BoardResponse:
 async def create_board(
     payload: BoardCreateRequest, _: TenantContextDep, uow: UoWDep
 ) -> BoardResponse:
-    """Cria um quadro avulso para `team_id`, com as quatro colunas base.
-
-    Autorizacao inteira no servico (ver o cabecalho do modulo):
-    `board.manage.root` para time raiz; `board.manage.subteam` **mais** ser
-    supervisor daquele subtime, para subtime. ADMIN e MANAGER passam nos dois
-    pela saida de gestao ampla.
-
-    A resposta e montada antes do commit, na mesma transacao que criou --
-    convencao copiada do `POST /tasks`.
-
-    ⚠️ E CONVENCAO, NAO TRAVA, E ISSO FOI MEDIDO EM 11/08. A versao anterior
-    deste docstring afirmava que inverter a ordem faria os objetos expirarem e
-    dispararia SELECT fora do greenlet. FALSO NESTE PROJETO: o sessionmaker usa
-    `expire_on_commit=False` (`app/db/session.py:62`, com o comentario
-    "objetos seguem usaveis pos-commit"), e o fixture `db` dos testes tambem.
-    Mover o `commit()` para antes do `_resposta` deixa os 714 VERDES.
-
-    ⚠️ ENTAO NAO CONSTRUA REGRA EM CIMA DISTO. Se um dia alguem ligar
-    `expire_on_commit`, esta ordem passa a importar em toda a API de uma vez, e
-    nenhum teste avisa -- nem aqui nem no `POST /tasks`.
-    """
+    """Cria um quadro avulso para `team_id`, com as quatro colunas base."""
     quadro = await BoardService(uow.session).criar_quadro(
         team_id=payload.team_id, nome=payload.name
     )
@@ -209,17 +110,9 @@ async def rename_board(
     _: TenantContextDep,
     uow: UoWDep,
 ) -> BoardResponse:
-    """Renomeia um quadro. NAO mexe em colunas, `team_id` nem `is_default`.
+    """Renomeia um quadro (inclusive o geral). Nao mexe em colunas.
 
-    ⚠️ O QUADRO GERAL PODE SER RENOMEADO, por `board.manage.root`. Renomear nao
-    toca em coluna nenhuma -- as 176 tarefas vivas de 11/08 nao sentem. Editar
-    e apagar COLUNA do geral e que continuam fora, na fatia seguinte.
-
-    ⚠️ 404 vem antes de 403 aqui, e nao e descuido: o servico busca o quadro do
-    workspace (`_quadro_do_workspace`) antes de perguntar permissao, porque a
-    permissao depende do `team_id` DELE. Um `board_id` de outro workspace
-    devolve 404, e nao 403 -- que e a resposta certa: 403 confirmaria que o
-    quadro existe.
+    404 vem antes de 403: 403 confirmaria que o quadro de outro workspace existe.
     """
     quadro = await BoardService(uow.session).renomear_quadro(
         board_id=board_id, nome=payload.name
@@ -233,18 +126,10 @@ async def rename_board(
 async def get_board(
     board_id: uuid.UUID, _: TenantContextDep, session: SessionDep
 ) -> BoardDetailResponse:
-    """Um quadro, com as colunas e a CONTAGEM de tarefas vivas.
+    """Um quadro, com as colunas e a contagem de tarefas vivas (para o aviso de apagar).
 
-    ⚠️ EXISTE PARA A CONFIRMACAO DE APAGAR (fatia 7). A tela precisa dizer
-    "isto vai apagar N tarefas" ANTES do clique, e `GET /boards` nao traz
-    contagem -- somar as colunas custaria uma requisicao por coluna.
-
-    ⚠️ A CONTAGEM E DE UM INSTANTE, e a tela nao pode trata-la como promessa.
-    O `DELETE` devolve quantas APAGOU; se os dois numeros discordarem, alguem
-    criou tarefa ali no meio -- mesmo desenho do `movidas` do lote de colunas.
+    A contagem e de um instante; o `DELETE` devolve quantas apagou de fato.
     """
-    # ⚠️ Spec 051, fatia D: pela LENTE (404), e nao so pelo workspace -- ver
-    # `BoardService.quadro_visivel`.
     quadro = await BoardService(session).quadro_visivel(board_id)
     base = await _resposta(session, quadro)
     return BoardDetailResponse(
@@ -265,15 +150,13 @@ async def search_board_tasks(
     q: str = Query("", max_length=200),
     exclude_task_id: uuid.UUID | None = None,
 ) -> list[TaskSearchHitResponse]:
-    """Spec 062: tarefas de qualquer nivel do quadro, com o caminho.
+    """Tarefas de qualquer nivel do quadro, com o caminho (o "Subtarefa de..." do mover).
 
-    Alimenta o "Subtarefa de..." do mover. `exclude_task_id` tira a tarefa que
-    esta sendo movida e a subarvore dela. Quadro fora da lente: 404.
+    `exclude_task_id` tira a tarefa movida e a subarvore dela. Quadro fora da lente: 404.
     """
     await BoardService(session).quadro_visivel(board_id)
     repo = TaskRepository(session)
-    # Sem 404: id inexistente ou fora da lente so nao exclui nada -- um 404
-    # aqui diria se a tarefa existe (revisao de 05/11).
+    # Sem 404: um 404 aqui diria se a tarefa existe.
     excluir = (
         await repo.get_by_id(exclude_task_id) if exclude_task_id is not None else None
     )
@@ -290,20 +173,10 @@ async def search_board_tasks(
 async def delete_board(
     board_id: uuid.UUID, _: TenantContextDep, uow: UoWDep
 ) -> BoardDeleteResponse:
-    """Apaga o quadro E as tarefas dentro dele (ADR 0034, fatia 7).
+    """Apaga o quadro e as tarefas dentro dele, sem perguntar destino.
 
-    ⚠️⚠️ **NAO PERGUNTA O DESTINO DAS TAREFAS, e e a unica operacao do produto
-    assim.** Apagar COLUNA sempre oferece para onde elas vao. Quem confirma
-    aqui precisa ter digitado o nome do quadro -- a trava e da TELA, e este
-    endpoint nao a repete: `DELETE` com um id ja e a declaracao de intencao, e
-    exigir o nome no corpo criaria uma segunda regra para manter em dia.
-
-    ⚠️ O RESGATE NAO E UMA TELA, e um SCRIPT: `backend/scripts/restaurar_quadro.sql`,
-    escrito no mesmo commit. Quem apagar errado abre o banco; nao ha desfazer
-    no produto, e essa ausencia foi aceita com a fatia.
-
-    ⚠️ O QUADRO PADRAO RECUSA com `quadro_padrao_nao_apagavel` -- ver
-    `BoardService.apagar_quadro`. A tela nao oferece o botao nele.
+    A confirmacao (digitar o nome) e da tela. Resgate so por
+    `backend/scripts/restaurar_quadro.sql`. O quadro padrao recusa.
     """
     apagadas = await BoardService(uow.session).apagar_quadro(board_id=board_id)
     await uow.commit()
@@ -311,27 +184,10 @@ async def delete_board(
 
 
 # =====================================================================
-# COLUNAS (Spec 036, fatia 5b-4a)
+# COLUNAS
 #
-# ⚠️ AS ROTAS SAO ANINHADAS (`/boards/{board_id}/columns/...`) E ISSO E TRAVA,
-# NAO ESTETICA. A autorizacao de coluna depende do TIME DO QUADRO; uma rota
-# `/columns/{id}` teria de descobrir o quadro a partir da coluna, e quem
-# esquecesse de conferir que a coluna pertence AQUELE quadro abriria edicao de
-# coluna alheia com a permissao do quadro proprio. Com o `board_id` na URL, o
-# servico confere os dois (`_coluna_do_quadro`).
-#
-# Rotas de coluna que existem:
-#     PUT /boards/{board_id}/columns              -- o LOTE, unica escrita
-#     GET /boards/{board_id}/columns/{column_id}  -- a coluna, com a contagem
-#
-# ⚠️ AS ROTAS DE COLUNA UNICA SAIRAM EM 17/09/2026 (`POST .../columns`,
-# `PATCH` e `DELETE .../columns/{column_id}`): a tela so edita coluna pelo
-# lote, e elas nao tinham chamador. Os metodos do servico (`criar_coluna`,
-# `renomear_coluna`, `apagar_coluna`) FICARAM -- sao as etapas do lote.
-#
-# ⚠️ AS DUAS SEGUEM SEM `require_permission` E COM `TenantContextDep`, pelo
-# mesmo motivo das rotas de quadro -- leia o cabecalho deste modulo antes de
-# "consertar". `_: TenantContextDep` parece nao usado e NAO E.
+# Rotas aninhadas em `/boards/{board_id}/` de proposito: a autorizacao depende
+# do time do quadro, e o servico confere que a coluna pertence a ele.
 # =====================================================================
 
 
@@ -345,39 +201,16 @@ async def apply_columns_batch(
     _: TenantContextDep,
     uow: UoWDep,
 ) -> BoardColumnsBatchResponse:
-    """Aplica a edicao inteira de colunas de um quadro, num pedido so.
+    """Aplica a edicao inteira de colunas de um quadro, numa transacao so.
 
-    ⚠️ SUBSTITUI `PATCH /{board_id}/columns/order`, QUE FOI APAGADA. Aquela
-    rota nasceu na 6a, antes de o modelo de tela assentar, e ficou sem chamador
-    quando a edicao virou lote -- endpoint sem chamador e a mesma doenca de
-    `corEhHex`, e aquele ainda vinha com schema e teste proprios dando
-    aparencia de coisa viva. `BoardService.reordenar_colunas` sobreviveu: virou
-    a ultima etapa do lote.
-
-    ⚠️ SEGMENTO FIXO CONTRA PARAMETRO COLIDE -- `columns/order` contra
-    `columns/{column_id}` --, e foi assim que a rota apagada quebrou em 13/08
-    antes de ser movida. (A `POST` na mesma URL deste `PUT` saiu em 17/09.)
-
-    ⚠️ UMA TRANSACAO SO. O `commit` daqui e o unico; qualquer recusa no meio do
-    lote sobe e o UoW desfaz as etapas anteriores. E o que torna aceitavel o
-    preco do modelo: **nao existe lote meio aplicado**.
-
-    ⚠️ AS RECUSAS SAO AS DE SEMPRE, E TODAS 422 COM `code`: `coluna_sem_destino`,
-    `coluna_semantica_obrigatoria`, `coluna_ponte_obrigatoria`,
-    `colunas_divergentes`, e as duas do lote --
-    `referencia_tmp_desconhecida` e `referencia_tmp_repetida`. O front le o
-    `code`, NUNCA a mensagem.
+    Qualquer recusa desfaz o lote todo. Recusas sao 422 com `code`; o front le
+    o `code`, nunca a mensagem.
     """
     colunas, movidas = await BoardService(uow.session).aplicar_lote(
         board_id=board_id,
-        # ⚠️ A TRADUCAO MORA AQUI, no router, porque `application/` nao importa
-        # de `api/` neste projeto -- conferido em 13/08.
+        # Traducao schema -> dominio aqui: `application/` nao importa de `api/`.
         criar=[
-            # ⚠️ CAMPO A CAMPO, e por isso `color` e `notify_deadline`
-            # PRECISAM ESTAR AQUI (Spec 039, F9). Declarar no schema NAO poe no
-            # dominio -- esta linha e que poe. E a mesma armadilha que deixou o
-            # `board_id` fora do corpo por um mes do lado do front, e ela existe
-            # dos dois lados da API.
+            # Campo a campo: campo novo no schema precisa ser repassado aqui.
             LoteCriar(
                 tmp=c.tmp,
                 name=c.name,
@@ -394,10 +227,6 @@ async def apply_columns_batch(
             LoteAviso(id=a.id, notify_deadline=a.notify_deadline)
             for a in payload.avisos
         ],
-        # ⚠️ Spec 036, fatia 12. Sem esta linha o campo chega no payload e e
-        # descartado em SILENCIO -- o lote responderia 200 e o alvo nao teria
-        # mudado. E a mesma armadilha do `board_id` da fatia 5b-6 e do
-        # `assignee_ids` do `tasks_router`, pela terceira vez nesta spec.
         alvos=list(payload.alvos),
         apagar=[
             LoteApagar(id=a.id, destino=a.destino) for a in payload.apagar
@@ -422,23 +251,9 @@ async def get_column(
     _: TenantContextDep,
     session: SessionDep,
 ) -> BoardColumnDetailResponse:
-    """A coluna, com quantas tarefas vivas ela tem.
+    """A coluna, com quantas tarefas vivas ela tem (para o aviso de apagar).
 
-    ⚠️ EXISTE PARA O AVISO DE APAGAR. A tela precisa do numero ANTES da
-    confirmacao; o `GET /boards` nao o carrega de proposito, para nao pagar um
-    `COUNT` por coluna em toda abertura de tela.
-
-    ⚠️ SEM TRAVA DE ESCRITA, E ISSO E O CERTO: quem alcanca o quadro pela
-    lente alcanca as colunas dele -- o `GET /boards` ja devolve todas. Exigir
-    `board.manage.*` aqui seria proteger um numero que a mesma pessoa obtem
-    contando os cards na tela.
-
-    ⚠️ MAS A LENTE E CONFERIDA, e ate 13/08 nao era. `_quadro_do_workspace`
-    filtra WORKSPACE; a frase acima descrevia uma trava que o codigo nao tinha,
-    e com o id na mao um OPERATOR do subtime B lia nome, cor, semantica e
-    contagem de uma coluna do quadro do subtime A. Quem faz a conferencia agora
-    e `BoardService._assert_quadro_alcancavel`, com a MESMA lente do
-    `GET /boards` (`list_visible`).
+    Exige alcancar o quadro pela lente, nao permissao de escrita.
     """
     contagem = await BoardService(session).contar_tarefas_da_coluna(
         board_id=board_id, column_id=column_id

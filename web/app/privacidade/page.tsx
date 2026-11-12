@@ -1,5 +1,5 @@
-// /privacidade -- publica, sem login (Spec 064). Cada frase aqui descreve o que
-// o codigo faz: mudou o tratamento de dados, muda este texto.
+// /privacidade: pública, sem login. Cada frase descreve o que o código faz:
+// mudou o tratamento de dados, muda este texto.
 
 import TextoLegal from "@/components/TextoLegal";
 
