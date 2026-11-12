@@ -32,7 +32,7 @@ from tests.integration.test_solicitations_db import (
 pytestmark = pytest.mark.integration
 
 
-async def _cena(db, *, com_formulario: bool = True):
+async def _cena(db):
     """Workspace com um pedido aprovado e um triador ADMIN de organizacao.
 
     ADMIN para nao esbarrar no escopo de time de `TaskService.create`: o time da
@@ -47,30 +47,22 @@ async def _cena(db, *, com_formulario: bool = True):
         workspace_id=ws,
         user_id=user,
         team_tree=arvore,
-        # Pedido orfao (sem formulario) e so de quem administra a organizacao.
         org_role="ADMIN",
     )
 
-    form_id = None
-    if com_formulario:
-        with acting_as(**ctx):
-            from app.modules.solicitations.application.form_service import (
-                SolicitationFormService,
-            )
+    with acting_as(**ctx):
+        from app.modules.solicitations.application.form_service import (
+            SolicitationFormService,
+        )
 
-            svc = SolicitationFormService(db)
-            form = await svc.criar_formulario(
-                team_id=raiz, slug="arte", title="Arte"
-            )
-            await svc.criar_secao(
-                form_id=form.id, slug="arte", title="Criar uma arte", emoji="🖼️"
-            )
-            form_id = form.id
+        svc = SolicitationFormService(db)
+        form = await svc.criar_formulario(team_id=raiz, slug="arte", title="Arte")
+        await svc.criar_secao(
+            form_id=form.id, slug="arte", title="Criar uma arte", emoji="🖼️"
+        )
 
     pedido = await _criar_uma(db, base)
-    # Sem formulario = pedido orfao legado: a rota exige `form_id`, mas ha
-    # pedidos assim no banco.
-    pedido.form_id = form_id
+    pedido.form_id = form.id
     await db.flush()
 
     with acting_as(**ctx):
@@ -172,20 +164,6 @@ async def test_NAO_cria_a_SEGUNDA_tarefa(db) -> None:
                     uow, CriarTarefaCommand(solicitation_id=pedido.id)
                 )
     assert "já tem uma tarefa" in str(erro.value)
-
-
-async def test_pedido_ORFAO_ainda_vira_tarefa(db) -> None:
-    """Pedido orfao legado (sem formulario) nao tem time a herdar: `None` no
-    comando usa o time de quem cria."""
-    ws, pedido, raiz, ctx = await _cena(db, com_formulario=False)
-    assert pedido.form_id is None
-    with acting_as(**ctx):
-        async with UnitOfWork(db) as uow:
-            _, tarefa = await SolicitationService(db).criar_tarefa(
-                uow, CriarTarefaCommand(solicitation_id=pedido.id)
-            )
-    # O titulo cai no slug cru, como na fila.
-    assert tarefa.title.startswith("[arte]")
 
 
 async def test_formulario_APAGADO_ainda_da_o_time_com_DUAS_raizes(db) -> None:

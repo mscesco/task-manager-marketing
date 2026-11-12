@@ -74,6 +74,13 @@ class Solicitation(
             ondelete="SET NULL",
             name="solicitation_task_marked_by",
         ),
+        # Formulario so e apagado logicamente; RESTRICT segura apagar de verdade.
+        ForeignKeyConstraint(
+            ["form_id", "workspace_id"],
+            ["solicitation_form.id", "solicitation_form.workspace_id"],
+            ondelete="RESTRICT",
+            name="solicitation_form_fk",
+        ),
         # SET NULL: apagar a tarefa nao apaga o pedido, que volta a "aceito sem tarefa".
         ForeignKeyConstraint(
             ["task_id", "workspace_id"],
@@ -138,11 +145,8 @@ class Solicitation(
         Integer, nullable=False, server_default="1", default=1
     )
 
-    #: De qual formulario veio. Nullable: a solicitacao orfa e historico, por
-    #: isso o join da fila e LEFT (`SolicitationRepository._base_select`).
-    form_id: Mapped[uuid.UUID | None] = mapped_column(
-        PG_UUID(as_uuid=True), nullable=True
-    )
+    #: De qual formulario veio; o time do pedido e o do formulario.
+    form_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
     #: Slug da secao no dia do envio; nao segue renomeacao nem exclusao.
     category: Mapped[str] = mapped_column(String(60), nullable=False)
     summary: Mapped[str] = mapped_column(String(500), nullable=False)

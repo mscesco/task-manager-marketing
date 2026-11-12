@@ -77,7 +77,7 @@ async def create_public_solicitation(
         uow,
         CreatePublicCommand(
             workspace_slug=payload.workspace_slug,
-            # Campo a campo: sem esta linha o `form_id` some e o pedido nasce orfao.
+            # Campo a campo: sem esta linha o `form_id` some.
             form_id=payload.form_id,
             requester_name=payload.requester_name,
             requester_email=str(payload.requester_email),

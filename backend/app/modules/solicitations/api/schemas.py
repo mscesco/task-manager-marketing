@@ -137,8 +137,8 @@ class BatchResponse(BaseModel):
     requester_department: str | None
     requester_polo: str | None
     created_at: datetime
-    #: Por qual formulario o envio entrou. `None` = pedido sem formulario.
-    form_id: uuid.UUID | None = None
+    #: Por qual formulario o envio entrou.
+    form_id: uuid.UUID
     form_title: str | None = None
     items: list[BatchItemResponse]
 

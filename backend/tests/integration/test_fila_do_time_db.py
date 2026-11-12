@@ -12,7 +12,6 @@ O mundo: duas raizes, e as duas sao o ponto.
 
     Marketing (raiz) + subtime SEO      formulario "arte" no SEO
     Comercial (raiz)                    formulario "metas" no Comercial
-    uma solicitacao ORFA (form_id nulo)
 """
 
 from __future__ import annotations
@@ -89,7 +88,6 @@ async def _mundo(db):
 
     await _solicitacao(db, ws, form_id=f_seo.id)
     await _solicitacao(db, ws, form_id=f_com.id, category="metas")
-    orfa = await _solicitacao(db, ws, form_id=None, category="antiga")
 
     return {
         "ws": ws,
@@ -100,7 +98,6 @@ async def _mundo(db):
         "arvore": arvore,
         "f_seo": f_seo,
         "f_com": f_com,
-        "orfa": orfa,
     }
 
 
@@ -139,13 +136,12 @@ async def _forms_na_fila(db, *, team_id):
 async def test_recorte_pela_raiz_traz_o_formulario_do_SUBTIME(db) -> None:
     """⚠️ RAIZ + DESCENDENTES, e nao igualdade: o formulario "arte" e do SEO,
     e e na raiz que a triagem acontece. E o Comercial sai mesmo para o admin,
-    que o alcanca: quem o tira e o recorte, nao a lente. (A orfa entra para o
-    admin; ver abaixo.)"""
+    que o alcanca: quem o tira e o recorte, nao a lente."""
     m = await _mundo(db)
     with _como_admin(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
 
-    assert set(forms) == {m["f_seo"].id, None}
+    assert set(forms) == {m["f_seo"].id}
 
 
 async def test_sem_recorte_a_fila_e_da_organizacao(db) -> None:
@@ -155,7 +151,7 @@ async def test_sem_recorte_a_fila_e_da_organizacao(db) -> None:
     with _como_admin(m):
         forms = await _forms_na_fila(db, team_id=None)
 
-    assert set(forms) == {m["f_seo"].id, m["f_com"].id, None}
+    assert set(forms) == {m["f_seo"].id, m["f_com"].id}
 
 
 # ------------------------------------------------- 2. a lente segue de pe
@@ -174,29 +170,8 @@ async def test_team_id_nao_alarga_a_lente(db) -> None:
     assert forms == []
 
 
-# ------------------------------------------------- 3. a orfa
-
-
-async def test_orfa_fica_para_quem_administra_a_organizacao(db) -> None:
-    """Sem `form_id` nao ha time para comparar; exclui-la de todas as filas
-    perderia trabalho pendente. Quem a adota e quem administra a organizacao.
-
-    ⚠️ Para essa pessoa a orfa aparece na fila de TODO time, porque ela nao e
-    de nenhum. Sem o ramo `form_id.is_(None)`, ela some do produto inteiro (a
-    tela sempre manda um time).
-    """
-    m = await _mundo(db)
-    with _como_admin(m):
-        forms = await _forms_na_fila(db, team_id=m["marketing"])
-        no_comercial = await _forms_na_fila(db, team_id=m["comercial"])
-
-    assert None in forms
-    assert None in no_comercial
-
-
-async def test_orfa_NAO_aparece_na_fila_de_quem_nao_administra(db) -> None:
-    """A orfa nao e de gerente nenhum, com ou sem recorte; e o gerente segue
-    vendo a fila do seu time."""
+async def test_gerente_ve_so_a_fila_do_seu_time(db) -> None:
+    """Com ou sem recorte, o gerente do Marketing ve so o formulario do SEO."""
     m = await _mundo(db)
     with _como_gerente_do_marketing(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
@@ -206,7 +181,7 @@ async def test_orfa_NAO_aparece_na_fila_de_quem_nao_administra(db) -> None:
     assert sem_recorte == [m["f_seo"].id]
 
 
-# ------------------------------------------------- 4. os contadores
+# ------------------------------------------------- 3. os contadores
 
 
 async def test_contadores_recebem_o_mesmo_recorte_da_lista(db) -> None:
@@ -215,13 +190,13 @@ async def test_contadores_recebem_o_mesmo_recorte_da_lista(db) -> None:
     m = await _mundo(db)
     with _como_admin(m):
         svc = SolicitationService(db)
-        # A fila do Marketing: a do SEO + a orfa (papel de organizacao).
+        # A fila do Marketing: a do SEO.
         do_marketing = (await svc.count_by_tab(m["marketing"]))["PENDING"]
         da_organizacao = (await svc.count_by_tab(None))["PENDING"]
         linhas_do_marketing = await _forms_na_fila(db, team_id=m["marketing"])
 
-    assert do_marketing == len(linhas_do_marketing) == 2
-    assert da_organizacao == 3
+    assert do_marketing == len(linhas_do_marketing) == 1
+    assert da_organizacao == 2
 
 
 async def test_o_TOTAL_tambem_respeita_o_recorte(db) -> None:
@@ -236,5 +211,5 @@ async def test_o_TOTAL_tambem_respeita_o_recorte(db) -> None:
         )
 
     # Cada solicitacao do mundo tem `batch_id` proprio: 1 lote por linha.
-    assert total == 2
-    assert len(linhas) == 2
+    assert total == 1
+    assert len(linhas) == 1
