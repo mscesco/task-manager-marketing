@@ -1,15 +1,6 @@
-// Spec 052, fatia E -- o editor que já mostra formatado, testado SEM tela
-// (o Tiptap roda sobre o jsdom).
-//
-// O que ele prende:
-//   - ⭐ o briefing de uma solicitação abre e volta com as MESMAS quebras;
-//   - ⭐ `- ` vira lista, `1. ` vira numerada, `## ` vira título, `**x**` vira
-//     negrito -- ao digitar, como no Trello;
-//   - ⚠️ Ctrl+Enter NÃO quebra linha (é o atalho de salvar); Shift+Enter quebra;
-//   - a quebra é salva como `\n`, e não com dois espaços;
-//   - ⭐⚠️ NADA do texto salvo some ao editar (código, citação, tabela, imagem...);
-//   - ⚠️ `javascript:` não vira link;
-//   - `pareceMarkdown` e `colarComoMarkdown`: o que é lido como Markdown ao colar.
+// O editor de descrição testado sem tela (o Tiptap roda sobre o jsdom). O
+// texto salvo é Markdown: o que entra tem de voltar igual, inclusive o que o
+// editor não sabe desenhar.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { Editor } from "@tiptap/core";
@@ -87,7 +78,7 @@ describe("ida e volta do texto salvo", () => {
     return markdownDoEditor(e);
   }
 
-  it("⭐⚠️ NADA SOME AO EDITAR -- o que a revisão de 16/09 mediu sumindo", () => {
+  it("⚠️ nada do texto salvo some ao editar", () => {
     // Cada caso: o texto salvo, e o que PRECISA continuar nele depois de editar.
     const casos: [string, string[]][] = [
       ["Senha do wifi: `Fecaf@2026` na recepção", ["`Fecaf@2026`"]],
@@ -109,32 +100,13 @@ describe("ida e volta do texto salvo", () => {
   });
 });
 
-describe("⭐ formatar ao digitar, como no Trello", () => {
+describe("formatar ao digitar", () => {
+  // As regras são do StarterKit do Tiptap; um caso basta para ver que estão ligadas.
   it("\"- \" vira lista", () => {
     const e = editor();
     digitar(e, "- item");
     expect(e.getJSON().content?.[0].type).toBe("bulletList");
     expect(markdownDoEditor(e)).toBe("- item");
-  });
-
-  it("\"1. \" vira lista numerada", () => {
-    const e = editor();
-    digitar(e, "1. um");
-    expect(e.getJSON().content?.[0].type).toBe("orderedList");
-    expect(markdownDoEditor(e)).toBe("1. um");
-  });
-
-  it("\"## \" vira título", () => {
-    const e = editor();
-    digitar(e, "## Objetivo");
-    expect(e.getJSON().content?.[0].type).toBe("heading");
-  });
-
-  it("**texto** vira negrito, e os asteriscos somem da tela", () => {
-    const e = editor();
-    digitar(e, "um **dois** ");
-    expect(e.getText()).toBe("um dois ");
-    expect(markdownDoEditor(e)).toBe("um **dois**");
   });
 });
 
@@ -143,9 +115,8 @@ describe("teclas", () => {
     const e = editor("texto");
     e.commands.focus("end");
     tecla(e, "Enter", { ctrlKey: true });
-    // ⚠️ OLHA O DOCUMENTO, e não o Markdown: `markdownDoEditor` apara as pontas,
-    // e a quebra no fim sumiria da comparação -- medido: com o Ctrl+Enter
-    // quebrando, a primeira versão deste teste passava.
+    // Olha o documento, e não o Markdown: `markdownDoEditor` apara as pontas,
+    // e a quebra no fim sumiria da comparação.
     expect(JSON.stringify(e.getJSON())).not.toContain("hardBreak");
   });
 

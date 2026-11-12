@@ -1,10 +1,6 @@
 /**
- * A revisão ao concluir a edição de colunas (Spec 036, fatia 6c-3).
- *
- * ⚠️ ESTA TELA É A ÚLTIMA CHANCE. Depois de confirmar, as tarefas foram
- * movidas -- ou concluídas, com cascata nas subtarefas, `terminal_since` ligado
- * e fila de arquivamento. Nenhum "descartar" desfaz. Cada teste daqui prende
- * uma das defesas.
+ * A revisão ao concluir a edição de colunas: a última chance antes de mover
+ * ou concluir tarefas em lote. Nenhum "descartar" desfaz depois de confirmar.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -75,8 +71,8 @@ describe("RevisaoDaEdicao -- o destino", () => {
   });
 
   it("⚠️ a coluna criada no rascunho aparece como destino, marcada como nova", () => {
-    // ⚠️ É A RAZÃO DE SER DO LOTE INTEIRO: trocar uma coluna por outra num
-    // gesto. Sem `tmp:` no seletor, seria criar, salvar, e só então apagar.
+    // Trocar uma coluna por outra num gesto: sem `tmp:` no seletor, seria
+    // criar, salvar, e só então apagar.
     montar();
     const opcoes = Array.from(
       screen
@@ -87,10 +83,8 @@ describe("RevisaoDaEdicao -- o destino", () => {
   });
 
   it("⚠️ a coluna VAZIA também pergunta destino -- e vem pré-escolhida", () => {
-    // ⚠️ É O CONSERTO POR CONSTRUÇÃO DO BECO SEM SAÍDA DA 5b-7. A contagem
-    // conta só as tarefas VIVAS, mas o backend exige destino se houver vivas OU
-    // APAGADAS (FK `RESTRICT`). Antes, a tela dizia "está vazia", escondia o
-    // seletor, e a recusa vinha sem ter onde escolher.
+    // A contagem conta só as tarefas VIVAS, mas o backend exige destino se
+    // houver vivas OU APAGADAS (FK `RESTRICT`).
     const { onConfirmar } = montar({
       marcadas: [CANCELADO],
       contagens: { c4: 0 },
@@ -98,20 +92,9 @@ describe("RevisaoDaEdicao -- o destino", () => {
     expect((screen.getByText("Confirmar alterações") as HTMLButtonElement).disabled)
       .toBe(false);
 
-    // ⚠️ E O TEXTO TEM DE EXPLICAR POR QUE ESTA PERGUNTANDO. Sem isto, a pessoa
-    // le "Apagar Cancelado" e um seletor de destino sobre uma coluna que a
-    // tela acabou de contar como vazia -- e nao tem como saber que a coluna
-    // PODE guardar tarefas APAGADAS, presas a ela pela FK `RESTRICT`.
-    //
-    // ⚠️ MEDIDO EM 13/08: sabotar `exigeDestino` para `false` deixava os 12
-    // testes VERDES, porque o seletor e desenhado sempre nesta tela. O que se
-    // perdia era so a explicacao -- e ninguem estava olhando para ela.
-    //
-    // ⚠️ E O CONDICIONAL E OBRIGATORIO, DESDE 17/08. Este teste afirmava
-    // `/guarda tarefas apagadas/` e passava enquanto a tela ANUNCIAVA, num
-    // quadro criado cinco minutos antes, que ele guardava tarefas apagadas.
-    // O front nao tem como saber: a contagem conta so as vivas. Afirmar aqui
-    // e afirmar sem medir -- e o teste antigo cobrava exatamente isso.
+    // O texto explica por que pergunta, e no condicional ("pode"): o front
+    // não sabe se há apagadas. Só esta afirmação prende `exigeDestino`, porque
+    // o seletor é desenhado sempre.
     expect(screen.getByText(/pode guardar tarefas apagadas/i)).toBeTruthy();
     expect(screen.queryByText(/ainda guarda tarefas apagadas/i)).toBeNull();
 
@@ -147,10 +130,7 @@ describe("RevisaoDaEdicao -- o aviso", () => {
       screen.getByLabelText("Para onde vão as tarefas de Em Andamento"),
       { target: { value: "c3" } },
     );
-    // ⚠️ `getAllByText` E NAO `getByText`: o texto aparece no TITULO e na
-    // linha das consequencias, e `getByText` estoura com duas ocorrencias --
-    // armadilha ja registrada no handoff. Afirmo o TITULO, que e a frase que a
-    // pessoa le antes de decidir.
+    // Afirma o TÍTULO, a frase que a pessoa lê antes de decidir.
     expect(
       screen.getByText("Isto vai marcar 12 tarefas como concluídas."),
     ).toBeTruthy();

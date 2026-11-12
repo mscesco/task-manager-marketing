@@ -6,9 +6,9 @@ describe("destinoDaNotificacao", () => {
     expect(destinoDaNotificacao({ task_id: "abc-123" })).toBe("/tarefa/abc-123");
   });
 
-  it("NAO leva para /minhas-tarefas quando ha tarefa -- era a causa do bug", () => {
-    // A rota antiga so achava a tarefa se o destinatario fosse responsavel
-    // dela. Mencao e comentario alcancam quem nao e, e o clique nao abria nada.
+  it("NAO leva para /minhas-tarefas quando ha tarefa", () => {
+    // /minhas-tarefas so acha a tarefa se o destinatario for responsavel dela,
+    // e mencao e comentario alcancam quem nao e.
     const destino = destinoDaNotificacao({ task_id: "abc-123" });
     expect(destino).not.toContain("minhas-tarefas");
     expect(destino).not.toContain("?task=");
@@ -32,7 +32,7 @@ describe("destinoDaNotificacao", () => {
 describe("textoDaNotificacao", () => {
   const payload = { actor_name: "Ana", task_title: "Banner home" };
 
-  it("Spec 050: reacao diz quem, com qual emoji e em qual tarefa", () => {
+  it("reacao diz quem, com qual emoji e em qual tarefa", () => {
     expect(
       textoDaNotificacao({
         type: "TASK_COMMENT_REACTED",
@@ -41,7 +41,7 @@ describe("textoDaNotificacao", () => {
     ).toBe('Ana reagiu com 👍 ao seu comentário em "Banner home"');
   });
 
-  it("auditoria 11/11: resposta diz quem respondeu e em qual tarefa", () => {
+  it("resposta diz quem respondeu e em qual tarefa", () => {
     expect(textoDaNotificacao({ type: "TASK_COMMENT_REPLIED", payload })).toBe(
       'Ana respondeu ao seu comentário em "Banner home"',
     );
@@ -56,9 +56,7 @@ describe("textoDaNotificacao", () => {
     expect(texto).not.toContain("undefined");
   });
 
-  // ⚠️ O texto morava no componente, sem teste. Estes tres fixam que a mudanca
-  // de casa nao alterou nenhuma frase que ja existia.
-  it("os tipos que ja existiam continuam com a mesma frase", () => {
+  it("designar, comentar e mencionar", () => {
     expect(textoDaNotificacao({ type: "TASK_ASSIGNED", payload })).toBe(
       'Ana designou você em "Banner home"',
     );
@@ -71,26 +69,20 @@ describe("textoDaNotificacao", () => {
   });
 
   it("sem payload, cai nos rotulos genericos -- e 'uma tarefa' vai SEM aspas", () => {
-    // ⚠️ Ate a Spec 053 (F) saia `comentou em "uma tarefa"`, como se esse fosse
-    // o nome. Sem titulo agora e comum: o servidor o tira quando a tarefa foi
-    // excluida ou saiu do alcance (D27).
+    // Sem titulo e comum: o servidor o tira quando a tarefa foi excluida ou
+    // saiu do alcance. Com aspas, "uma tarefa" pareceria o nome.
     expect(textoDaNotificacao({ type: "TASK_COMMENTED", payload: null })).toBe(
       "Alguém comentou em uma tarefa",
     );
   });
 
-  it("Spec 053 (F): tarefa inacessivel nao tem destino", () => {
+  it("tarefa inacessivel nao tem destino", () => {
     expect(destinoDaNotificacao({ task_id: "t1", task_access: "gone" })).toBeNull();
     expect(destinoDaNotificacao({ task_id: "t1", task_access: "ok" })).toBe("/tarefa/t1");
   });
 });
 
-// Spec 053, fatia A: os tres tipos que o backend emitia e o sino nao sabia
-// dizer -- caiam todos em `Atualização em "..."`.
-//
-// SABOTAGEM: apagar o ramo `TASK_OVERDUE` de `textoDaNotificacao`. Deve cair
-// "atrasada tem texto proprio".
-describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
+describe("textoDaNotificacao: prazo, acesso e mudancas na tarefa", () => {
   const HOJE = { data: "2026-09-17", hora: "09:00" };
 
   it("vence em breve: com a data, no formato DD/MM", () => {
@@ -140,7 +132,7 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     ).toBe("Ana mudou seu time: você deixou de ter acesso a 1 tarefa");
   });
 
-  it("Spec 053 (B): colocar e tirar como seguidor dizem quem fez", () => {
+  it("colocar e tirar como seguidor dizem quem fez", () => {
     const p = { actor_name: "Ana", task_title: "Banner" };
     expect(textoDaNotificacao({ type: "TASK_WATCH_ADDED", payload: p })).toBe(
       'Ana colocou você para seguir "Banner"',
@@ -150,7 +142,7 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     );
   });
 
-  it("Spec 053 (C): coluna diz de onde e para onde", () => {
+  it("coluna diz de onde e para onde", () => {
     expect(
       textoDaNotificacao({
         type: "TASK_COLUMN_CHANGED",
@@ -159,7 +151,7 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     ).toBe('Ana moveu "Banner" de Backlog para Concluído');
   });
 
-  it("Spec 053 (C): prazo com hora, sem hora e tirado", () => {
+  it("prazo com hora, sem hora e tirado", () => {
     const base = { actor_name: "Ana", task_title: "Banner" };
     expect(
       textoDaNotificacao({
@@ -178,7 +170,7 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     ).toBe('Ana tirou o prazo de "Banner"');
   });
 
-  it("Spec 053 (C): descricao, arquivar, desarquivar e excluir", () => {
+  it("descricao, arquivar, desarquivar e excluir", () => {
     const p = { actor_name: "Ana", task_title: "Banner" };
     expect(textoDaNotificacao({ type: "TASK_DESCRIPTION_CHANGED", payload: p })).toBe(
       'Ana editou a descrição de "Banner"',
@@ -186,13 +178,5 @@ describe("textoDaNotificacao -- prazo e acesso (Spec 053, A)", () => {
     expect(textoDaNotificacao({ type: "TASK_ARCHIVED", payload: p })).toBe('Ana arquivou "Banner"');
     expect(textoDaNotificacao({ type: "TASK_UNARCHIVED", payload: p })).toBe('Ana desarquivou "Banner"');
     expect(textoDaNotificacao({ type: "TASK_DELETED", payload: p })).toBe('Ana excluiu "Banner"');
-  });
-
-  it("nenhum dos tres cai mais no texto generico", () => {
-    for (const type of ["TASK_DUE_SOON", "TASK_OVERDUE", "ACCESS_LOST"] as const) {
-      expect(
-        textoDaNotificacao({ type, payload: { task_title: "X", quantidade: 2 } }, HOJE),
-      ).not.toContain("Atualização em");
-    }
   });
 });

@@ -1,9 +1,3 @@
-// lib/__tests__/responsaveis.test.ts
-//
-// SABOTAGEM (medida): em `mensagemDeFalhaDoResponsavel`, apagar o ramo de
-// `field === "assignee_ids"`. Deve cair "⚠️ o 422 do ULTIMO responsavel nao
-// fala de alcance" -- que e o defeito visto na tela em 17/09.
-
 import { describe, expect, it } from "vitest";
 
 import {

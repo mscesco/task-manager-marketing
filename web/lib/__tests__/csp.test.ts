@@ -1,15 +1,9 @@
-// A Content-Security-Policy do produto (revisão de segurança, 23/09).
+// A Content-Security-Policy do produto.
 //
-// ⚠️ POR QUE UM TESTE DE CABEÇALHO: a CSP não quebra nada quando fica FRACA
+// ⚠️ Por que um teste de cabeçalho: a CSP não quebra nada quando fica FRACA
 // demais -- a tela continua igual, e ninguém percebe até o dia do incidente.
 // O erro contrário (apertar demais) aparece na hora. Então o guardião prende o
 // lado silencioso: o que NÃO pode afrouxar.
-//
-// SABOTAGENS (medidas):
-//   A. Pôr `'unsafe-eval'` também na lista de produção. Deve cair
-//      "⚠️ produção não aceita 'unsafe-eval'".
-//   B. Trocar `connect-src` por `*`. Deve cair "⚠️ connect-src não abre para
-//      qualquer destino".
 
 import { describe, expect, it } from "vitest";
 

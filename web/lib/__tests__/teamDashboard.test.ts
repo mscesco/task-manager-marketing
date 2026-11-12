@@ -1,4 +1,4 @@
-// Spec 058 -- a tela inicial do time: o que decide a tela (fatia C).
+// A tela inicial do time: o que decide a tela.
 import { describe, expect, it } from "vitest";
 import type { DashboardResponse } from "@/lib/api";
 import {
@@ -10,7 +10,6 @@ import {
   presetPeriod,
   shiftPeriod,
   isIsoDay,
-  dayLabel,
   dueLabel,
   weekLabel,
   weekPercent,
@@ -66,14 +65,6 @@ describe("textos", () => {
     expect(weekPercent(0, 0)).toBe(0);
   });
 
-  it("os dias dos próximos 7", () => {
-    expect(dayLabel("2026-10-14", "2026-10-14")).toBe("Hoje");
-    expect(dayLabel("2026-10-15", "2026-10-14")).toBe("Amanhã");
-    expect(dayLabel("2026-10-16", "2026-10-14")).toBe("Sex 16");
-    // virada de mês
-    expect(dayLabel("2026-11-01", "2026-10-30")).toBe("Dom 1");
-  });
-
   it("prazo de tarefa citada", () => {
     const t = {
       id: "t",
@@ -97,7 +88,7 @@ describe("textos", () => {
   });
 });
 
-describe("período (15/10)", () => {
+describe("período", () => {
   // quarta, 14/10/2026
   const HOJE = "2026-10-14";
 

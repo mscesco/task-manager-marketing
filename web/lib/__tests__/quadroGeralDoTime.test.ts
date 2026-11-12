@@ -1,9 +1,6 @@
 /**
- * `quadroGeralDoTime` -- o quadro geral DE UM TIME.
- *
- * ⚠️ O DEFEITO DE 14/09: uma tarefa criada no quadro geral do Comercial foi
- * salva certa e não apareceu. O `Board.tsx` escolhia "o" quadro geral com um
- * `find` no singular e pegava o do Marketing -- o mais antigo no banco.
+ * `quadroGeralDoTime` -- o quadro geral DE UM TIME. Com duas raízes há dois
+ * quadros `is_default`; um `find` no singular pegaria o primeiro da lista.
  */
 import { describe, expect, it } from "vitest";
 
@@ -11,8 +8,7 @@ import { quadroGeralDoTime } from "../coluna";
 
 type Q = { id: string; is_default: boolean; team_id: string };
 
-// ⚠️ O MARKETING VEM PRIMEIRO, como no banco dela (criado em 05/08; o do
-// Comercial em 10/09). É exatamente a ordem em que o `find` antigo errava.
+// O Marketing vem primeiro de propósito: é a ordem em que um `find` erraria.
 const QUADROS: Q[] = [
   { id: "geral-mkt", is_default: true, team_id: "mkt" },
   { id: "avulso-com", is_default: false, team_id: "com" },

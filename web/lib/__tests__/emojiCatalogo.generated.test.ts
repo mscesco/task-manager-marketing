@@ -1,11 +1,8 @@
 /**
- * Spec 050, fatia C -- o catalogo gerado esta em dia com a fonte?
- *
- * ⚠️ ESTE E O GUARDIAO DO ARQUIVO GERADO, e o par dele mora no backend
- * (`test_emoji_catalogo_front.py`, que prova que o servidor aceita cada emoji
- * daqui). Aqui a pergunta e outra: o arquivo no disco e o que o gerador
- * produziria hoje? Sem isto, subir a versao do `emojibase-data` deixaria o
- * seletor parado numa lista velha, sem erro nenhum.
+ * O catalogo gerado esta em dia com a fonte? Subir a versao do
+ * `emojibase-data` sem regerar deixaria o seletor numa lista velha, sem erro.
+ * O par no backend (`test_emoji_catalogo_front.py`) prova que o servidor
+ * aceita cada emoji daqui.
  */
 
 import { readFileSync } from "node:fs";

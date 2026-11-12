@@ -1,20 +1,11 @@
-// A porta de entrada pública lendo do banco (Spec 043, fatia B).
+// A porta de entrada pública lendo do banco.
 //
-// ⚠️⚠️ O QUE ESTE ARQUIVO MAIS PRENDE SÃO OS DOIS TEXTOS DE ERRO, e eles
-// existem separados por uma conversa: a Camila pediu "falhar visível" e
-// escreveu um texto; ao aplicá-lo apareceu que ele descreve UM dos dois
-// estados. **404** é "o link não serve, fale com quem enviou"; **qualquer
-// outra falha** é problema nosso, e mandar a pessoa cobrar quem enviou seria
-// fazê-la incomodar alguém à toa. Um texto só mentiria em metade das vezes.
+// ⚠️⚠️ OS DOIS TEXTOS DE ERRO: **404** é "o link não serve, fale com quem
+// enviou"; **qualquer outra falha** é problema nosso, e mandar a pessoa cobrar
+// quem enviou seria fazê-la incomodar alguém à toa.
 //
-// ⚠️ E NÃO HÁ RESERVA NO `solicitacaoForm.ts`. Cair no arquivo estático
-// manteria a porta de pé servindo perguntas VELHAS sem ninguém perceber --
-// divergência silenciosa, que é o defeito que mais dói neste projeto. Decisão
-// da Camila, 24/08, depois de eu apresentar as duas opções.
-//
-// ⚠️ A PÁGINA `/solicitar` NÃO TINHA TESTE NENHUM até aqui. Ela é a única
-// rota pública do produto, e trocar a fonte dela sem portão seria o mesmo
-// erro que a Spec 039 documentou sete vezes.
+// ⚠️ E NÃO HÁ RESERVA NO `solicitacaoForm.ts`: cair no arquivo estático
+// manteria a porta de pé servindo perguntas VELHAS sem ninguém perceber.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
@@ -134,8 +125,8 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
     );
 
     expect(await screen.findByRole("alert")).toBeTruthy();
-    // Revisão de títulos (21/09): o aviso É a página, e tem de ser o título
-    // dela -- com `<strong>`, quem chegava por link quebrado não tinha nenhum.
+    // O aviso É a página, e tem de ser o título
+    // dela (quem chega por link quebrado precisa de um).
     expect(
       screen.getByRole("heading", { level: 1, name: "Este formulário não está disponível" })
     ).toBeTruthy();
@@ -159,7 +150,7 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
 
   it("⚠️ NÃO cai no formulário estático quando a API falha", async () => {
     // Cair no `solicitacaoForm.ts` manteria a porta de pé servindo as
-    // perguntas VELHAS -- e ninguém saberia. Decisão da Camila: falhar visível.
+    // perguntas VELHAS -- e ninguém saberia. Falha visível.
     vi.mocked(api.obterFormularioPublico).mockRejectedValue(erroDeApi(500));
     render(
       <CarregaFormularioPublico slug="marketing">
@@ -187,9 +178,7 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
   it("⚠️ o `formId` chega ao formulário -- é ele que escolhe a FILA", async () => {
     // ⚠️ SEM ELE A SOLICITAÇÃO NASCE ÓRFÃ: continua na fila (o `JOIN` é
     // `LEFT`), mas visível a quem tem `solicitation.review` no workspace
-    // inteiro, em vez do time dono do formulário. É um defeito que não dá erro
-    // nenhum -- só aparece como "por que a solicitação do TI apareceu na minha
-    // fila?" semanas depois.
+    // inteiro, em vez do time dono do formulário -- e sem erro nenhum.
     vi.mocked(api.obterFormularioPublico).mockResolvedValue(form());
     render(<SolicitarPageComUmSo />);
     await waitFor(() =>
@@ -199,11 +188,9 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
     );
   });
 
-  it("⚠️ o TÍTULO do banco chega ao formulário -- ele estava escrito na mão", async () => {
-    // ⚠️ `"FazAê · Solicitações de Marketing"` estava fixo no componente,
-    // mesmo com o formulário tendo `title` no banco desde a fatia A. A fatia B
-    // trocou a fonte das PERGUNTAS e esqueceu do cabeçalho: qualquer
-    // formulário novo abria com o nome do Marketing.
+  it("⚠️ o TÍTULO do banco chega ao formulário", async () => {
+    // ⚠️ Título fixo no componente faria todo formulário novo abrir com o
+    // nome do Marketing.
     vi.mocked(api.obterFormularioPublico).mockResolvedValue(
       form({ title: "Pedido de acesso — TI" })
     );
@@ -217,8 +204,7 @@ describe("CarregaFormularioPublico -- os dois erros são diferentes", () => {
 
   it("⚠️ os rótulos da identificação chegam, inclusive os DESLIGADOS", async () => {
     // ⚠️ `null` = o formulário NÃO pergunta este campo. "Polo" não significa
-    // nada num formulário de TI, e era um dos cinco campos fixos e
-    // obrigatórios até a fatia G.
+    // nada num formulário de TI.
     vi.mocked(api.obterFormularioPublico).mockResolvedValue(
       form({ polo_label: null, phone_label: "WhatsApp" })
     );

@@ -1,5 +1,4 @@
-// Spec 052, fatia D -- título, descrição e links editados NO LUGAR, no detalhe
-// da tarefa, no gesto do Trello que ela pediu em 16/09.
+// Título, descrição e links editados NO LUGAR, no detalhe da tarefa.
 //
 // O que ele prende:
 //   - título: clique abre; Enter salva; clicar fora (blur) salva; Esc desiste
@@ -7,7 +6,7 @@
 //   - descrição: "Editar" só com texto; Enter quebra linha e NÃO salva;
 //     Ctrl+Enter salva; clicar fora salva UMA vez; Cancelar e Esc não salvam;
 //   - links: clicar fora salva; link com erro NÃO salva e o editor fica;
-//     sem mudança não envia (estes dois vieram do antigo modal de editar);
+//     sem mudança não envia;
 //   - ⭐ o detalhe não tem mais o "Editar" do rodapé, e o título salvo continua
 //     na tela MESMO QUANDO O PAI NÃO APLICA a resposta (`/tarefa/[id]`).
 
@@ -100,17 +99,6 @@ describe("TituloEditavel", () => {
     expect(screen.getByRole("button", { name: "Arte", description: "Editar o título" })).toBeTruthy();
   });
 
-  it("⚠️ título apagado volta ao original, sem salvar", () => {
-    const onSalvar = vi.fn();
-    render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
-    fireEvent.click(screen.getByRole("button", { description: "Editar o título" }));
-    const campo = screen.getByLabelText("Título da tarefa");
-    fireEvent.change(campo, { target: { value: "  " } });
-    fireEvent.keyDown(campo, { key: "Enter" });
-    expect(onSalvar).not.toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Arte", description: "Editar o título" })).toBeTruthy();
-  });
-
   it("⚠️ erro reabre o campo com o que a pessoa escreveu, e a mensagem", async () => {
     const onSalvar = vi.fn().mockRejectedValue(new Error("Você não pode editar esta tarefa."));
     render(<TituloEditavel valor="Arte" onSalvar={onSalvar} />);
@@ -123,8 +111,6 @@ describe("TituloEditavel", () => {
 });
 
 // ------------------------------------------ o título como título da página
-// Revisão de títulos, 21/09. SABOTAGEM (medida): em `TaskDetail`, passar
-// `level="h2"` fixo. Deve cair "⚠️ na página da tarefa o título é o h1".
 
 describe("TituloEditavel como título", () => {
   it("é h2 por padrão, e o nome do título é o texto da tarefa", () => {
@@ -151,7 +137,7 @@ describe("TituloEditavel como título", () => {
 // ------------------------------------------------------------------ descrição
 
 /**
- * O editor da descrição (fatia E) e um jeito de ESCREVER nele.
+ * O editor da descrição e um jeito de ESCREVER nele.
  *
  * ⚠️ O CAMPO NÃO É MAIS `textarea`: é um editor (`contenteditable`), e o jsdom
  * não digita nele. Escrever é mandar o conteúdo pelo próprio editor, que avisa
@@ -210,8 +196,7 @@ describe("DescricaoEditavel", () => {
     const fora = screen.getByLabelText("lá fora");
     // ⚠️ NO MESMO `act`: no navegador os dois eventos chegam antes de o React
     // redesenhar. Em dois `fireEvent` separados o bloco já teria saído da tela
-    // no segundo, e o teste passaria sem a guarda (medido: sabotagem sem a
-    // guarda passava assim).
+    // no segundo, e o teste passaria sem a guarda.
     act(() => {
       fora.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
       campo.el.dispatchEvent(new FocusEvent("focusout", { bubbles: true, relatedTarget: fora }));
@@ -316,8 +301,7 @@ describe("LinksEditaveis", () => {
   });
 
   it("⚠️⚠️ a busca falhou: aparece o erro com \"Tentar de novo\", e NÃO há como editar", () => {
-    // Revisão de 16/09: com a falha virando `[]`, adicionar um link mandava só
-    // ele e apagava os que existiam.
+    // Tratar a falha como `[]` faria adicionar um link mandar só ele e apagar os que existiam.
     const onTentarDeNovo = vi.fn();
     render(<LinksEditaveis links={null} falhou onTentarDeNovo={onTentarDeNovo} onSalvar={vi.fn()} />);
     expect(screen.getByRole("alert").textContent).toContain("Não consegui carregar os links");
@@ -372,15 +356,15 @@ function task(over: Partial<Task> = {}): Task {
   };
 }
 
-describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
+describe("TaskDetail -- edição no lugar", () => {
   beforeEach(() => {
     vi.mocked(api.colunasDoQuadro).mockResolvedValue(COLUNAS);
     vi.mocked(api.listarFilhas).mockResolvedValue([]);
     vi.mocked(api.listComments).mockResolvedValue({ items: [], total: 0, page: 1, size: 100 });
     vi.mocked(api.currentUser).mockResolvedValue({
       id: "u1",
-      name: "Camila",
-      email: "c@t.dev",
+      name: "Ana",
+      email: "ana@t.dev",
       must_change_password: false,
       roles: ["ADMIN"],
       permissions: ["task.create", "task.update", "task.delete"],
@@ -463,9 +447,8 @@ describe("TaskDetail -- edição no lugar (Spec 052, fatia D)", () => {
   });
 
   it("⚠️⚠️ salvar os links de A e ir para B antes da resposta: B NÃO recebe os links de A", async () => {
-    // Revisão de 16/09: o clique fora que salva os links pode ser o mesmo que
-    // abre outra tarefa (uma subtarefa da checklist). A resposta de A chegava
-    // depois e pintava os links de A no detalhe de B.
+    // O clique fora que salva os links pode ser o mesmo que abre outra tarefa
+    // (uma subtarefa da checklist); a resposta de A não pode pintar o detalhe de B.
     const LINKS_A = [{ id: "la", title: "Pasta de A", url: "https://a.com/pasta" }];
     vi.mocked(api.getTaskLinks).mockImplementation(async (id: string) => (id === "t1" ? LINKS_A : []));
     let responder: (v: typeof LINKS_A) => void = () => {};

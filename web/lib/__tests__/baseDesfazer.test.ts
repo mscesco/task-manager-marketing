@@ -16,7 +16,7 @@ describe("atalhoDeDesfazer", () => {
     expect(atalhoDeDesfazer(tecla({ shiftKey: true, key: "Z" }))).toBe("redo");
     expect(atalhoDeDesfazer(tecla({ key: "y" }))).toBe("redo");
   });
-  it("⚠️ dentro de um campo de texto, o Ctrl+Z é do texto (§9.4)", () => {
+  it("⚠️ dentro de um campo de texto, o Ctrl+Z é do texto", () => {
     expect(atalhoDeDesfazer(tecla({ emCampoDeTexto: true }))).toBeNull();
   });
   it("sem Ctrl/Cmd, ou com Alt, não é atalho", () => {
@@ -49,7 +49,7 @@ describe("mensagemDoDesfazer", () => {
     expect(mensagemDoDesfazer("redo", { applied: true, conflict: false, kind: "row.delete" }))
       .toBe("Refeito: a linha apagada.");
   });
-  it("⚠️ conflito (D12) diz por quê, e que o próximo Ctrl+Z tenta a anterior", () => {
+  it("⚠️ conflito diz por quê, e que o próximo Ctrl+Z tenta a anterior", () => {
     const m = mensagemDoDesfazer("undo", { applied: false, conflict: true, kind: "cell.update" });
     expect(m).toMatch(/alguém mudou isso depois/);
     expect(m).toMatch(/próximo Ctrl\+Z/);

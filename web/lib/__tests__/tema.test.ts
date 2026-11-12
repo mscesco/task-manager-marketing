@@ -1,6 +1,6 @@
 // Tema claro/escuro/sistema (lib/tema.ts).
 //
-// Precisa de jsdom (Spec 027, D2): o modulo usa localStorage, matchMedia e
+// Precisa de jsdom: o modulo usa localStorage, matchMedia e
 // document.documentElement.
 //
 // jsdom NAO implementa matchMedia -- por isso ele e injetado a mao nos testes
@@ -52,12 +52,6 @@ describe("proximoTema -- ordem do botao que cicla", () => {
     expect(proximoTema("claro")).toBe("escuro");
     expect(proximoTema("escuro")).toBe("sistema");
     expect(proximoTema("sistema")).toBe("claro");
-  });
-
-  it("tres cliques voltam ao ponto de partida", () => {
-    let t: Tema = "claro";
-    t = proximoTema(proximoTema(proximoTema(t)));
-    expect(t).toBe("claro");
   });
 });
 

@@ -1,4 +1,4 @@
-// Spec 057 (15/10) -- copiar e colar várias células, no formato do Excel.
+// Copiar e colar várias células, no formato do Excel.
 import { describe, expect, it } from "vitest";
 import type { BaseColumn, BaseRow } from "@/lib/api";
 import {
@@ -67,7 +67,7 @@ describe("colar", () => {
       { row_id: "r2", column_id: "t", value: "Outro" },
     ]);
     expect(r.invalidas).toBe(3); // abc, TikTok, Fulano
-    // ⚠️ a 3ª linha não existe: vira linha NOVA (15/10, só a 1ª entrava)
+    // ⚠️ a 3ª linha não existe: vira linha NOVA
     expect(r.novas).toEqual([{ t: "Terceiro", n: 1 }]);
     expect(r.fora).toBe(0);
   });
@@ -84,7 +84,7 @@ describe("colar", () => {
   });
 });
 
-describe("o que veio do Google Planilhas (15/10)", () => {
+describe("o que veio do Google Planilhas", () => {
   it("⚠️ os chips de seleção múltipla vêm separados por vírgula", () => {
     expect(separarVarios("Formulário, Import, Site")).toEqual(["Formulário", "Import", "Site"]);
     const multi = col("m", "multi_select", [
@@ -105,8 +105,8 @@ describe("o que veio do Google Planilhas (15/10)", () => {
   });
 });
 
-// 16/10, a auditoria: o servidor recusava o segundo pedido (as células) com
-// erro em inglês depois de o primeiro já ter criado as linhas.
+// A colagem vai em dois pedidos (linhas, depois células): recusar no cliente
+// evita o servidor recusar o segundo depois de o primeiro já ter criado linhas.
 describe("colagemGrandeDemais", () => {
   const grade = (linhas: number, colunas: number) =>
     Array.from({ length: linhas }, () => Array.from({ length: colunas }, () => "x"));
@@ -114,7 +114,7 @@ describe("colagemGrandeDemais", () => {
   it("deixa passar no limite e recusa acima, em português", () => {
     expect(colagemGrandeDemais(grade(MAX_LINHAS_COLADAS, 1))).toBeNull();
     expect(colagemGrandeDemais(grade(MAX_LINHAS_COLADAS + 1, 1))).toMatch(/até 5\.000 linhas/);
-    expect(colagemGrandeDemais(grade(300, 20))).toBeNull(); // o caso da auditoria
+    expect(colagemGrandeDemais(grade(300, 20))).toBeNull();
     expect(colagemGrandeDemais(grade(1_000, MAX_CELULAS_COLADAS / 1_000 + 1))).toMatch(/até 50\.000 células/);
   });
 });

@@ -1,4 +1,4 @@
-// Spec 058 (15/10) -- o filtro de período: atalhos, personalizado e as setas.
+// O filtro de período: atalhos, personalizado e as setas.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import PeriodPicker from "@/components/PeriodPicker";

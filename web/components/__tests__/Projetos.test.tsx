@@ -85,8 +85,8 @@ function montar() {
   // Papel de organização e duas raízes: faz `rootsForPerson` devolver as duas e o campo "Time" aparecer.
   vi.mocked(api.currentUser).mockResolvedValue({
     id: "user-1",
-    name: "Camila",
-    email: "camila@t.dev",
+    name: "Ana",
+    email: "ana@t.dev",
     must_change_password: false,
     roles: [],
     permissions: ["project.create"],

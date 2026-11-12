@@ -1,23 +1,12 @@
-// Revisão de 08/10 -- as corridas das gravações de célula da Base.
-//
-// O QUE ESTE ARQUIVO PRENDE:
-//   - duas edições na mesma linha em voo: a resposta MAIS VELHA que chega por
-//     último não desfaz a mais nova (`version`);
-//   - o erro de uma célula desfaz SÓ aquela célula, e não a linha inteira;
-//   - `lib/gravacoesDaBase`: a gravação conta enquanto está em voo, a geração
-//     sobe a cada uma, e `esperarGravacoes` espera inclusive as que falham.
+// As corridas das gravações de célula da Base: a resposta MAIS VELHA que chega
+// por último não desfaz a mais nova (`version`), e o erro de uma célula desfaz
+// SÓ aquela célula, e não a linha inteira.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, renderHook } from "@testing-library/react";
 
 import { useGravarCelula } from "@/components/bases/useGravarCelula";
 import type { BaseColumn, BaseRow } from "@/lib/api";
-import {
-  acompanhar,
-  esperarGravacoes,
-  geracao,
-  haGravando,
-} from "@/lib/gravacoesDaBase";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
@@ -114,7 +103,7 @@ describe("useGravarCelula", () => {
   });
 });
 
-describe("useGravarCelula -- reverter (auditoria de 21/10)", () => {
+describe("useGravarCelula -- reverter", () => {
   it("⚠️ a falha da edição velha NÃO desfaz a nova que já deu certo", async () => {
     // A→B (req1) e B→C (req2); req2 responde primeiro, req1 falha. O servidor
     // tem C; reverter para A deixaria a tela com um valor que não existe.
@@ -142,25 +131,5 @@ describe("useGravarCelula -- reverter (auditoria de 21/10)", () => {
 
     expect(t.linhas()[0].values).toEqual({ "col-a": "C" });
     expect(t.linhas()[0].version).toBe(3);
-  });
-});
-
-describe("gravacoesDaBase", () => {
-  it("conta em voo, sobe a geração e espera inclusive a que falha", async () => {
-    const g0 = geracao("b-x");
-    const ok = adiada<number>();
-    const ruim = adiada<number>();
-    acompanhar("b-x", ok.p);
-    acompanhar("b-x", ruim.p).catch(() => {});
-    expect(haGravando("b-x")).toBe(true);
-    expect(geracao("b-x")).toBe(g0 + 2);
-    expect(haGravando("outra-base")).toBe(false);
-
-    const espera = esperarGravacoes("b-x");
-    ok.soltar(1);
-    ruim.falhar(new Error("x"));
-    await espera;
-    await Promise.resolve();
-    expect(haGravando("b-x")).toBe(false);
   });
 });

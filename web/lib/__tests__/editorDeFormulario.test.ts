@@ -1,19 +1,9 @@
 /**
- * A lógica do editor de formulário (Spec 043, fatia C2).
- *
- * ⚠️⚠️ QUASE TUDO AQUI É SOBRE UM DEFEITO SÓ, e ele não dá erro nenhum: **a
- * pergunta que some sem sumir.** Uma condicional só aparece quando a
- * pergunta-alvo tem certo valor; se o alvo for apagado, mudar de tipo, perder
- * a alternativa citada ou for parar DEPOIS dela, a dependente simplesmente
- * nunca mais aparece no formulário público. Quem editou não vê nada
- * acontecer.
- *
- * O backend recusa os quatro caminhos. O papel destas funções é **não
- * oferecer** o que ele vai recusar — botão cinza com o motivo escrito é mais
- * gentil que uma caixa vermelha depois do clique.
- *
- * ⚠️ E AS REGRAS FORAM MEDIDAS, não inventadas: os 25 condicionais herdados do
- * formulário do Marketing foram conferidos um a um antes de virarem código.
+ * A lógica do editor de formulário. Quase tudo aqui é sobre a pergunta que some
+ * sem sumir: uma condicional só aparece quando a pergunta-alvo tem certo valor;
+ * se o alvo for apagado, mudar de tipo, perder a alternativa citada ou for parar
+ * DEPOIS dela, a dependente nunca mais aparece, sem erro nenhum. O backend
+ * recusa os quatro caminhos; estas funções não oferecem o que ele vai recusar.
  */
 
 import { describe, expect, it } from "vitest";
@@ -132,8 +122,7 @@ describe("impedimentoParaMover -- o quarto caminho para a pergunta que some", ()
   });
 
   it("⚠️ descer o GATILHO para baixo da dependente é o MESMO defeito", () => {
-    // Duas mãos diferentes, um resultado só. É fácil prender uma e esquecer a
-    // outra -- foi por isso que este teste existe separado do de cima.
+    // Duas mãos diferentes, um resultado só: é fácil prender uma e esquecer a outra.
     const { s } = comCondicional();
     expect(impedimentoParaMover(s, 0, 1)).toContain("Data da sessão");
   });
@@ -196,8 +185,7 @@ describe("movido", () => {
 
 describe("ordenadasPorPosicao", () => {
   it("⚠️ não confia na ordem do array -- ordena por `position`", () => {
-    // A API devolve ordenado hoje. Depender disso é o tipo de suposição que
-    // passa verde por meses e quebra no dia em que alguém acrescenta um item.
+    // A API devolve ordenado hoje; a função não pode depender disso.
     const s = secao([
       pergunta({ id: "b", position: 1 }),
       pergunta({ id: "a", position: 0 }),

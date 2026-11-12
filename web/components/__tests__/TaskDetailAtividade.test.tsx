@@ -1,7 +1,7 @@
-// Spec 055, fatia C -- a coluna lateral do detalhe: comentários e atividade.
+// A coluna lateral do detalhe: comentários e atividade.
 //
 // O QUE ESTE ARQUIVO PRENDE:
-//   - o alternador tem os DOIS lados, com contador nos dois (§9.3);
+//   - o alternador tem os DOIS lados, com contador nos dois;
 //   - a atividade é buscada AO ABRIR, e não ao clicar na aba -- senão o
 //     contador só apareceria depois do primeiro clique, que é quando ele já
 //     não serve para decidir se vale clicar;
@@ -9,13 +9,6 @@
 //     vista (é uma coluna só, com dois assuntos);
 //   - "Mostrar mais" só aparece quando falta coisa, e busca a PÁGINA SEGUINTE;
 //   - ⚠️ falha na atividade NÃO derruba o detalhe: a tarefa continua na tela.
-//
-// SABOTAGENS (medidas):
-//   A. Em `TaskDetail`, buscar a atividade só quando `abaLateral` for
-//      "atividade". Deve cair "o contador da atividade aparece sem clicar".
-//   B. No `catch` da busca de atividade, chamar `setErro` (o erro do detalhe
-//      inteiro) em vez de `setErroAtividade`. Deve cair "⚠️ atividade que
-//      falha não derruba o detalhe".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -202,7 +195,7 @@ beforeEach(() => {
   vi.mocked(api.getRootTeamId).mockResolvedValue(null as never);
 });
 
-// ⚠️ Explícito (web/AGENTS.md §11): sem isto o segundo render acha dois
+// ⚠️ Explícito (sem `globals` o auto-cleanup não se registra): sem isto o segundo render acha dois
 // detalhes montados e `getByRole` estoura.
 afterEach(() => {
   cleanup();
@@ -279,8 +272,8 @@ describe("mostrar mais", () => {
   });
 
   it("⚠️ falhar NÃO apaga o que já estava, e o botão continua", async () => {
-    // Revisão de 08/10: o erro do "Mostrar mais" usava o mesmo estado do
-    // primeiro carregamento, e a lista inteira virava o aviso.
+    // O erro do "Mostrar mais" não pode usar o mesmo estado do
+    // primeiro carregamento, senão a lista inteira vira o aviso.
     paginaUmDeTres();
     montar();
     fireEvent.click(await screen.findByRole("tab", { name: /Atividade/ }));
@@ -296,8 +289,8 @@ describe("mostrar mais", () => {
   });
 
   it("⚠️ a página que chega depois de trocar de tarefa é descartada", async () => {
-    // Revisão de 08/10: abrir uma subtarefa no meio do "Mostrar mais"
-    // pendurava a página 2 da tarefa ANTERIOR na lista da nova.
+    // Abrir uma subtarefa no meio do "Mostrar mais" não pode
+    // pendurar a página 2 da tarefa ANTERIOR na lista da nova.
     paginaUmDeTres();
     let soltar: (v: unknown) => void = () => {};
     const { rerender } = montar();
@@ -332,8 +325,8 @@ describe("mostrar mais", () => {
 
 describe("a atividade não envelhece", () => {
   it("voltar para a aba relê a primeira página", async () => {
-    // Revisão de 08/10: só carregava ao abrir a tarefa; o que se mudava com
-    // o detalhe aberto não aparecia até reabrir.
+    // Carregar só ao abrir a tarefa esconderia o que muda com
+    // o detalhe aberto até reabrir.
     montar();
     const atividade = await screen.findByRole("tab", { name: /Atividade/ });
     await waitFor(() => expect(api.listTaskHistory).toHaveBeenCalledTimes(1));

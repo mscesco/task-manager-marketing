@@ -1,21 +1,10 @@
 /**
- * Spec 036, fatia 10 -- RENOMEAR e APAGAR quadro, na barra do modo de edição.
- *
- * ⚠️ ESTE ARQUIVO NASCEU DO `SeletorDeQuadro.test.tsx`, e os testes de renomear
- * e apagar foram MOVIDOS para cá, não reescritos do zero. As sabotagens são as
- * mesmas -- inclusive as da fatia 7, que são a única coisa que prende a
- * confirmação por digitação: a conferência visual não roda a cada commit.
+ * RENOMEAR e APAGAR quadro, na barra do modo de edição.
  *
  * ⚠️ A REGRA DE QUEM PODE O QUE NÃO SE TESTA AQUI. Ela é do
  * `lib/seletorDeQuadro.ts` (`opcoesDoSeletor` -> `podeRenomear`/`podeApagar`),
- * que tem testes próprios e não mudou nesta fatia. Aqui perguntamos se o
- * componente LÊ aquelas respostas.
- *
- * SABOTAGENS (medidas):
- *   R. Desenhar "Renomear"/"Apagar" ignorando `podeRenomear`/`podeApagar`.
- *   W. Renomear trocando a seleção (a pessoa sai do quadro que estava vendo).
- *   X. Apagar sem sair do quadro apagado -> o "Carregando…" eterno.
- *   Y. `?? 0` no lugar do travamento por contagem ausente.
+ * que tem testes próprios. Aqui perguntamos se o componente LÊ aquelas
+ * respostas.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -66,7 +55,7 @@ function montar(over: Partial<Parameters<typeof AcoesDoQuadro>[0]> = {}) {
     podeApagar: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
-    // ⚠️ `false` porque o `SEO` é SUBTIME. Obrigatória desde 14/09; quem testa a
+    // ⚠️ `false` porque o `SEO` é SUBTIME. Prop obrigatória; quem testa a
     // raiz sobrescreve pelo `over`.
     daRaiz: false,
     ...over,
@@ -83,8 +72,8 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
   });
 
   it("⚠️ na LENTE não desenha NADA -- nem desabilitado", () => {
-    // ADR 0034 item 2: ausente, e nao desabilitada. A lente nao tem registro no
-    // banco: nao ha o que renomear nem o que apagar. Sabotagem R.
+    // Ausente, e nao desabilitada: a lente nao tem registro no
+    // banco, nao ha o que renomear nem o que apagar.
     const { container } = render(
       <AcoesDoQuadro
         teamId={SEO}
@@ -101,7 +90,7 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
   });
 
   it("⚠️ sem permissão não desenha NADA", () => {
-    // ⚠️ AS DUAS EM `false`: desde a Spec 049 (fatia D) apagar é prop própria, e
+    // ⚠️ AS DUAS EM `false`: apagar é prop própria, e
     // a tela a calcula como `podeGerir && verbo` -- não existe `podeApagar`
     // sem `podeGerir`.
     montar({ podeGerir: false, podeApagar: false });
@@ -109,7 +98,7 @@ describe("AcoesDoQuadro -- o que ele oferece", () => {
     expect(screen.queryByLabelText(/^Apagar /)).toBeNull();
   });
 
-  it("⚠️ GESTOR (Spec 049, fatia D): renomeia, e NÃO oferece apagar", () => {
+  it("⚠️ GESTOR: renomeia, e NÃO oferece apagar", () => {
     // Com uma prop só, o "Apagar" vinha junto do "Renomear" e dava 403.
     montar({ podeGerir: true, podeApagar: false });
     expect(screen.getByLabelText("Renomear Pauta editorial")).toBeTruthy();
@@ -126,7 +115,7 @@ describe("AcoesDoQuadro -- renomear", () => {
     ).toBe("Pauta editorial");
   });
 
-  it("manda o id do quadro e o nome novo -- sabotagem W", async () => {
+  it("manda o id do quadro e o nome novo", async () => {
     vi.mocked(api.renameBoard).mockResolvedValue(
       quadro({ id: "b-pauta", name: "Pauta 2026" })
     );
@@ -173,7 +162,7 @@ describe("AcoesDoQuadro -- renomear", () => {
 
   it("erro da API aparece, com a mensagem do backend", async () => {
     // ⚠️ E ela quem distingue "sem permissao neste time" de "nome duplicado"
-    // (fatia 9) -- texto fixo aqui esconderia a causa.
+    // -- texto fixo aqui esconderia a causa.
     vi.mocked(api.renameBoard).mockRejectedValue(
       Object.assign(new Error(), { message: "Já existe um quadro com esse nome." })
     );
@@ -190,7 +179,7 @@ describe("AcoesDoQuadro -- renomear", () => {
   });
 });
 
-describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
+describe("AcoesDoQuadro -- apagar quadro", () => {
   // ⚠️ É A OPERAÇÃO MAIS DESTRUTIVA DO PRODUTO, e a única que não pergunta o
   // destino das tarefas. Estes testes são a única coisa que prende a
   // confirmação -- a conferência visual não roda a cada commit.
@@ -211,7 +200,7 @@ describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
     const campo = screen.getByLabelText(/Digite/);
     fireEvent.change(campo, { target: { value: "pauta editorial" } });
     // ⚠️ SENSIVEL A MAIUSCULA, de proposito: a confirmacao existe para obrigar
-    // a pessoa a LER o nome. E e a mesma regra do nome unico (fatia 9).
+    // a pessoa a LER o nome. E e a mesma regra do nome unico.
     expect((screen.getByText("Apagar quadro") as HTMLButtonElement).disabled).toBe(
       true
     );
@@ -232,12 +221,12 @@ describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
     expect(await screen.findByText("12 tarefas")).toBeTruthy();
     const frase = screen.getByText(/arquivadas/).textContent ?? "";
     expect(frase).toContain("vão ser apagadas");
-    // ⚠️ O número UMA vez só: `plural` já o põe, e a frase saía "As 12 12
-    // tarefas deste quadro 12 vão ser apagadas" (revisão de 08/10).
+    // ⚠️ O número UMA vez só: `plural` já o põe; o erro é "As 12 12
+    // tarefas deste quadro 12 vão ser apagadas".
     expect(frase.match(/12/g)).toHaveLength(1);
   });
 
-  it("⚠️ enquanto a contagem não chega, não dá para confirmar -- sabotagem Y", async () => {
+  it("⚠️ enquanto a contagem não chega, não dá para confirmar", async () => {
     // ⚠️ Um `?? 0` no lugar do travamento faria a tela dizer "nenhuma tarefa"
     // sobre um quadro cheio -- e a pessoa confirmaria com base nisso.
     vi.mocked(api.getBoard).mockReturnValue(new Promise(() => {}));
@@ -251,7 +240,7 @@ describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
     expect(screen.getByText("Contando as tarefas…")).toBeTruthy();
   });
 
-  it("confirma, sai do quadro apagado e manda recarregar -- sabotagem X", async () => {
+  it("confirma, sai do quadro apagado e manda recarregar", async () => {
     vi.mocked(api.getBoard).mockResolvedValue({
       ...QUADROS[1],
       task_count: 3,
@@ -312,8 +301,7 @@ describe("AcoesDoQuadro -- apagar quadro (fatia 7)", () => {
   it("⚠️ com o diálogo aberto, o GATILHO de apagar sai da árvore", async () => {
     // ⚠️ Os dois se chamam "Apagar quadro" -- o gatilho e o confirmar. Com os
     // dois na arvore, quem usa leitor de tela ouve dois botoes de mesmo nome
-    // com pesos completamente diferentes. Achado escrevendo este arquivo:
-    // `getByText` quebrou com "found multiple elements".
+    // com pesos completamente diferentes (e `getByText` acha dois).
     vi.mocked(api.getBoard).mockResolvedValue({ ...QUADROS[1], task_count: 1 });
     montar();
     fireEvent.click(screen.getByLabelText("Apagar Pauta editorial"));

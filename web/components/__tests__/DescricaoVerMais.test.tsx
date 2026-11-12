@@ -1,17 +1,11 @@
-// A descrição longa para no "Ver mais" (pedido dela, 30/09).
-//
-// ⚠️ O DEFEITO QUE ISTO CORRIGE: uma descrição de 40 linhas empurrava links,
-// subtarefas e checklist para fora da vista — era preciso rolar a coluna
-// inteira para descobrir que a tarefa TEM subtarefas.
+// A descrição longa para no "Ver mais", para não empurrar links, subtarefas e
+// checklist para fora da vista.
 //
 // ⚠️⚠️ JSDOM NÃO FAZ LAYOUT, e `scrollHeight` é SEMPRE 0 nele. Sem forjar a
 // medida, este teste passaria sem nunca exercitar a regra — verde e provando
 // nada. Aqui o `scrollHeight` é fingido de propósito, e é isso que torna o
 // teste honesto: ele afirma "quando o texto EXCEDE, aparece o botão", e não
 // "quando o texto é longo em caracteres".
-//
-// SABOTAGEM (medida): em `DescricaoEditavel`, trocar o `>` da comparação de
-// altura por `<`. Deve cair "só aparece quando excede".
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

@@ -1,23 +1,21 @@
-// Auditoria de 16/10 -- o Esc de um elemento de DENTRO não fecha o detalhe.
-//
-// O detalhe fechava com qualquer Esc da janela. Fechar a lista de @menção do
-// comentário (Esc) fechava o detalhe inteiro, e o comentário que estava sendo
-// escrito sumia. Quem usa o Esc por dentro marca `preventDefault`; o detalhe
+// O Esc de um elemento de DENTRO não fecha o detalhe: fechar a lista de @menção
+// não pode fechar o detalhe e perder o comentário em escrita. Quem usa o Esc por dentro marca `preventDefault`; o detalhe
 // só fecha com Esc que ninguém usou.
 //
 // (O cenário -- mocks, tarefa e montagem -- é o de `TaskDetailCadeado.test.tsx`.)
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, render, waitFor } from "@testing-library/react";
 
 import TaskDetail from "@/components/TaskDetail";
 import type { Coluna } from "@/lib/coluna";
+import { DURACAO_SAIDA_MS } from "@/lib/useSaidaAnimada";
 import type { Comment, CurrentUser, Task } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // Sem isto a busca de links vai à rede, falha, e
     // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
@@ -164,10 +162,16 @@ describe("Esc no detalhe da tarefa", () => {
   });
 
   it("⚠️ Esc já usado por dentro (a lista de @menção) NÃO fecha", async () => {
-    const onClose = vi.fn();
-    montar({}, onClose);
-    esc(true);
-    await new Promise((r) => setTimeout(r, 400)); // mais que a animação de saída
-    expect(onClose).not.toHaveBeenCalled();
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const onClose = vi.fn();
+      montar({}, onClose);
+      esc(true);
+      // Passa a animação de saída inteira.
+      await act(() => vi.advanceTimersByTimeAsync(DURACAO_SAIDA_MS + 1));
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

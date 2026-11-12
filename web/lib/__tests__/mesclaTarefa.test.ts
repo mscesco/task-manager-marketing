@@ -1,9 +1,4 @@
-/**
- * A guarda dos campos que a mutacao NAO devolve (ADR 0025 + Spec 042).
- *
- * ⚠️ Cada caso aqui corresponde a uma encarnacao REAL do mesmo defeito. Ver o
- * cabecalho de `lib/mesclaTarefa.ts` para a lista das quatro.
- */
+/** A guarda dos campos que o `PATCH` de tarefa não devolve. */
 import { describe, expect, it } from "vitest";
 
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
@@ -54,7 +49,7 @@ describe("mesclaTarefa", () => {
     expect(mesclaTarefa(r, undefined)).toEqual(r);
   });
 
-  it("⚠️ preserva `assignee_ids` que o PATCH nao devolve (ADR 0025)", () => {
+  it("preserva `assignee_ids` que o PATCH nao devolve", () => {
     const anterior = tarefa({ assignee_ids: ["u1", "u2"] });
     const resposta = comoOPatchResponde(anterior, { title: "Novo título" });
     const m = mesclaTarefa(resposta, anterior);
@@ -62,7 +57,7 @@ describe("mesclaTarefa", () => {
     expect(m.title).toBe("Novo título");
   });
 
-  it("⚠️ preserva os tres agregados da Spec 042", () => {
+  it("preserva os tres agregados de subtarefa", () => {
     const anterior = tarefa({
       subtask_total: 5,
       subtask_done: 2,
@@ -83,7 +78,7 @@ describe("mesclaTarefa", () => {
     expect(m.subtask_done).toBe(4);
   });
 
-  it("⚠️ ZERO e LISTA VAZIA sao respostas, e nao ausencia", () => {
+  it("ZERO e LISTA VAZIA sao respostas, e nao ausencia", () => {
     // O motivo de ser `??` e nao `||`. Com `||`, um card que passou a ter zero
     // subtarefas (a ultima foi apagada) herdaria o contador velho para sempre,
     // e alguem sem responsavel voltaria a mostrar o responsavel antigo.

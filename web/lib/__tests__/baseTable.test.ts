@@ -10,7 +10,6 @@ import {
   linksDaCelula,
   nomeDoLink,
   mover,
-  nomeConfere,
   pedacosDaCelula,
   proximaCor,
   rotuloDePessoa,
@@ -37,7 +36,7 @@ describe("dataParaTela", () => {
   });
 });
 
-describe("rotuloDePessoa (D8, D22)", () => {
+describe("rotuloDePessoa", () => {
   const todos = new Map([
     ["ana", { name: "Ana", is_active: true }],
     ["bia", { name: "Bia", is_active: false }],
@@ -96,7 +95,7 @@ describe("interpretarDigitado", () => {
   });
 });
 
-describe("mover (teclado, spec §12)", () => {
+describe("mover (teclado)", () => {
   const p = { linha: 1, coluna: 1 };
   it("setas andam uma casa e param na borda", () => {
     expect(mover(p, "ArrowUp", 3, 3)).toEqual({ linha: 0, coluna: 1 });
@@ -135,20 +134,13 @@ describe("agruparPorRaiz", () => {
   });
 });
 
-describe("avisoDeLinhas (D23)", () => {
+describe("avisoDeLinhas", () => {
   it("nada abaixo do aviso", () => {
     expect(avisoDeLinhas(3999, 4000, 5000)).toBeNull();
   });
   it("aviso a partir de 4.000, teto em 5.000", () => {
     expect(avisoDeLinhas(4000, 4000, 5000)?.nivel).toBe("aviso");
     expect(avisoDeLinhas(5000, 4000, 5000)?.nivel).toBe("teto");
-  });
-});
-
-describe("nomeConfere (D26)", () => {
-  it("espaço nas pontas não conta, maiúscula conta", () => {
-    expect(nomeConfere("  Calendário geral ", "Calendário geral")).toBe(true);
-    expect(nomeConfere("calendário geral", "Calendário geral")).toBe(false);
   });
 });
 
@@ -159,7 +151,7 @@ describe("proximaCor", () => {
   });
 });
 
-describe("corDaPessoa (fatia J)", () => {
+describe("corDaPessoa", () => {
   const todos = new Map([
     ["ana", { name: "Ana", is_active: true }],
     ["bia", { name: "Bia", is_active: false }],
@@ -184,7 +176,7 @@ describe("corDaPessoa (fatia J)", () => {
   });
 });
 
-describe("links da célula (fatia J)", () => {
+describe("links da célula", () => {
   it("⚠️ a célula antiga, de texto solto, vira lista de um sem nome", () => {
     expect(linksDaCelula("https://instagram.com/p/x")).toEqual([
       { title: "", url: "https://instagram.com/p/x" },
@@ -207,7 +199,7 @@ describe("links da célula (fatia J)", () => {
   });
 });
 
-describe("caber o conteúdo (duplo clique na borda, 14/10)", () => {
+describe("caber o conteúdo (duplo clique na borda)", () => {
   // Cada letra mede 10 (a pílula, 5): a conta fica legível.
   const medir = (t: string, pequeno: boolean) => t.length * (pequeno ? 5 : 10);
   const NINGUEM = new Set<string>();

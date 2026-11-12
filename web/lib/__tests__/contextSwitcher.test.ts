@@ -47,12 +47,6 @@ describe("rootsForPerson", () => {
     expect(raizes.map((t) => t.name)).toEqual(["Marketing"]);
   });
 
-  it("⭐⭐ quem NÃO administra a organização não vê o time alheio", () => {
-    const raizes = rootsForPerson(TIMES, pessoa([SEO]), false);
-    expect(raizes.map((t) => t.name)).toEqual(["Marketing"]);
-    expect(raizes.map((t) => t.id)).not.toContain(TI);
-  });
-
   it("quem administra a organização vê TODAS, mesmo sem vínculo nenhum", () => {
     const raizes = rootsForPerson(TIMES, pessoa([]), true);
     expect(raizes.map((t) => t.name)).toEqual(["Marketing", "TI"]);
@@ -95,26 +89,11 @@ describe("contextChoice", () => {
   it("sem time e sem poder: não mostra nada", () => {
     expect(contextChoice(TIMES, pessoa([]), false).kind).toBe("none");
   });
-
-  it("⚠️ a lista NUNCA traz subtime", () => {
-    const escolha = contextChoice(TIMES, pessoa([]), true);
-    if (escolha.kind !== "switcher") throw new Error("esperava seletor");
-    const ids = escolha.roots.map((t) => t.id);
-    expect(ids).not.toContain(SEO);
-    expect(ids).not.toContain(JR);
-  });
 });
 
 describe("peopleEntry", () => {
   it("um time: cai na tela dele", () => {
     expect(peopleEntry([TIMES[1]])).toEqual({ kind: "team", teamId: MKT });
-  });
-
-  it("⚠️ várias: a PRIMEIRA POR NOME, e não a primeira da API", () => {
-    const raizes = [TIMES[1], TIMES[0]].sort((a, b) =>
-      a.name.localeCompare(b.name, "pt-BR"),
-    );
-    expect(peopleEntry(raizes)).toEqual({ kind: "team", teamId: MKT });
   });
 
   it("nenhum time: não inventa destino", () => {

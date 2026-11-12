@@ -1,38 +1,8 @@
-// =====================================================
-// lib/__tests__/erroApi.test.ts -- o parser de erro de `lib/api.ts`
-// -----------------------------------------------------
-// O QUE ESTES TESTES PROTEGEM, e que nenhum portao pegava:
-//
-// O envelope de erro DESTE backend e
+// O parser de erro de `lib/api.ts`. O envelope deste backend é
 //     { "error": { "code", "message", "details" }, "request_id": ... }
-// (`backend/app/api/errors.py:_error_body`, e os testes de integracao do
-// backend afirmam isso -- `test_orfas_por_mudanca_de_vinculo_http_db.py:160`
-// le `r.json()["error"]["details"]["acao"]`).
-//
-// O front lia `data.detail.*` -- a forma PADRAO do FastAPI, que este backend
-// NAO usa. Consequencia medida em 10/08/2026:
-//   - `ApiError.details` era SEMPRE `undefined`. `TaskModal.tsx:580` le
-//     `e.details?.invalid_ids` desde a Spec de assignees e nunca recebeu nada,
-//     apesar de o teste do backend (`test_task_create_assignees_http_db.py:213`)
-//     existir com o comentario "o front depende de details.invalid_ids";
-//   - `ApiError.message` caia no literal `Erro <status>` em toda falha de
-//     dominio, entao a frase escrita no backend nunca aparecia na tela.
-//
-// ⚠️ POR QUE ISTO PASSAVA VERDE ANTES. `tsc` e `next build` nao leem corpo de
-// HTTP, e o unico teste que montava um erro (`logout.test.ts:85`) usava
-// `{"detail":"nope"}` -- exatamente a forma que o parser antigo entendia, e
-// que o backend nao produz. Teste que so exercita a forma certa por acidente
-// nao afirma nada sobre a forma real.
-//
-// SABOTAGEM (executar antes de commitar):
-//     Em `lib/api.ts`, trocar a linha
-//         const env = data?.error ?? data?.detail ?? data;
-//     por
-//         const env = data?.detail ?? data;
-//     -- ou seja, devolver o comportamento anterior INTEIRO, nao afrouxar.
-//     Devem cair `mensagem do backend` e `details estruturado`, e NAO deve
-//     cair `422 do proprio FastAPI`, que e a forma antiga e continua coberta.
-// =====================================================
+// e não o `{ "detail": ... }` padrão do FastAPI, que só aparece no 422 do
+// próprio framework. Ler só `detail` deixa `ApiError.details` sempre
+// `undefined` e a mensagem do backend nunca chega à tela.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError, clearTokens, removeMemberFromTeam, setTokens } from "@/lib/api";
@@ -61,7 +31,7 @@ async function capturar(fn: () => Promise<unknown>): Promise<ApiError> {
 }
 
 // Qualquer chamada serve de veiculo: o que se testa e o parser de erro, nao a
-// rota. Esta e uma das que recebem o 422 da E8.
+// rota.
 const chamar = () => removeMemberFromTeam("u-1", "t-origem");
 
 beforeEach(() => {
@@ -111,7 +81,7 @@ describe("parser de erro de lib/api.ts", () => {
     expect(erro.code).toBe("password_change_required");
   });
 
-  it("le o details estruturado (a lista da E8 da Spec 037)", async () => {
+  it("le o details estruturado", async () => {
     mockFetchComCorpo(422, {
       error: {
         code: "validation_error",
@@ -137,7 +107,7 @@ describe("parser de erro de lib/api.ts", () => {
 
     expect(erro.details?.acao).toBe("remove_member_from_team");
     expect(erro.details?.tarefas).toHaveLength(1);
-    // Os CAMPOS, e nao o tamanho -- e o que impede a E8 de virar so contagem.
+    // Os CAMPOS, e nao o tamanho.
     expect(erro.details?.tarefas[0]).toMatchObject({
       id: "task-1",
       titulo: "Revisar pauta de agosto",
@@ -146,7 +116,7 @@ describe("parser de erro de lib/api.ts", () => {
     });
   });
 
-  it("le tambem o details de invalid_ids (TaskModal.tsx:580)", async () => {
+  it("le tambem o details de invalid_ids, que o TaskModal le", async () => {
     mockFetchComCorpo(422, {
       error: {
         code: "validation_error",
@@ -163,9 +133,8 @@ describe("parser de erro de lib/api.ts", () => {
 
   it("continua entendendo corpo NAO-JSON (o `data = { detail: text }`)", async () => {
     // 502 do proxy, HTML de erro, timeout do Traefik: o corpo nao e JSON e
-    // `_request` embrulha o texto cru em `{ detail: text }` (api.ts:178). O
-    // ramo `data?.detail` do encadeamento existe para isto, e por isso ele NAO
-    // saiu quando o `data?.error` entrou na frente.
+    // `_request` embrulha o texto cru em `{ detail: text }`. O ramo
+    // `data?.detail` do encadeamento existe para isto.
     const spy = vi.fn(
       async (_url: string, _init?: RequestInit) =>
         new Response("Bad Gateway", { status: 502 })

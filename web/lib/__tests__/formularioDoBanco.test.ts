@@ -1,17 +1,6 @@
-// O adaptador que troca a FONTE do formulário público sem mexer no fluxo.
-//
-// ⚠️ POR QUE ELE MERECE TESTE PRÓPRIO: ele é o que permite a fatia B não
-// reescrever as 922 linhas do `/solicitar`. A página consome `Categoria[]`
-// desde sempre; o adaptador entrega essa forma a partir da API. Se ele errar,
-// o erro aparece como campo faltando ou condicional que não some — na única
-// porta pública do produto, e para quem não tem login para reclamar.
-//
-// SABOTAGENS previstas:
-//   A. `opcoes: q.options` sem o teto de vazio -> cai "sem opções vira
-//      undefined": a tela desenharia um select sem alternativa.
-//   B. Deixar de filtrar seção sem pergunta -> cai "seção vazia é descartada".
-//   C. `resumoDe: s.summary_question_id ?? ""` (sem a reserva) -> cai a
-//      reserva no primeiro campo.
+// O adaptador que entrega o formulário público da API na forma `Categoria[]`
+// que a página `/solicitar` consome. Erro aqui aparece como campo faltando ou
+// condicional que não some, na porta pública.
 
 import { describe, expect, it } from "vitest";
 

@@ -1,4 +1,4 @@
-// Exibicao condicional dos campos do formulario publico (Spec 025).
+// Exibicao condicional dos campos do formulario publico.
 // Regra: sem `mostrarSe`, o campo aparece sempre; com `mostrarSe`, aparece
 // so quando o campo-dependencia tem EXATAMENTE o valor indicado (ou o inclui,
 // se for de multipla escolha) e esta ele mesmo visivel.
@@ -42,17 +42,16 @@ describe("campoVisivel", () => {
   });
 
   it("gatilho de multipla escolha: vale quando a resposta INCLUI a alternativa", () => {
-    // 16/10, a auditoria: o editor e o servidor aceitam `multi` como gatilho,
-    // e a comparacao array === string deixava a dependente invisivel para
-    // sempre ("mostrar Data se Redes = Instagram").
+    // O editor e o servidor aceitam `multi` como gatilho; comparar array com
+    // string deixaria a dependente invisivel para sempre.
     expect(campoVisivel(CONDICIONAL, { tem_evento: ["Nao", "Sim"] })).toBe(true);
     expect(campoVisivel(CONDICIONAL, { tem_evento: ["Nao"] })).toBe(false);
     expect(campoVisivel(CONDICIONAL, { tem_evento: [] })).toBe(false);
   });
 
   it("em cadeia, gatilho escondido esconde a dependente", () => {
-    // P1 = Sim mostra P2; P2 = Presencial mostra P3. Voltar P1 para Nao
-    // escondia P2 mas deixava P3 na tela -- obrigatoria e enviada.
+    // P1 = Sim mostra P2; P2 = Presencial mostra P3. Voltar P1 para Nao tem de
+    // esconder P3 tambem, senao ela segue obrigatoria e enviada.
     const p1: Campo = { id: "p1", label: "Tem evento?", tipo: "escolha" };
     const p2: Campo = { id: "p2", label: "Formato", tipo: "escolha", mostrarSe: { campo: "p1", igual: "Sim" } };
     const p3: Campo = { id: "p3", label: "Local", tipo: "texto", mostrarSe: { campo: "p2", igual: "Presencial" } };
@@ -68,7 +67,7 @@ describe("campoVisivel", () => {
   });
 });
 
-describe("novaRepeticao (Spec 059)", () => {
+describe("novaRepeticao", () => {
   it("a primeira é o próprio slug; as outras, o menor #n livre", () => {
     expect(novaRepeticao("evento", [])).toBe("evento");
     expect(novaRepeticao("evento", ["evento"])).toBe("evento#2");

@@ -1,16 +1,6 @@
-// Revisão de títulos (21/09) -- o nome da aba.
-//
-// O que se prende aqui:
-//   - o específico vem primeiro, e o produto depois (a aba corta pela direita);
-//   - ⚠️ carregando (`null`) NÃO mexe no título: o nome genérico do
-//     `layout.tsx` da rota continua valendo até o dado chegar;
-//   - ⚠️⚠️ TODA ROTA TEM TÍTULO PRÓPRIO -- o guardião que varre `app/`.
-//
-// SABOTAGENS (medidas):
-//   A. Em `useDocumentTitle`, tirar o `if (!limpo) return`. Deve cair
-//      "⚠️ enquanto carrega, o título não muda".
-//   B. Apagar o `app/perfil/layout.tsx`. Deve cair "⚠️⚠️ toda rota declara o
-//      próprio título".
+// O nome da aba: o específico vem primeiro e o produto depois (a aba corta pela
+// direita); carregando (`null`) não mexe no título; toda rota de `app/` tem
+// título próprio.
 
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";

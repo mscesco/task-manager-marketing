@@ -1,10 +1,8 @@
-// Regras de prazo do front (Spec 023) + trava da Spec 026.
+// Regras de prazo, cores e selo de parada do front.
 //
-// RELOGIO FAKE OBRIGATORIO (Spec 027, D7): `deadlineDays` chama `new Date()`.
-// Sem fixar o relogio, este arquivo passaria hoje e quebraria amanha.
-// Meio-dia LOCAL de proposito (construtor com componentes, nao string ISO):
-// string ISO com Z seria interpretada em UTC e a virada de dia dependeria
-// do fuso da maquina.
+// Relógio fake obrigatório: `deadlineDays` chama `new Date()`. Meio-dia LOCAL
+// de propósito (construtor com componentes, não string ISO com Z), para a
+// virada de dia não depender do fuso da máquina.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -36,7 +34,7 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("deadlineTone -- quando NAO alertar", () => {
+describe("deadlineTone: quando NAO alertar", () => {
   it("sem prazo definido", () => {
     expect(deadlineTone(null, "IN_PROGRESS", false)).toBeNull();
     expect(deadlineTone(undefined, "IN_PROGRESS", false)).toBeNull();
@@ -58,7 +56,7 @@ describe("deadlineTone -- quando NAO alertar", () => {
   });
 });
 
-describe("deadlineTone -- quando alertar", () => {
+describe("deadlineTone: quando alertar", () => {
   it("vencida -> overdue", () => {
     expect(deadlineTone(ONTEM, "IN_PROGRESS", false)).toBe("overdue");
   });
@@ -74,17 +72,14 @@ describe("deadlineTone -- quando alertar", () => {
     }
   );
 
-  // --- TRAVA DA SPEC 026 (D5) -----------------------------------------
-  // "Aprovacao externa" NAO pausa o prazo: cliente lento nao para o
-  // cronometro do time. O backend ja garante isso (EXTERNAL_APPROVAL fora
-  // de _STATUS_SEM_AVISO, com teste de integracao). Se alguem silenciar o
-  // status SO no front, as duas metades divergem em silencio -- e este
-  // teste e o que grita.
-  it("EXTERNAL_APPROVAL vencida -> overdue (Spec 026, D5)", () => {
+  // "Aprovação externa" NÃO pausa o prazo: cliente lento não para o
+  // cronômetro do time. O backend faz o mesmo; silenciar só no front faria as
+  // duas metades divergirem.
+  it("EXTERNAL_APPROVAL vencida -> overdue", () => {
     expect(deadlineTone(ONTEM, "EXTERNAL_APPROVAL", false)).toBe("overdue");
   });
 
-  it("EXTERNAL_APPROVAL vencendo -> soon (Spec 026, D5)", () => {
+  it("EXTERNAL_APPROVAL vencendo -> soon", () => {
     expect(deadlineTone(AMANHA, "EXTERNAL_APPROVAL", false)).toBe("soon");
   });
 });
@@ -111,21 +106,10 @@ describe("deadlineLabel", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Spec 031 (C1a) -- cor virou token.
-//
-// O que estes testes conseguem provar: que nenhum hex sobrou nos mapas, que
-// todo status/prioridade/prazo tem cor, e que dot e text sao valores
-// DIFERENTES (se alguem colar o mesmo token nos dois, o conserto de contraste
-// evapora sem nada ficar vermelho).
-//
-// ⚠️ O QUE ELES NAO PROVAM: que o token existe no globals.css, e muito menos
-// que ele existe nos DOIS temas. O vitest.config.ts limita o `include` a
-// `lib/**` -- este arquivo nunca e lido pelo runner. Apagar o bloco
-// [data-theme="escuro"] inteiro deixa a suite VERDE e a metade escura da
-// interface ilegivel. A conferencia e por grep + olho nos dois temas.
-// ---------------------------------------------------------------------------
-describe("cor virou token (Spec 031)", () => {
+// Provam que nenhum hex sobrou nos mapas, que todo status/prioridade/prazo
+// tem cor e que dot e text são tokens diferentes. NÃO provam que o token
+// existe no globals.css, nem nos dois temas: isso se confere à mão.
+describe("cores são tokens", () => {
   const TODOS = [
     ...STATUSES.map((s) => s.color),
     ...Object.values(STATUS_TEXT),
@@ -154,9 +138,8 @@ describe("cor virou token (Spec 031)", () => {
     );
   });
 
-  // Redesign (19/10): as cores de apoio (--teal, --violet, --amber) sao
-  // MEDIDAS como texto, entao podem servir de traco e de texto ao mesmo tempo.
-  // Para as demais familias a regra continua: dot cromatico != text escuro.
+  // As cores de apoio (--teal, --violet, --amber) têm contraste de texto, então
+  // podem servir de traço e de texto; nas demais, dot cromático != text escuro.
   const APOIO = ["var(--teal)", "var(--violet)", "var(--amber)"];
   it("dot e text sao tokens DIFERENTES, salvo cor de apoio -- se forem iguais, o AA evapora", () => {
     for (const s of STATUSES) {
@@ -175,17 +158,9 @@ describe("cor virou token (Spec 031)", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// Spec 031 (C2) -- selo "parada ha X dias".
-// Relogio fake ja fixado no beforeEach do topo: 25/06/2026, meio-dia local.
-// ---------------------------------------------------------------------------
+// Selo "parada há X dias". Relógio fixado no beforeEach do topo.
 const H = (dias: number) => new Date(2026, 5, 25 - dias, 9, 0, 0).toISOString();
 
-// ⚠️ ESTES TESTES ERAM DO `diasParado` POR STATUS, que saiu na limpeza de
-// codigo morto. A aritmetica e a mesma do `diasParadoPorColuna` (copia
-// literal), entao eles passaram a mirar a versao por coluna. Quais colunas
-// ganham selo fica com o `paridadeColuna.test.ts` ("o selo de parada sai so nas
-// tres colunas de trabalho ativo").
 const coluna = (
   semantic: Coluna["semantic"],
   notify_deadline = true,
@@ -201,7 +176,7 @@ const coluna = (
 });
 const ANDAMENTO = coluna("IN_PROGRESS");
 
-describe("diasParadoPorColuna -- quando NAO ha selo", () => {
+describe("diasParadoPorColuna: quando NAO ha selo", () => {
   it("sem updated_at", () => {
     expect(diasParadoPorColuna(ANDAMENTO, null, false)).toBeNull();
     expect(diasParadoPorColuna(ANDAMENTO, undefined, false)).toBeNull();
@@ -212,7 +187,7 @@ describe("diasParadoPorColuna -- quando NAO ha selo", () => {
   it("coluna OPEN nao para -- parado la e o estado normal", () => {
     expect(diasParadoPorColuna(coluna("OPEN"), H(90), false)).toBeNull();
   });
-  it("coluna sem aviso de prazo nao para (D6) -- o BLOCKED", () => {
+  it("coluna sem aviso de prazo nao para (o Bloqueado)", () => {
     expect(diasParadoPorColuna(coluna("IN_PROGRESS", false), H(90), false)).toBeNull();
   });
   it("colunas terminais nao param", () => {
@@ -224,7 +199,7 @@ describe("diasParadoPorColuna -- quando NAO ha selo", () => {
   });
 });
 
-describe("diasParadoPorColuna -- fronteira do limiar", () => {
+describe("diasParadoPorColuna: fronteira do limiar", () => {
   it("um dia ABAIXO do limiar nao mostra", () => {
     expect(diasParadoPorColuna(ANDAMENTO, H(DIAS_PARA_PARADA - 1), false)).toBeNull();
   });
@@ -250,22 +225,6 @@ describe("paradaLabel", () => {
   });
 });
 
-// =====================================================================
-// `dataHoraBR` -- Spec 039, F7.
-//
-// ⚠️ POR QUE ELE TEM TESTE PROPRIO. Ele existe porque o TOM do prazo lia a
-// hora e o TEXTO nao lia: card vermelho com "21/08/2026" e nada explicando o
-// vermelho. Mesmo defeito que o `deadlineLabel` levou em 18/08, na outra
-// metade da tela.
-//
-// SABOTAGENS -- ✅ MEDIDAS EM 21/08/2026:
-//   A. O `slice(0, 5)` sai. **Cai 1** ("corta os segundos").
-//   B. A hora e sempre concatenada (sem o ternario). **Cai 1** ("sem hora, so
-//      a data"): sai "19/08/2026 undefined".
-//   C. O `T00:00:00` sai. ⚠️ **PASSA VERDE EM BRT e CAI EM UTC** -- e por isso
-//      o portao `TZ=UTC npm test` existe. A oeste de Greenwich, `new Date`
-//      lendo `YYYY-MM-DD` como UTC volta um dia.
-// =====================================================================
 describe("dataHoraBR", () => {
   it("sem hora, só a data", () => {
     expect(dataHoraBR("2026-08-19")).toBe("19/08/2026");
@@ -274,10 +233,8 @@ describe("dataHoraBR", () => {
     expect(dataHoraBR("2026-08-19", null)).toBe("19/08/2026");
   });
 
-  it("⚠️ corta os segundos que o backend manda", () => {
-    // O `due_time` volta como `HH:MM:SS`. Sem cortar, a pílula do detalhe
-    // dizia "19/08/2026 18:00:00" -- e dizia mesmo, antes da Spec 038 fatia B
-    // ganhar o `slice` na mão.
+  it("corta os segundos que o backend manda", () => {
+    // O `due_time` volta como `HH:MM:SS`.
     expect(dataHoraBR("2026-08-19", "18:00:00")).toBe("19/08/2026 18:00");
   });
 
@@ -287,9 +244,10 @@ describe("dataHoraBR", () => {
     expect(dataHoraBR("2026-08-19", "07:05")).toBe("19/08/2026 07:05");
   });
 
-  it("⚠️ meia-noite não anda um dia para trás", () => {
-    // Este é o teste que o `TZ=UTC npm test` protege. Sem o `T00:00:00`, em
-    // fuso negativo isto vira 31/12/2025.
+  it("meia-noite não anda um dia para trás", () => {
+    // Sem o `T00:00:00`, `new Date` lê a data como UTC e, a oeste de
+    // Greenwich, isto vira 31/12/2025. Só falha numa máquina em fuso negativo
+    // (ex.: BRT): numa máquina em UTC, como o CI, passa verde mesmo quebrado.
     expect(dataHoraBR("2026-01-01")).toBe("01/01/2026");
   });
 });

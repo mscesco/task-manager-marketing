@@ -1,13 +1,8 @@
 /**
- * Spec 028 -- regras de gestao de membros no front.
- *
- * Estes testes espelham os de integracao do backend
- * (tests/integration/test_supervisor_member_scope_db.py). Se um lado mudar
- * sem o outro, a tela passa a oferecer botao que o servidor recusa com 403
- * -- ou, pior, esconde acao que a pessoa poderia fazer.
- *
- * A trava que mais importa e a mesma la e aqui: supervisor NAO alcanca
- * outro subtime.
+ * Regras de gestão de membros no front. Espelham as do backend
+ * (test_supervisor_member_scope_db.py): se um lado mudar sem o outro, a tela
+ * oferece botão que o servidor recusa com 403, ou esconde ação possível.
+ * A trava que mais importa: supervisor não alcança outro subtime.
  */
 
 import { describe, it, expect } from "vitest";
@@ -47,10 +42,9 @@ describe("alcanceDe", () => {
     expect(a.tipo).toBe("amplo");
   });
 
-  it("⚠️ Spec 049, fatia H: trocar cargo NAO faz o supervisor virar amplo", () => {
-    // Desde a H o supervisor tem `membership.update` -- no proprio subtime. Se
-    // o marcador de "amplo" continuasse sendo esse verbo, ele ganharia botao
-    // de gestao em todo time, e cada clique fora do subtime daria 403.
+  it("trocar cargo NAO faz o supervisor virar amplo", () => {
+    // O supervisor tem `membership.update` no próprio subtime. Se esse verbo
+    // marcasse "amplo", ele ganharia botão de gestão em todo time (403).
     const a = alcanceDe({
       permissions: ["membership.create", "membership.update", "membership.delete"],
       teams: [{ team_id: SEO, role: "SUPERVISOR" }],
@@ -58,22 +52,12 @@ describe("alcanceDe", () => {
     expect(a).toEqual({ tipo: "subtime", subtimes: [SEO] });
   });
 
-  it("member.manage.subteam vira alcance de subtime, com os times supervisionados", () => {
+  it("alcance de subtime: só entram os times onde o papel é SUPERVISOR", () => {
     const a = alcanceDe({
       permissions: ["membership.create"],
       teams: [
         { team_id: SEO, role: "SUPERVISOR" },
         { team_id: RAIZ, role: "OPERATOR" },
-      ],
-    });
-    expect(a).toEqual({ tipo: "subtime", subtimes: [SEO] });
-  });
-
-  it("so entra no alcance o time onde o papel e SUPERVISOR", () => {
-    const a = alcanceDe({
-      permissions: ["membership.create"],
-      teams: [
-        { team_id: SEO, role: "SUPERVISOR" },
         { team_id: CRM, role: "OPERATOR" },
       ],
     });
@@ -100,12 +84,10 @@ describe("alcanceDe", () => {
   });
 });
 
-describe("acoes que a 028 NAO abriu ao supervisor", () => {
+describe("acoes que NAO sao do supervisor", () => {
   it.each([
-    ["cadastrar membro (D3)", podeCadastrarMembro],
-    // Resetar senha e desativar conta sairam daqui na Spec 051 (fatia E): o
-    // cadeado passou a ser por PESSOA, e vem do servidor.
-    ["mover de subtime (D1)", podeMoverSubtime],
+    ["cadastrar membro", podeCadastrarMembro],
+    ["mover de subtime", podeMoverSubtime],
   ])("%s: so alcance amplo", (_nome, fn) => {
     expect(fn(AMPLO)).toBe(true);
     expect(fn(SUP)).toBe(false);
@@ -114,19 +96,18 @@ describe("acoes que a 028 NAO abriu ao supervisor", () => {
 });
 
 describe("podeRemoverDoTime", () => {
-  // Quem tem o verbo: ADMIN, MANAGER e SUPERVISOR (Spec 049, fatia A).
+  // Quem tem o verbo: ADMIN, MANAGER e SUPERVISOR.
   const TIRA = ["membership.create", "membership.delete"] as const;
 
   it("supervisor remove OPERATOR do proprio subtime", () => {
     expect(podeRemoverDoTime(SUP, SEO, "OPERATOR", TIRA)).toBe(true);
   });
 
-  it("A TRAVA D1 tambem no remover: outro subtime, nao", () => {
+  it("outro subtime, nao", () => {
     expect(podeRemoverDoTime(SUP, CRM, "OPERATOR", TIRA)).toBe(false);
   });
 
-  // ⚠️ Era "D2: supervisor nao remove par SUPERVISOR" -- revogada na fatia H.
-  it("fatia H: supervisor tira outro SUPERVISOR do proprio subtime, e nao superior", () => {
+  it("supervisor tira outro SUPERVISOR do proprio subtime, e nao superior", () => {
     expect(podeRemoverDoTime(SUP, SEO, "SUPERVISOR", TIRA)).toBe(true);
     expect(podeRemoverDoTime(SUP, CRM, "SUPERVISOR", TIRA)).toBe(false);
     expect(podeRemoverDoTime(SUP, SEO, "MANAGER", TIRA)).toBe(false);
@@ -136,10 +117,9 @@ describe("podeRemoverDoTime", () => {
     expect(podeRemoverDoTime(AMPLO, CRM, "SUPERVISOR", TIRA)).toBe(true);
   });
 
-  it("⚠️ GESTOR (Spec 049, fatia D): alcance AMPLO e mesmo assim NAO tira do time", () => {
-    // O alcance dele e amplo porque ele move entre subtimes (`membership.move`); o
-    // verbo de tirar ele nao tem. Sem o parametro de permissoes, "amplo" dizia
-    // sim e o botao dava 403.
+  it("GESTOR: alcance AMPLO e mesmo assim NAO tira do time", () => {
+    // Amplo porque move entre subtimes (`membership.move`); o verbo de tirar
+    // ele não tem, e "amplo" sozinho diria sim a um botão que dá 403.
     const GESTOR = ["membership.create", "membership.update", "membership.move"] as const;
     expect(podeRemoverDoTime(AMPLO, CRM, "OPERATOR", GESTOR)).toBe(false);
   });
@@ -149,10 +129,7 @@ const NA_RAIZ = true;
 const EM_SUBTIME = false;
 
 describe("papeisAtribuiveis", () => {
-  // ⚠️ Era "supervisor so oferece OPERATOR" (D2 da Spec 028), revogada na
-  // Spec 049, fatia H: sem SUPERVISOR na lista, a tela escondia a promocao que
-  // o servidor passou a aceitar.
-  it("fatia H: supervisor oferece SUPERVISOR e OPERADOR no subtime, e nada na raiz", () => {
+  it("supervisor oferece SUPERVISOR e OPERADOR no subtime, e nada na raiz", () => {
     expect(papeisAtribuiveis(SUP, false, EM_SUBTIME)).toEqual([
       "SUPERVISOR",
       "OPERATOR",
@@ -160,6 +137,8 @@ describe("papeisAtribuiveis", () => {
     expect(papeisAtribuiveis(SUP, false, NA_RAIZ)).toEqual([]);
   });
 
+  // Os dois toEqual abaixo fixam a lista: ADMIN (papel de organização),
+  // MANAGER em subtime e SUPERVISOR na raiz dariam 409 ao salvar.
   it("na raiz: GERENTE e OPERADOR", () => {
     expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).toEqual([
       "MANAGER",
@@ -172,29 +151,6 @@ describe("papeisAtribuiveis", () => {
       "SUPERVISOR",
       "OPERATOR",
     ]);
-  });
-
-  // ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO -- "ADMIN ve o papel ADMIN" --, e a
-  // Spec 045 (fatia D) o inverteu: ADMIN saiu do nivel de time e virou papel
-  // de ORGANIZACAO. Nao e questao de permissao: nao ha time que o aceite,
-  // nem para quem e admin. Oferecer levaria a 409 na hora de salvar.
-  it("ADMIN nao aparece em nivel de time NENHUM, nem para admin", () => {
-    for (const nivel of [NA_RAIZ, EM_SUBTIME]) {
-      expect(papeisAtribuiveis(AMPLO, true, nivel)).not.toContain("ADMIN");
-      expect(papeisAtribuiveis(AMPLO, false, nivel)).not.toContain("ADMIN");
-    }
-  });
-
-  // A outra metade da invariante, e a que a tela erraria calada: MANAGER num
-  // subtime e SUPERVISOR na raiz sao os dois 409 que sobravam.
-  it("MANAGER nao aparece em subtime; SUPERVISOR nao aparece na raiz", () => {
-    expect(papeisAtribuiveis(AMPLO, true, EM_SUBTIME)).not.toContain("MANAGER");
-    expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).not.toContain("SUPERVISOR");
-  });
-
-  it("OPERADOR aparece nos dois niveis -- e o unico", () => {
-    expect(papeisAtribuiveis(AMPLO, true, NA_RAIZ)).toContain("OPERATOR");
-    expect(papeisAtribuiveis(AMPLO, true, EM_SUBTIME)).toContain("OPERATOR");
   });
 
   it("sem alcance, lista vazia", () => {
@@ -215,20 +171,19 @@ describe("timesParaAdicionar", () => {
 });
 
 describe("temAcaoPossivel", () => {
-  // A LISTA mostra todo mundo (decisao da Camila, 27/07): esconder linha
-  // fazia o contador do cabecalho divergir do corpo. O que varia e o botao.
+  // A lista mostra todo mundo (esconder linha faria o contador divergir do
+  // corpo); o que varia é o botão.
 
   it("supervisor age sobre quem esta no proprio subtime", () => {
     expect(temAcaoPossivel(SUP, [SEO])).toBe(true);
   });
 
   it("supervisor age sobre quem esta so na raiz (candidato a entrar)", () => {
-    // ⚠️ LISTA VAZIA e o "so na raiz" -- era `null` ate a Spec 044. O backend
-    // passou a ter UMA representacao para "sem subtime", e o teste segue.
+    // Lista vazia é o "só na raiz".
     expect(temAcaoPossivel(SUP, [])).toBe(true);
   });
 
-  it("A TRAVA D1: sem acao sobre quem esta em OUTRO subtime", () => {
+  it("sem acao sobre quem esta em OUTRO subtime", () => {
     expect(temAcaoPossivel(SUP, [CRM])).toBe(false);
   });
 
@@ -242,25 +197,14 @@ describe("temAcaoPossivel", () => {
     expect(temAcaoPossivel(NADA, [])).toBe(false);
   });
 
-  // =====================================================================
-  // ⚠️ Spec 044: a pessoa em MAIS DE UM subtime
-  // =====================================================================
-
+  // A pessoa em mais de um subtime.
   it("⚠️ ALGUM subtime basta: age sobre quem esta no dele E em outro", () => {
-    // O caso concreto da ADR 0039: a redatora em SEO e em Midias Sociais. O
-    // supervisor de SEO administra a pessoa NAQUELE subtime.
-    //
-    // ⚠️ ESTE E O TESTE QUE MUDA COMPORTAMENTO, e nao so tipo: com a versao
-    // singular a resposta dependia de qual dos dois subtimes o backend tivesse
-    // escolhido devolver -- ou seja, era sorteio. Agora e determinado.
     expect(temAcaoPossivel(SUP, [SEO, CRM])).toBe(true);
     // E a ordem nao importa: `some` nao e "o primeiro".
     expect(temAcaoPossivel(SUP, [CRM, SEO])).toBe(true);
   });
 
-  it("⚠️ e a TRAVA D1 sobrevive ao plural: dois subtimes ALHEIOS = sem acao", () => {
-    // Se isto virar `true`, o supervisor de SEO ganhou botao sobre gente que
-    // nao e dele -- o backend recusaria com 403, mas a tela teria oferecido.
+  it("⚠️ e a trava sobrevive ao plural: dois subtimes ALHEIOS = sem acao", () => {
     expect(temAcaoPossivel(SUP, [CRM, "outro-qualquer"])).toBe(false);
   });
 });

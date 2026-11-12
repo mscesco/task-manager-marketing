@@ -1,5 +1,5 @@
 /**
- * Spec 050 -- as decisoes da fileira de reacoes.
+ * As decisoes da fileira de reacoes.
  *
  * Estes testes espelham o backend: a fileira que o servidor devolve
  * (`test_comment_reactions_db.py`) e o que a tela faz com ela.
@@ -22,7 +22,7 @@ const ANA = "user-ana";
 const BRUNO = "user-bruno";
 
 const MEMBROS = new Map([
-  [EU, { name: "Camila" }],
+  [EU, { name: "Carla" }],
   [ANA, { name: "Ana" }],
   [BRUNO, { name: "Bruno" }],
 ]);
@@ -174,13 +174,9 @@ describe("porGrupo", () => {
 });
 
 describe("REACOES_SUGERIDAS", () => {
-  it("joia e coracao, na ordem pedida por ela", () => {
-    expect(REACOES_SUGERIDAS).toEqual(["👍", "❤️"]);
-  });
-
-  it("⚠️ o coracao esta na forma COMPLETA (com U+FE0F)", () => {
+  it("joia e coracao, com o coracao na forma completa (U+FE0F)", () => {
     // Sem o U+FE0F o servidor normalizaria e a pilula voltaria com um emoji
     // diferente do que o botao mostrou.
-    expect(REACOES_SUGERIDAS[1]).toBe("❤️");
+    expect(REACOES_SUGERIDAS).toEqual(["👍", "❤️"]);
   });
 });

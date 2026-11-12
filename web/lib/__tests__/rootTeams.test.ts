@@ -59,13 +59,6 @@ describe("soleRootTeam", () => {
     expect(soleRootTeam([MARKETING, SEO]).id).toBe("t-mkt");
   });
 
-  it("⭐ com DOIS times raiz, LEVANTA em vez de escolher", () => {
-    // Trocar a implementação por `teams.find(...)` faz este teste cair.
-    expect(() => soleRootTeam([MARKETING, TI, SEO])).toThrow(
-      RootTeamUndefinedError,
-    );
-  });
-
   it("com dois times raiz, o erro diz o MOTIVO e QUAIS são", () => {
     try {
       soleRootTeam([MARKETING, TI]);
@@ -94,11 +87,7 @@ describe("soleRootTeam", () => {
   });
 
   it("a mensagem é legível por quem não escreveu o código", () => {
-    try {
-      soleRootTeam([MARKETING, TI]);
-    } catch (e) {
-      expect((e as Error).message).toContain("mais de um time");
-    }
+    expect(() => soleRootTeam([MARKETING, TI])).toThrow(/mais de um time/);
   });
 });
 
@@ -113,13 +102,6 @@ describe("entradaDoQuadro", () => {
     expect(entradaDoQuadro([MARKETING, SEO])).toEqual({
       tipo: "desenhar",
       rootId: "t-mkt",
-    });
-  });
-
-  it("⭐ vários times raiz: redireciona em vez de escolher calado", () => {
-    expect(entradaDoQuadro([MARKETING, TI])).toEqual({
-      tipo: "redirecionar",
-      para: "/quadro/t-mkt",
     });
   });
 

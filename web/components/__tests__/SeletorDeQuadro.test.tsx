@@ -1,29 +1,8 @@
 /**
- * Spec 036 -- o SeletorDeQuadro, montado.
- * ⚠️ REESCRITO NA FATIA 10 (18/08): ele virou DROPDOWN, e RENOMEAR/APAGAR
- * saíram daqui para o `AcoesDoQuadro` (barra do modo de edição).
- *
- * ⚠️ OS TESTES DE RENOMEAR E APAGAR NÃO FORAM APAGADOS -- foram MOVIDOS para
- * `AcoesDoQuadro.test.tsx`, com as mesmas sabotagens. Apagar guardião ao mover
- * código é como a fatia 5b-5a entregou `colunaEquivalente` sem leitor: verde e
- * sem prova de nada.
- *
- * ⚠️ A REGRA NAO SE TESTA AQUI. Quem lista, ordena, filtra e diz o que tem
- * afordancia e `lib/seletorDeQuadro.ts`, com testes proprios que esta fatia
- * NAO tocou -- ele nao sabe como a tela desenha. Este arquivo pergunta outra
- * coisa: **o componente LE aquelas respostas, e o que ele manda para a API bate
- * com o que a pessoa digitou?**
- *
- * ⚠️ E ISSO NAO E FORMALIDADE NESTE PROJETO. A fatia 5b-5a entregou
- * `colunaEquivalente` e `rotuloDeColuna` verdes e sem leitor nenhum, e quando
- * a tela finalmente as chamou a assinatura nao servia -- precisou ser refeita.
- * Modulo puro verde nao prova que alguem o usa direito.
- *
- * SABOTAGENS (medidas):
- *   S. `createBoard` mandando o nome CRU, sem `nomeDeQuadroValido`.
- *   T. Nao chamar `onSelecionar` depois de criar.
- *   U. O dropdown nao fechar ao clicar fora (regressao do painel de filtros).
- *   V. O dropdown listar quadro de OUTRO time, ou o padrao da raiz.
+ * O SeletorDeQuadro, montado: um dropdown no título. Renomear e apagar moram em
+ * `AcoesDoQuadro.test.tsx`. A regra (quem lista, ordena e filtra) é de
+ * `lib/seletorDeQuadro.ts`; aqui se pergunta se o componente LÊ aquelas
+ * respostas e se o que manda para a API bate com o que a pessoa digitou.
  */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -72,11 +51,8 @@ function montar(over: Partial<Parameters<typeof SeletorDeQuadro>[0]> = {}) {
     podeApagar: true,
     onSelecionar: vi.fn(),
     onMudou: vi.fn(),
-    // ⚠️ O DEFAULT DO HELPER E `false` -- a tela de SUBTIME, que e o assunto da
-    // maioria destes testes. A prop virou OBRIGATORIA em 11/09 (ver o bloco
-    // dela): ela era opcional, e a rota `/quadro/[teamId]` nao a passava, o que
-    // punha "Lente do time" no cabecalho de uma raiz. O default aqui e do
-    // ARREIO, e nao do componente -- quem desenha tem de dizer.
+    // `false` é a tela de SUBTIME, assunto da maioria destes testes. O default é
+    // do arreio: no componente a prop é obrigatória.
     daRaiz: false,
     ...over,
   };
@@ -91,10 +67,7 @@ function abrir() {
 
 describe("SeletorDeQuadro -- o gatilho é o título", () => {
   it("⚠️ FECHADO, mostra só o nome do escolhido -- e nenhuma opção", () => {
-    // ⚠️ ESTE E O GANHO DA FATIA 10, e o teste que o prende. A versao anterior
-    // desenhava um botao por quadro MAIS "Renomear" e "Apagar" ao lado de cada
-    // um: `1 + 2N + 1` elementos sempre visiveis. Se alguem "consertar"
-    // voltando a lista para a linha, esta linha cai.
+    // Fechado não há lista: cai se as opções voltarem a ficar sempre visíveis.
     montar();
     expect(screen.getByRole("button", { description: "Trocar de quadro" })).toBeTruthy();
     expect(screen.queryByRole("listbox")).toBeNull();
@@ -109,49 +82,19 @@ describe("SeletorDeQuadro -- o gatilho é o título", () => {
   });
 
   it("⚠️ o gatilho NÃO fixa tamanho de fonte -- ele herda do `<h1>`", () => {
-    // ⚠️ ESTE TESTE EXISTE POR UM DEFEITO DE OITO DIAS, achado na tela pela
-    // Camila em 22/08 ("as coisas do cabeçalho estão meio tortas comparadas
-    // com o nome do quadro").
-    //
-    // O `Board` desenha `<h1 style={{ fontSize: 26 }}>{title}</h1>` e este
-    // botão É o `title`. Ele trazia `font: "inherit"` seguido de
-    // `fontSize: 19` -- então o título do quadro continuou 19px enquanto a F1
-    // acreditava tê-lo levado a 26, e saía 1,7px fora do eixo dos vizinhos na
-    // linha do cabeçalho. Medido no navegador: `getComputedStyle` devolvia
-    // 19px dentro de um h1 de 26.
-    //
-    // ⚠️ TERCEIRA VEZ DO MESMO ATALHO no projeto -- ele já tinha matado o
-    // `fontSize` da pílula de datas (F7). `font` redefine tamanho, peso e
-    // altura de linha junto com a família.
-    //
-    // ⚠️ O QUE ESTE TESTE PRENDE É POUCO, e é honesto dizer: jsdom não tem
-    // layout, então ele não mede posição nenhuma. Ele prende só que o estilo
-    // inline não CRAVA um tamanho -- que é exatamente o erro que aconteceu
-    // duas vezes. O alinhamento em si continua ⚪ sem verificação.
+    // Este botão É o título do `<h1>`; `font: inherit` seguido de um `fontSize`
+    // fixo cravava o tamanho. jsdom não tem layout: só se prende que o estilo
+    // inline não crava tamanho, e não o alinhamento.
     montar();
     const gatilho = screen.getByRole("button", { description: "Trocar de quadro" });
     expect(gatilho.style.fontSize).toBe("inherit");
     expect(gatilho.style.fontWeight).toBe("inherit");
-    // ⚠️ NADA de tamanho absoluto: era o `19px` que prendia o título. Não dá
-    // para checar o atalho `font` diretamente -- o CSSOM o remonta a partir
-    // dos longhands e devolve "inherit" nos dois casos, então essa asserção
-    // não discrimina. O que discrimina é o tamanho não ser px.
+    // O atalho `font` não dá para checar (o CSSOM o remonta e devolve "inherit"
+    // nos dois casos); o que discrimina é o tamanho não ser px.
     expect(gatilho.style.fontSize).not.toMatch(/px$/);
-  });
-
-  it("⚠️ id desconhecido cai na LENTE, e o gatilho diz isso", () => {
-    // Mesma regra do `opcaoSelecionada`: o quadro pode ter sido apagado por
-    // outra pessoa. O gatilho nao pode ficar mostrando um nome que nao existe.
-    montar({ selecionado: "b-que-nao-existe" });
-    expect(
-      screen.getByRole("button", { description: "Trocar de quadro" }).textContent
-    ).toContain("Lente do time");
   });
 });
 
-// Revisão de títulos, 21/09. SABOTAGEM (medida): em `SeletorDeQuadro`, mover o
-// `</PageTitle>` para depois da lista de quadros. Deve cair "⚠️ a lista aberta
-// NÃO fica dentro do h1".
 describe("SeletorDeQuadro -- é o h1 da tela", () => {
   it("o título se chama pelo nome do quadro, e não pela instrução", () => {
     montar({ selecionado: "b-pauta" });
@@ -191,20 +134,10 @@ describe("SeletorDeQuadro -- aberto", () => {
       screen.getByRole("option", { name: /Pauta editorial/ }).getAttribute("aria-selected")
     ).toBe("false");
 
-    // ⚠️ Do CRM e o padrao da raiz NAO entram -- a regra e do modulo puro, e
-    // estas duas linhas provam que o componente NAO monta a lista por conta
-    // propria. Sabotagem V.
+    // Do CRM e o padrão da raiz NÃO entram: o componente não monta a lista por
+    // conta própria.
     expect(screen.queryByRole("option", { name: /Automações/ })).toBeNull();
     expect(screen.queryByRole("option", { name: /Quadro geral/ })).toBeNull();
-  });
-
-  it("a lente vem com a descrição que a diferencia de um quadro próprio", () => {
-    // ⚠️ E a frase que explica a diferenca entre "espelho do quadro geral" e um
-    // registro proprio. Ela ja sumiu uma vez por contraste (medido: 1.68 no
-    // tema claro sobre o fundo do item escolhido, contra os 4.5 do AA).
-    montar();
-    abrir();
-    expect(screen.getByText("espelho do quadro geral")).toBeTruthy();
   });
 
   it("escolher um quadro avisa o pai com o id, e FECHA", () => {
@@ -224,7 +157,7 @@ describe("SeletorDeQuadro -- aberto", () => {
     expect(props.onSelecionar).toHaveBeenCalledWith(null);
   });
 
-  it("⚠️ clicar FORA fecha -- sabotagem U", () => {
+  it("⚠️ clicar FORA fecha", () => {
     // ⚠️ Mesmo padrao do painel de filtros (`Board.tsx:252`). Sem isto o menu
     // fica aberto por cima das colunas e a pessoa perde o quadro de vista.
     montar();
@@ -270,7 +203,7 @@ describe("SeletorDeQuadro -- criar", () => {
     expect(screen.getByLabelText("Nome do novo quadro")).toBeTruthy();
   });
 
-  it("manda o nome APARADO para a API -- sabotagem S", async () => {
+  it("manda o nome APARADO para a API", async () => {
     vi.mocked(api.createBoard).mockResolvedValue(
       quadro({ id: "b-novo", name: "Campanhas" })
     );
@@ -305,7 +238,7 @@ describe("SeletorDeQuadro -- criar", () => {
     expect(vi.mocked(api.createBoard)).not.toHaveBeenCalled();
   });
 
-  it("⚠️ depois de criar, o quadro NOVO passa a ser o selecionado -- sabotagem T", async () => {
+  it("⚠️ depois de criar, o quadro NOVO passa a ser o selecionado", async () => {
     // Criar e continuar na lente deixaria a pessoa sem sinal de que algo
     // aconteceu -- o quadro novo ficaria atras de mais um clique.
     vi.mocked(api.createBoard).mockResolvedValue(

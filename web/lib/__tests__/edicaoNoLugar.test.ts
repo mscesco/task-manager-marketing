@@ -1,4 +1,4 @@
-// Spec 052, fatia D -- o que salvar ao editar título e descrição no lugar.
+// O que salvar ao editar título e descrição no lugar.
 import { describe, expect, it } from "vitest";
 import { decidirDescricao, decidirTitulo, TITULO_MAXIMO_TAREFA } from "@/lib/edicaoNoLugar";
 

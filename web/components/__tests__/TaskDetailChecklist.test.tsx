@@ -1,64 +1,8 @@
-// Spec 036, fatia 4c-2 -- a checklist do DETALHE decide pela COLUNA.
-//
-// ⚠️ POR QUE ESTE ARQUIVO EXISTE. Em 10/08 a fatia 4c-1 migrou o contador do
-// CARD para a coluna e deixou o do DETALHE lendo `status`. Resultado, achado
-// na conferencia manual e por nenhum portao: o card dizia "2/2" e o detalhe da
-// MESMA tarefa dizia "(0/2)" com a barra em 0%. Dois numeros discordando sobre
-// a mesma coisa e pior que um numero velho.
-//
-// O que ele prende:
-//   - a CONTA (`lib/subtarefas.ts::progresso`) sai da coluna;
-//   - a MARCA da caixinha sai da coluna;
-//   - a ESCRITA da caixinha manda `column_id`, e nao `status` (ADR 0041);
-//   - desmarcar devolve a coluna de ANTES, e nao a primeira coluna aberta;
-//   - enquanto as colunas nao chegam, nao ha numero -- e nao um numero errado.
-//
-// SABOTAGENS -- ✅ MEDIDAS EM 10/08/2026:
-//
-//   A. `progresso` volta a contar `status === "COMPLETED"`.
-//      **Caem 11**: tres deste arquivo (a conta, a marca da caixinha e a
-//      guarda de carregamento) e oito do `lib/__tests__/subtarefas.test.ts`.
-//      ⚠️ Numero alto porque a regra e UMA e e lida por quatro telas -- e
-//      exatamente por isso ela mora numa funcao pura com teste proprio.
-//
-//   G. Badge volta a `STATUS_LABEL[task.status]`. **Cai 1**: "mostra o nome da
-//      coluna, e não o rótulo do status".
-//   H. Badge SEM a reserva (so `coluna?.name`). **Cai 1**: "coluna
-//      desconhecida cai no rótulo do status, e não em branco". ⚠️ Os dois
-//      testes do badge apontam para lados OPOSTOS de propósito -- um exige a
-//      coluna, o outro exige a reserva. Sabotar um so nao derruba o outro.
-//
-//   C. `alvo()` para de olhar `is_default_target` e pega a primeira coluna da
-//      semantica. **Caem 2**, os dois de desmarcar.
-//      ⚠️ ESTA SABOTAGEM PASSOU VERDE NA PRIMEIRA TENTATIVA: a fixture tinha
-//      `Backlog` como primeira POR POSICAO e tambem como alvo padrao, entao a
-//      regra certa e a errada davam a mesma resposta. A ordem foi invertida
-//      (`Planejado` primeiro) so para o teste discriminar. **Acidente nao e
-//      regra**, e sabotagem verde e como se descobre.
-//
-//   B. A caixinha volta a mandar `{ status }` no lugar de `{ column_id }`.
-//      **Caem 2**, os dois de ESCRITA: "marcar manda `column_id`, e NUNCA
-//      `status`" e "desmarcar devolve a coluna de ANTES". Os tres de LEITURA
-//      continuam verdes, e isso e informacao: leitura e escrita tem portoes
-//      separados, entao migrar uma e esquecer a outra nao passa despercebido.
-//
-// SABOTAGENS DA PILULA DE COLUNA (F6-b) -- ✅ MEDIDAS EM 21/08/2026:
-//
-//   D. O `.sort` por `position` sai e a lista sai na ordem da API. **Cai 1**.
-//      ⚠️ PASSOU VERDE NA PRIMEIRA TENTATIVA, pelo mesmo motivo do caso C e
-//      com o agravante de eu ter lido o aviso do C e mesmo assim errado: o que
-//      a fixture inverte e POSICAO contra ALVO PADRAO, nao a ordem do array.
-//      O teste passou a reverter a resposta da API por conta propria.
-//   E. A guarda de "mesma coluna" sai e clicar na coluna atual manda PATCH.
-//      **Cai 1**.
-//   F. A releitura das filhas na cascata sai. **Cai 1**. ⚠️ Este e o unico
-//      portao sobre a cascata: nada mais no front sabe que mover para uma
-//      coluna DONE muda linhas que o PATCH nao devolve.
-//
-// ⚠️ O QUE ELE NAO PROVA: as outras tres telas que montam o `TaskDetail`
-// (`/minhas-tarefas`, `/arquivadas`, `/tarefa/[id]`). Elas ganharam o
-// comportamento de graca, porque quem carrega as colunas e o proprio
-// componente -- mas nenhuma delas tem teste de montagem aqui.
+// A checklist e as pílulas do DETALHE decidem pela COLUNA, não pelo `status`:
+//   - a conta e a marca da caixinha saem da coluna;
+//   - a escrita manda `column_id`, e não `status`;
+//   - desmarcar manda para a coluna aberta padrão (`is_default_target`);
+//   - enquanto as colunas não chegam, não há número, em vez de um errado.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useState } from "react";
@@ -75,21 +19,17 @@ import TaskDetail from "@/components/TaskDetail";
 import type { Coluna } from "@/lib/coluna";
 import type { Task } from "@/lib/api";
 
-// ⚠️ `importOriginal`, e nao fabrica seca: `@/lib/api` tem ~40 exports e o
-// `TaskDetail` importa muitos. Mesmo motivo registrado no `Board.test.tsx`.
+// `importOriginal`: o `TaskDetail` importa outros exports de `@/lib/api`, e
+// uma fábrica seca os deixaria `undefined`.
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
-    // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
+    // Sem isto a busca de links vai à rede, falha, e um role=alert entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
-    // ⚠️ SPEC 042 (B1): o painel busca as proprias filhas. Ate aqui elas
-    // vinham por prop e o `Pai` deste arquivo guardava o estado -- era ele que
-    // fazia a caixinha refletir na tela. Agora quem faz isso e o
-    // `upsertFilhaLocal` do proprio componente, e e esse comportamento que os
-    // testes de marcar/desmarcar passam a exercitar.
+    // O painel busca as próprias filhas; quem reflete a caixinha na tela é o
+    // `upsertFilhaLocal` do componente.
     listarFilhas: vi.fn(),
     updateTask: vi.fn(),
     listComments: vi.fn(),
@@ -105,11 +45,8 @@ const api = await import("@/lib/api");
 const QUADRO = "board-geral";
 
 const COLUNAS: Coluna[] = [
-  // ⚠️ A ORDEM ESTA INVERTIDA DE PROPOSITO: `Planejado` vem PRIMEIRO por
-  // posicao, e `Backlog` e o alvo padrao. Sem isso, "pegar a primeira aberta"
-  // e "pegar a marcada como padrao" dariam a MESMA resposta, e a sabotagem que
-  // apaga o `is_default_target` passaria verde -- foi o que aconteceu na
-  // primeira versao deste arquivo. Acidente nao e regra.
+  // ⚠️ `Planejado` vem PRIMEIRO por posição e `Backlog` é o alvo padrão: sem
+  // isso, "a primeira aberta" e "a marcada como padrão" dariam a mesma resposta.
   {
     id: "col-planejado",
     name: "Planejado",
@@ -143,9 +80,8 @@ const COLUNAS: Coluna[] = [
 ];
 
 function task(over: Partial<Task> = {}): Task {
-  // ⚠️ `): Task {` e literal completo, SEM `as`. Fixture com `as` cala o `tsc`
-  // sobre campo que nao existe -- foi o que escondeu o buraco da fatia 3 por
-  // horas.
+  // ⚠️ Literal completo, SEM `as`: fixture com `as` cala o `tsc` sobre campo
+  // que falta ou não existe.
   return {
     id: "t1",
     title: "Tarefa",
@@ -169,18 +105,11 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: QUADRO,
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
     can_delete: true,
     ...over,
   };
 }
 
-/**
- * ⚠️ O PAI GUARDA OS FILHOS EM ESTADO, e isso nao e detalhe de teste: sem
- * aplicar o `onSubtaskUpsert`, a subtarefa nunca muda de coluna e qualquer
- * teste com DOIS cliques mede o primeiro duas vezes. Foi o que aconteceu na
- * primeira versao deste arquivo.
- */
 function Pai({
   inicial,
   onSubtaskUpsert,
@@ -195,10 +124,7 @@ function Pai({
   // com coluna especifica.
   tarefa?: Task;
 }) {
-  // ⚠️ B1: `inicial` agora chega pelo MOCK de `listarFilhas` (ver `montar`),
-  // e nao mais por prop. O estado local sumiu junto -- quem reflete a
-  // caixinha na tela passou a ser o `upsertFilhaLocal` do `TaskDetail`, e e
-  // isso que estes testes verificam agora.
+  // As filhas chegam pelo mock de `listarFilhas` (ver `montar`), não por prop.
   void inicial;
   return (
     <TaskDetail
@@ -227,7 +153,6 @@ function montar(
   onSubtaskUpsert?: (sub: Task) => void,
   members?: Map<string, { name: string }>
 ) {
-  // ⚠️ B1: as filhas entram pelo mock da busca, e nao por prop.
   vi.mocked(api.listarFilhas).mockResolvedValue(filhos);
   render(
     <Pai
@@ -262,11 +187,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
+describe("TaskDetail -- a checklist conta pela coluna", () => {
   it("conta pela COLUNA mesmo com o status dizendo outra coisa", async () => {
-    // ⚠️ O PAR TORTO, e ele e o estado REAL da tela logo depois de arrastar o
-    // pai para conclusao: a atualizacao otimista move a coluna e o `status` so
-    // chega na resposta. Contando por status, isto daria "(0/1)" e 0%.
+    // Par torto real logo depois de arrastar: a atualização otimista move a
+    // coluna e o `status` só chega na resposta.
     montar([
       task({
         id: "f1",
@@ -299,30 +223,17 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
     ]);
     await screen.findByText(/Subtarefas \(1\/1\)/);
 
-    // ⚠️ Se a marca sair de `status`, a caixa fica DESmarcada com a barra em
-    // 100% -- os dois numeros discordando dentro da MESMA tela.
+    // Se a marca sair de `status`, a caixa fica desmarcada com a barra em 100%.
     expect(
       (screen.getByTitle("Reabrir") as HTMLInputElement).checked
     ).toBe(true);
   });
 
   it("⚠️ concluir a subtarefa NAO pode apagar o responsavel dela", async () => {
-    // ⚠️ DEFEITO REAL, RELATADO NA TELA EM 21/08/2026: marcar a caixinha fazia
-    // a bolinha do responsavel SUMIR da linha, e um F5 a trazia de volta.
-    //
-    // Causa: `upsertFilhaLocal` (nascido na B1) substituia a filha pela
-    // resposta crua do `PATCH`. E `PATCH /tasks/{id}` responde `TaskResponse`,
-    // que NAO tem `assignee_ids` (ADR 0025) -- o campo era apagado da memoria
-    // e voltava so no proximo `listarFilhas`.
-    //
-    // ⚠️ E A QUARTA ENCARNACAO DO MESMO DEFEITO. O `aoUpsert` do quadro tem o
-    // `?? existente.assignee_ids` exatamente por isso; a B1 mudou a lista de
-    // lugar e deixou a guarda para tras.
-    //
-    // ⚠️ POR QUE NENHUM TESTE PEGOU: os outros mocks de `updateTask` neste
-    // arquivo fazem `{...f, ...}` e por isso devolvem `assignee_ids` -- eles
-    // sao MAIS GENEROSOS QUE O SERVIDOR. Este mock imita o backend de verdade,
-    // e e essa diferenca que transforma o teste em portao.
+    // `PATCH /tasks/{id}` responde sem `assignee_ids`; substituir a filha pela
+    // resposta crua apagaria o responsável da memória.
+    // ⚠️ Este mock imita o servidor (sem o campo). Os outros mocks deste
+    // arquivo fazem `{...f, ...}` e devolvem o campo, então não pegariam isso.
     const f = task({
       id: "f1",
       title: "Filha com responsável",
@@ -349,7 +260,7 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
     expect(screen.getByTitle("Ana")).toBeTruthy();
   });
 
-  it("⚠️ o servidor recusou: a caixinha VOLTA e a tela diz (auditoria de 21/10)", async () => {
+  it("⚠️ o servidor recusou: a caixinha VOLTA e a tela diz", async () => {
     const f = task({
       id: "f1",
       title: "Filha",
@@ -391,24 +302,15 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
         column_id: "col-done",
       });
     });
-    // ⚠️ O payload tem UMA chave. Mandar `status` junto e 422 no backend
-    // (ADR 0041, D3), e mandar `status` no lugar seria a regra velha.
+    // ⚠️ O payload tem UMA chave: mandar `status` junto é 422 no backend.
     const payload = vi.mocked(api.updateTask).mock.calls[0][1];
     expect(Object.keys(payload)).toEqual(["column_id"]);
   });
 
   /**
-   * ⚠️ REGRA UNICA, e ela substitui uma memoria que a conferencia manual de
-   * 10/08 reprovou. A versao anterior guardava de onde a subtarefa saiu e
-   * devolvia para la -- so que a memoria morria ao fechar o detalhe, entao o
-   * MESMO clique dava respostas diferentes dependendo de a pessoa ter
-   * conferido o quadro no meio. Duas respostas para o mesmo gesto, sem nada
-   * na tela explicando.
-   *
-   * ⚠️ Nao e "a primeira coluna aberta": e a marcada como `is_default_target`.
-   * `Planejado` esta ANTES de `Backlog`?  Nao -- mas a fixture tem as duas
-   * abertas de proposito, e so a flag separa uma da outra. Ordenar por
-   * `position` daria a mesma resposta por acidente, e acidente nao e regra.
+   * Regra fixa: o mesmo clique dá sempre a mesma resposta. Não é "a primeira
+   * coluna aberta", é a marcada como `is_default_target` (a fixture tem duas
+   * abertas, e só a flag as separa).
    */
   it("desmarcar manda SEMPRE para a coluna aberta padrão", async () => {
     const f = task({
@@ -433,9 +335,8 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
   });
 
   /**
-   * ⚠️ O CONTRAPESO DO TESTE ACIMA: marcar e desmarcar NAO devolve a
-   * subtarefa para onde ela estava. E o preco da regra fixa, e esta escrito
-   * como teste para que ninguem o "conserte" sem saber que foi escolhido.
+   * O preço da regra fixa, e é escolhido: marcar e desmarcar NÃO devolve a
+   * subtarefa para onde ela estava.
    */
   it("marcar e desmarcar NÃO devolve para a coluna de origem", async () => {
     const f = task({
@@ -483,8 +384,7 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
       }),
     ]);
 
-    // ⚠️ "Subtarefas" SEM "(x/y)". Com o mapa vazio a conta daria "(0/1)" --
-    // que e exatamente o numero errado que a conferencia manual pegou.
+    // ⚠️ "Subtarefas" SEM "(x/y)": com o mapa vazio a conta daria "(0/1)".
     await screen.findByText("Subtarefas");
     expect(screen.queryByText(/Subtarefas \(/)).toBeNull();
     expect((screen.getByRole("checkbox") as HTMLInputElement).disabled).toBe(
@@ -496,10 +396,7 @@ describe("TaskDetail -- a checklist conta pela coluna (fatia 4c-2)", () => {
   });
 });
 
-// =====================================================================
-// Fatia 4c-2 -- o BADGE do detalhe mostra o nome da COLUNA.
-// =====================================================================
-describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
+describe("TaskDetail -- o badge sai da coluna", () => {
   it("mostra o nome da coluna, e não o rótulo do status", async () => {
     render(
       <Pai
@@ -508,8 +405,7 @@ describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
           id: "pai",
           title: "Mãe",
           path: "pai",
-          // ⚠️ PAR TORTO: o status diz BACKLOG, a coluna e `Planejado`. Se o
-          // badge sair do status, aparece "Backlog".
+          // Par torto: o status diz BACKLOG, a coluna é `Planejado`.
           status: "BACKLOG",
           column_id: "col-planejado",
         })}
@@ -521,9 +417,8 @@ describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
   });
 
   /**
-   * ⚠️ A RESERVA. Coluna fora da lista carregada (quadro sem alcance, coluna
-   * apagada na fatia 5) cai no rotulo do status -- e nao em branco. Badge
-   * vazio nao diz nada a ninguem.
+   * A reserva: coluna fora da lista carregada (quadro sem alcance, coluna
+   * apagada) cai no rótulo do status, e não em branco.
    */
   it("coluna desconhecida cai no rótulo do status, e não em branco", async () => {
     render(
@@ -543,15 +438,7 @@ describe("TaskDetail -- o badge sai da coluna (fatia 4c-2)", () => {
   });
 });
 
-// =====================================================================
-// Spec 039 (F6) -- a pílula de PRIORIDADE virou o controle.
-//
-// ⚠️ Até aqui ela era rótulo morto: trocar um enum de quatro valores exigia
-// abrir o modal inteiro pelo "Editar". É a mesma lição da C8 que a pílula de
-// datas já aplicava ("a pílula VIROU o controle, e não ganhou um controle ao
-// lado") -- a de prioridade tinha ficado para trás.
-// =====================================================================
-describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
+describe("TaskDetail -- a pílula de prioridade abre e grava", () => {
   it("clicar na pílula abre a lista com as quatro, na ordem do enum", async () => {
     montar([]);
     await screen.findByText(/Subtarefas/);
@@ -560,18 +447,9 @@ describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
 
     const lista = await screen.findByRole("listbox", { name: "Prioridade" });
     const opcoes = within(lista).getAllByRole("option");
-    // ⚠️ SABOTAGEM MEDIDA (21/08): trocar a constante `PRIORIDADES` por
-    // `Object.keys(PRIORITY_LABEL)` **NÃO derruba este teste** -- o objeto em
-    // `lib/status.ts` está declarado justamente nessa ordem, então a regra
-    // certa e a errada dão a mesma resposta hoje. É o mesmo tipo de acidente
-    // que o caso C do cabeçalho deste arquivo registra.
-    //
-    // O que esta asserção prende, então, é MENOS do que parece: ela pega uma
-    // reordenação da lista RENDERIZADA, não a origem dela. A constante
-    // explícita continua sendo o certo (não depende da ordem de chaves de um
-    // objeto distante), mas quem garante isso é o comentário lá, não este
-    // teste. Ele viraria portão de verdade no dia em que `PRIORITY_LABEL`
-    // fosse declarado fora de ordem -- e aí pegaria.
+    // ⚠️ Prende a ordem RENDERIZADA, não a origem: `PRIORITY_LABEL` está
+    // declarado nesta mesma ordem, então trocar `PRIORIDADES` por
+    // `Object.keys(PRIORITY_LABEL)` não derruba este teste.
     expect(opcoes.map((o) => o.textContent)).toEqual([
       "Baixa",
       "Media",
@@ -592,9 +470,8 @@ describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
     await waitFor(() => {
       expect(api.updateTask).toHaveBeenCalledWith("pai", { priority: "URGENT" });
     });
-    // ⚠️ UMA CHAVE SÓ. O `updateTask` manda `body: input` inteiro, então
-    // qualquer campo a mais viaja -- e mandar `status` junto seria a regra
-    // velha que a ADR 0041 aposentou.
+    // ⚠️ Uma chave só: o `updateTask` manda `body: input` inteiro, então
+    // qualquer campo a mais viaja.
     const payload = vi.mocked(api.updateTask).mock.calls[0][1];
     expect(Object.keys(payload)).toEqual(["priority"]);
   });
@@ -612,25 +489,11 @@ describe("TaskDetail -- a pílula de prioridade abre e grava (F6)", () => {
   });
 });
 
-// =====================================================================
-// Spec 039 (F6-b) -- a pílula de COLUNA virou o controle.
-//
-// ⚠️ Ela era rótulo morto, e o comentário do próprio arquivo já anunciava
-// "que a fatia 5 vai deixar editar" -- ficou pendente desde lá. Mudar de
-// coluna exigia abrir o modal inteiro, ou arrastar o card no quadro (e o
-// arraste não roda em jsdom, então era o único caminho sem portão nenhum).
-// =====================================================================
-describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
+describe("TaskDetail -- a pílula de coluna abre e grava", () => {
   it("lista as colunas na ordem de `position`, e não na da API", async () => {
-    // ⚠️ ESTE TESTE PASSOU VERDE COM A SABOTAGEM NA PRIMEIRA VERSÃO. Eu li o
-    // cabeçalho ("a ordem está invertida de propósito") e assumi que a fixture
-    // servia aqui também. Não servia: o que está invertido nela é POSIÇÃO
-    // contra ALVO PADRÃO -- a ordem do array e a ordem de `position` são a
-    // MESMA (0, 1, 5). Tirar o `.sort` não mudava nada.
-    //
-    // Por isso a API devolve a lista REVERTIDA só neste teste, e não na
-    // fixture compartilhada: mexer nela quebraria a discriminação do caso C.
-    // Duas regras diferentes, duas inversões diferentes.
+    // ⚠️ Na fixture a ordem do array já é a de `position`; por isso a API
+    // devolve a lista REVERTIDA só aqui (mexer na fixture quebraria o teste
+    // do alvo padrão).
     vi.mocked(api.colunasDoQuadro).mockResolvedValue([...COLUNAS].reverse());
     montar([]);
     await screen.findByText(/Subtarefas/);
@@ -645,7 +508,7 @@ describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
     ).toEqual(["Planejado", "Backlog", "Concluído"]);
   });
 
-  it("⚠️ grava `column_id` e NUNCA `status` (ADR 0041)", async () => {
+  it("⚠️ grava `column_id` e NUNCA `status`", async () => {
     const salva = task({ id: "pai", title: "Tarefa mãe", path: "pai" });
     vi.mocked(api.updateTask).mockResolvedValue({
       ...salva,
@@ -683,8 +546,7 @@ describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
   it("⚠️ mover para coluna DONE RELÊ as filhas — a cascata mudou o banco", async () => {
     // O `complete_descendants` conclui a subárvore inteira no backend, e
     // NENHUMA das filhas vem na resposta do PATCH. Sem o refetch, a checklist
-    // seguiria mostrando aberta uma subtarefa que já está concluída — a mesma
-    // stale que a cascata de arquivamento tinha.
+    // seguiria mostrando aberta uma subtarefa que já está concluída.
     const filha = task({
       id: "f1",
       title: "Filha",
@@ -712,19 +574,8 @@ describe("TaskDetail -- a pílula de coluna abre e grava (F6-b)", () => {
   });
 });
 
-// =====================================================================
-// Spec 039 (F7) -- a linha da subtarefa diz a hora, no `title`.
-//
-// ⚠️ MESMO DEFEITO DO CARD, terceira ocorrencia da mesma familia: o tom desta
-// linha le `f.due_time` (`deadlineTonePorColuna`, logo acima do render) e o
-// texto nao lia. A diferenca e onde a hora cabe -- aqui o visivel e dd/mm de
-// proposito, porque a linha ja carrega selo de prioridade, avatares e chevron.
-// Entao a hora vai no `title`, que ja existia e so nao a dizia.
-//
-// SABOTAGEM: voltar o `title` para `toLocaleDateString` cru. **Cai 1.**
-// ✅ MEDIDA EM 21/08/2026.
-// =====================================================================
-describe("TaskDetail -- a hora da subtarefa vive no title (F7)", () => {
+// A linha da subtarefa mostra só dd/mm (é estreita); a hora vai no `title`.
+describe("TaskDetail -- a hora da subtarefa vive no title", () => {
   it("subtarefa com hora leva data e hora no title; sem hora, só a data", async () => {
     montar([
       task({
@@ -748,25 +599,14 @@ describe("TaskDetail -- a hora da subtarefa vive no title (F7)", () => {
     ]);
     await screen.findByText("Com hora");
 
-    // O VISIVEL continua dd/mm nas duas -- a linha e estreita, e isso e
-    // decisao, nao esquecimento.
     expect(screen.getAllByText("31/12").length).toBe(2);
     expect(screen.getByTitle("31/12/2026 18:00")).toBeTruthy();
     expect(screen.getByTitle("31/12/2026")).toBeTruthy();
   });
 });
 
-// =====================================================================
-// A COLUNA DA SUBTAREFA NA CHECKLIST (pedido da Camila, 24/08).
-//
-// ⚠️ ELA EXISTE PARA DESFAZER UMA AMBIGUIDADE, e o segundo teste é o assunto:
-// a caixinha marca por semântica `DONE`, então uma subtarefa CANCELADA e uma
-// em BACKLOG apareciam as duas DESMARCADAS, sem nada que as distinguisse.
-// Quem olhava a checklist lia "falta fazer" nas duas.
-//
-// SABOTAGEM: tirar o bloco da coluna da linha de meta. **Caem 2.**
-// ✅ MEDIDA EM 24/08/2026.
-// =====================================================================
+// A coluna na linha da subtarefa desfaz uma ambiguidade: a caixinha marca por
+// semântica `DONE`, então CANCELADA e BACKLOG aparecem as duas desmarcadas.
 describe("TaskDetail -- a coluna aparece na checklist", () => {
   it("a subtarefa mostra o nome da coluna em que está", async () => {
     montar([
@@ -784,9 +624,8 @@ describe("TaskDetail -- a coluna aparece na checklist", () => {
   });
 
   it("⚠️ CANCELADA e BACKLOG são as duas desmarcadas -- e agora se distinguem", async () => {
-    // ⚠️ ESTE É O CASO QUE JUSTIFICA A MUDANÇA. `concluida` sai de
-    // `semantic === "DONE"`; `CANCELLED` é terminal mas NÃO é DONE, então a
-    // caixa fica vazia igual à de uma tarefa que nem começou.
+    // `CANCELLED` é terminal mas NÃO é DONE, então a caixa fica vazia igual à
+    // de uma tarefa que nem começou.
     const CANCELADO: Coluna = {
       id: "col-cancelado",
       name: "Cancelado",
@@ -797,9 +636,8 @@ describe("TaskDetail -- a coluna aparece na checklist", () => {
       is_default_target: true,
       is_status_bridge: false,
     };
-    // ⚠️ A coluna entra só NESTE teste, e não na fixture compartilhada: uma
-    // quarta coluna lá derrubaria o teste de ordenação do F6-b, que afirma
-    // exatamente três. Mesmo cuidado registrado no caso D.
+    // ⚠️ Só NESTE teste: uma quarta coluna na fixture compartilhada derrubaria
+    // o teste de ordenação, que afirma exatamente três.
     vi.mocked(api.colunasDoQuadro).mockResolvedValue([...COLUNAS, CANCELADO]);
 
     montar([
@@ -822,42 +660,6 @@ describe("TaskDetail -- a coluna aparece na checklist", () => {
     // O que mudou: dá para saber qual é qual.
     expect(screen.getByTitle("Coluna: Cancelado")).toBeTruthy();
     expect(screen.getByTitle("Coluna: Backlog")).toBeTruthy();
-  });
-
-  it("⚠️ a cápsula é `Badge soft` -- a mesma forma da prioridade", async () => {
-    // Pedido da Camila em 24/08: "dá pra deixar a capsulazinha igual a
-    // prioridade está?". Antes era bolinha + texto apagado.
-    //
-    // ⚠️ E A COR MUDOU JUNTO, POR OBRIGAÇÃO: `Badge soft` pinta FUNDO com 12%
-    // da cor, e `coluna.color` é token de TRAÇO -- como fundo sob texto ele
-    // reprova AA (Spec 031 §2.2b). A cor passou a sair de `STATUS_COLOR`, que
-    // são as famílias com par `-dot`/`-text` medido, e é a mesma que a pílula
-    // de Coluna do painel já usava.
-    //
-    // O que este teste prende é a FORMA (as duas cápsulas na mesma linha),
-    // porque foi o que ela pediu. ⚠️ A cor em si continua ⚪ sem verificação:
-    // nenhum teste mede contraste, e a garantia é a família ser uma das
-    // medidas -- não um número aferido aqui.
-    montar([
-      task({
-        id: "f1", title: "Filha", parent_task_id: "pai",
-        path: "pai.f1", depth: 1, column_id: "col-planejado",
-      }),
-    ]);
-    await screen.findByText("Filha");
-
-    // ⚠️ ESCOPADO NA LINHA DA SUBTAREFA, e não na tela: a tarefa-MÃE tem a
-    // própria pílula de prioridade no cabeçalho, então `getByText("Media")`
-    // solto acha dois e falha. O teste achou isso sozinho.
-    const capsulaDaColuna = screen.getByTitle("Coluna: Planejado")
-      .firstElementChild!;
-    const linhaDeMeta = capsulaDaColuna.parentElement!.parentElement!;
-    // ⚠️ "Media" SEM ACENTO -- é o rótulo real em `PRIORITY_LABEL`, e eu
-    // escrevi "Média" de cabeça. O teste achou isso também.
-    const capsulaDaPrioridade = within(linhaDeMeta).getByText("Media");
-    // Mesmo elemento, mesmas classes -> mesma forma na tela.
-    expect(capsulaDaColuna.tagName).toBe(capsulaDaPrioridade.tagName);
-    expect(capsulaDaColuna.className).toBe(capsulaDaPrioridade.className);
   });
 
   it("coluna desconhecida não desenha rótulo nenhum", async () => {

@@ -1,10 +1,7 @@
 /**
- * Spec 047 (revisão de 09/09) — os três estados da aba de pessoas.
- *
- * ⚠️ "Convidado" foi a peça que exigiu conferir o backend antes de desenhar:
- * não existe fluxo de convite neste produto. O estado é derivado, e estes
- * testes são o que garante que ele continue sendo uma PARTIÇÃO — soma dos
- * três igual ao total, ninguém em dois lugares, ninguém de fora.
+ * Os três estados da aba de pessoas. Não existe fluxo de convite: "convidado"
+ * é derivado, e estes testes garantem que os estados sejam uma PARTIÇÃO (soma
+ * dos três igual ao total, ninguém em dois lugares, ninguém de fora).
  */
 
 import { describe, it, expect } from "vitest";
@@ -43,10 +40,8 @@ describe("memberState", () => {
   });
 
   it("⚠️ INATIVO ganha dos outros dois", () => {
-    // ⚠️ Alguém desativado ANTES de entrar tem `must_change_password` true e
-    // `is_active` false. Se "invited" viesse primeiro, essa pessoa apareceria
-    // entre os convidados -- convidando a cobrar um acesso que não vai
-    // acontecer, porque a conta não vale mais.
+    // Desativado antes de entrar tem `must_change_password` true e
+    // `is_active` false; não pode aparecer entre os convidados.
     const desativadaAntesDeEntrar = pessoa("x", {
       active: false,
       changedPassword: false,
@@ -64,8 +59,7 @@ describe("memberState", () => {
 
 describe("countByState", () => {
   it("⭐ é uma PARTIÇÃO: a soma dos três é o total", () => {
-    // ⚠️ A §3.2 registra o defeito de 27/07 -- contador divergindo do corpo.
-    // Uma classificação que deixasse alguém de fora reproduziria isso.
+    // Quem ficasse de fora faria o contador divergir da lista.
     const todos = [ATIVA, CONVIDADA, INATIVA, pessoa("outra")];
     const c = countByState(todos);
     expect(c.active + c.invited + c.inactive).toBe(todos.length);

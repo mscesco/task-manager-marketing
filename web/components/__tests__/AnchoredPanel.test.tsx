@@ -1,6 +1,5 @@
-// AnchoredPanel -- regra 6, segunda metade (Spec 056, fatia J): o painel mede
-// a PRÓPRIA largura e se desloca para não sair pela direita. O print dela de
-// 07/10 tinha o painel de ordenação da Base cortado no canto da tela.
+// AnchoredPanel: o painel mede a PRÓPRIA largura e se desloca para não sair
+// pela direita da tela.
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { useRef } from "react";

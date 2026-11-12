@@ -1,4 +1,4 @@
-// Spec 052, fatia E -- o editor de descrição que já mostra formatado, montado.
+// O editor de descrição que já mostra formatado, montado.
 //
 // O que ele prende:
 //   - ⭐ o texto salvo abre FORMATADO, sem asterisco e sem aba "Visualizar";
@@ -47,7 +47,7 @@ function colar(el: HTMLElement, dados: Record<string, string>) {
   });
 }
 
-describe("EditorDeDescricao (fatia E)", () => {
+describe("EditorDeDescricao", () => {
   it("⭐ abre FORMATADO: sem asterisco, sem aba \"Visualizar\"", async () => {
     const { el } = await montar("**neg** e texto\n\n- um\n- dois");
     expect(el.querySelector("strong")?.textContent).toBe("neg");

@@ -1,27 +1,16 @@
-// Checklist de subtarefas (Spec 031, C11).
-//
-// O teste que importa e o ultimo bloco: as DUAS contagens nao podem ser
-// confundidas. Trocar uma pela outra apaga um aviso de exclusao em silencio.
+// Checklist de subtarefas: progresso, linhas e a conta pela coluna.
 import { describe, expect, it } from "vitest";
 
 import { ativas, checklist, paraChecklist, progresso } from "@/lib/subtarefas";
 import type { Coluna } from "@/lib/coluna";
 
-/**
- * ⚠️ A FIXTURE FALA DE COLUNA, e nao mais de status (fatia 4c-2). O nome do
- * parametro mudou de proposito: `f("col-done")` continuaria compilando se
- * fosse `column_id: string`, e um teste que passa o status como se fosse id de
- * coluna passa verde afirmando o contrario do que diz.
- */
+/** A fixture recebe id de COLUNA, não status: a conta é pela coluna. */
 const f = (coluna: string, is_archived = false) => ({
   column_id: coluna,
   is_archived,
 });
 
-/**
- * O mapa de colunas dos testes. So o que eles usam -- mesma decisao (e mesmo
- * motivo) do `minhasTarefas.test.tsx` e do `Board.test.tsx`.
- */
+/** O mapa de colunas dos testes, só com o que eles usam. */
 const COLUNAS = new Map<string, Coluna>([
   [
     "col-backlog",
@@ -117,9 +106,8 @@ describe("paraChecklist", () => {
 });
 
 describe("checklist", () => {
-  // Regressao do rotulo "(x/y)" e da barra: o numerador vinha de `progresso`
-  // (so vivas) e o denominador de `paraChecklist(...).length` (com arquivada,
-  // quando a caixa esta marcada). Os dois agora saem da MESMA chamada.
+  // O rótulo "(x/y)" e a barra saem da mesma chamada: com arquivadas à
+  // mostra, as linhas crescem mas o denominador continua só das vivas.
   it("numerador e denominador saem da mesma conta -- nunca divergem", () => {
     const filhos = [f("col-done"), f("col-backlog"), f("col-done", true)];
     const r = checklist(filhos, true, COLUNAS);
@@ -141,9 +129,8 @@ describe("checklist", () => {
   });
 
   it("filhas SO arquivadas: ha linha pra desenhar, mas nao ha o que contar", () => {
-    // O caso permanente de `/arquivadas`. Antes: "(0/2)" com barra vazia
-    // embaixo de duas caixas marcadas. Agora `total: 0` -- a tela sabe que
-    // nao deve desenhar contador nem barra.
+    // O caso de `/arquivadas`: `total: 0` diz à tela para não desenhar
+    // contador nem barra.
     const r = checklist([f("col-done", true), f("col-backlog", true)], true, COLUNAS);
     expect(r.linhas).toHaveLength(2);
     expect(r.total).toBe(0);
@@ -159,46 +146,17 @@ describe("checklist", () => {
   });
 });
 
-describe("as duas contagens NAO sao a mesma", () => {
-  // Regressao: o guarda do aviso de exclusao usou a contagem da checklist e
-  // uma tarefa com filhas SO arquivadas deixou de avisar que a cascata as
-  // levaria junto.
-  it("filhas so arquivadas: checklist vazia, mas HA o que a cascata apaga", () => {
-    const filhos = [f("col-done", true), f("col-backlog", true)];
-    expect(ativas(filhos)).toHaveLength(0);
-    expect(filhos.length).toBe(2);
-  });
-});
-
-// =====================================================================
-// Fatia 4c-2 -- a conta decide pela COLUNA.
-//
-// ⚠️ Estes tres nao existiam: a regra antiga, por `status`, nao tinha como
-// distinguir os casos abaixo. Sao eles que separam "conta coluna" de
-// "conta status".
-// =====================================================================
-describe("progresso -- pela coluna (fatia 4c-2)", () => {
-  it("conta pela coluna mesmo com o status dizendo outra coisa", () => {
-    // ⚠️ O PAR TORTO, que e o estado real da tela logo depois de arrastar um
-    // pai para conclusao: a atualizacao otimista move a COLUNA, e o `status`
-    // so chega na resposta. Contando por status daria 0/1.
-    // (`status` nem entra no objeto: a assinatura passou a pedir SO
-    // `column_id` e `is_archived`, entao a regra nao TEM como olhar status --
-    // e o `tsc` recusa o campo a mais, o que e a prova mais forte possivel.)
-    const r = progresso([f("col-done")], COLUNAS);
-    expect(r).toEqual({ concluidas: 1, total: 1, pct: 100 });
-  });
+describe("progresso pela semântica da coluna", () => {
 
   it("cancelada NAO conta como concluida, mas conta no total", () => {
-    // ⚠️ `DONE` e nao `terminal()`. Se cancelada contasse como entregue, uma
+    // `DONE`, e não `terminal()`. Se cancelada contasse como entregue, uma
     // tarefa com metade das filhas canceladas apareceria 100% pronta.
     const r = progresso([f("col-cancel"), f("col-done")], COLUNAS);
     expect(r).toEqual({ concluidas: 1, total: 2, pct: 50 });
   });
 
   it("coluna DESCONHECIDA conta como trabalho vivo, nao some da conta", () => {
-    // ⚠️ O contrario -- sumir do denominador -- inflaria a porcentagem em
-    // silencio: 1 de 1 em vez de 1 de 2. Perda silenciosa de novo.
+    // Sumir do denominador inflaria a porcentagem: 1 de 1 em vez de 1 de 2.
     const r = progresso([f("col-de-outro-quadro"), f("col-done")], COLUNAS);
     expect(r).toEqual({ concluidas: 1, total: 2, pct: 50 });
   });

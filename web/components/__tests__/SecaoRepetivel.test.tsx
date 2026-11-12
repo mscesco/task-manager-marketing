@@ -1,4 +1,4 @@
-// Seção repetível no formulário público (Spec 059, 15/10).
+// Seção repetível no formulário público.
 //
 // A pessoa preenche a mesma seção mais de uma vez no envio (vários eventos), e
 // cada repetição vira UMA solicitação no mesmo protocolo. O que este arquivo

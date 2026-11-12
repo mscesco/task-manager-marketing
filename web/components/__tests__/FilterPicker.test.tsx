@@ -1,4 +1,4 @@
-// Spec 058 (14/10) -- o seletor dos filtros da tela inicial, no padrão do de
+// O seletor dos filtros da tela inicial, no padrão do de
 // responsáveis: botão, painel com busca, "Todos" no topo, escolha única.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

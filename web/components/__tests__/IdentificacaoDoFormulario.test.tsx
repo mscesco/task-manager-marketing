@@ -1,27 +1,12 @@
-// A etapa de IDENTIFICAÇÃO do formulário público (Spec 043, fatia G).
-//
-// ⚠️⚠️ **`FormularioSolicitacao` NÃO TINHA TESTE NENHUM** — são ~580 linhas na
-// única rota pública do produto, e os testes de `/solicitar` que existem
-// **dublam** o componente para medir o carregamento. Descobri a lacuna
-// sabotando o filtro de campos: nada caiu, porque nada monta o formulário de
-// verdade.
-//
-// Este arquivo não cobre as 580 linhas; cobre a etapa 0 — que é a que a
-// fatia G mexeu — e prende as três coisas que o backend não consegue prender
-// sozinho:
-//
-//   - o campo desligado **some da tela**;
-//   - ele **deixa de ser exigido** (senão o avançar trava num campo que não
-//     existe, e quem preenche não tem como descobrir por quê);
-//   - o envio manda **`null`**, e não `""` — o backend trata `null` como
-//     "este formulário não perguntou" e `""` como "perguntou e ficou em
-//     branco".
+// A etapa de IDENTIFICAÇÃO do formulário público, montada de verdade. Prende o
+// que o backend não consegue prender sozinho: o campo desligado some da tela,
+// deixa de ser exigido, e o envio manda `null` ("não perguntou"), e não `""`
+// ("perguntou e ficou em branco").
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import FormularioSolicitacao, {
-  camposDeIdentificacao,
   type CamposDeIdentificacao,
 } from "@/components/FormularioSolicitacao";
 import type { Categoria } from "@/lib/solicitacaoForm";
@@ -66,12 +51,9 @@ function montar(identificacao: CamposDeIdentificacao = TUDO) {
 /**
  * Preenche a etapa 0 e avança até a revisão, respondendo a única pergunta.
  *
- * ⚠️ OS SELETORES SÃO REGEX PORQUE O RÓTULO CARREGA O MARCADOR DE OBRIGATÓRIO
- * (`{c.label} <Obrigatorio />`), então o nome acessível é "Nome *" e não
- * "Nome". Escrevi com texto exato primeiro e três testes caíram.
- *
- * ⚠️ E O BOTÃO DE ENVIO É BUSCADO PELO TEXTO EXATO: `/Enviar/i` casava também
- * com "Enviar outra solicitação", da tela de sucesso.
+ * Seletores em regex: o rótulo carrega o marcador de obrigatório, então o nome
+ * acessível é "Nome *". O botão de envio vai por texto exato: `/Enviar/i` casa
+ * também com "Enviar outra solicitação", da tela de sucesso.
  */
 function preencher(comOpcionais: string[]) {
   fireEvent.change(screen.getByLabelText(/^Nome/), {
@@ -97,16 +79,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-// =====================================================================
-// ⚠️ O rascunho não pode vazar entre formulários
-// =====================================================================
 describe("o rascunho local", () => {
-  // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08. A chave do rascunho era GLOBAL --
-  // segura quando havia UM formulário público, e errada desde que a Spec 043
-  // trouxe N. `selecionadas` guarda SLUG DE SEÇÃO: restaurar o rascunho do
-  // formulário A dentro do B deixava a tela **em branco**, porque as três
-  // seções do formulário são condicionais e nenhuma satisfaz a condição com
-  // slugs desconhecidos. Na única rota pública do produto.
+  // A chave é por formulário: `selecionadas` guarda slug de seção, e restaurar
+  // o rascunho de outro formulário deixaria a tela em branco.
   const CHAVE_ANTIGA = "fazae:rascunho-solicitacao:v1";
 
   function gravar(chave: string, dados: object) {
@@ -128,11 +103,9 @@ describe("o rascunho local", () => {
     expect(screen.queryByText(/Continuar de onde parei/i)).toBeNull();
   });
 
-  it("⚠️ a chave ANTIGA é APAGADA, e não só ignorada", () => {
-    // ⚠️ ACHADO NA REVISÃO DO PRÓPRIO CONSERTO. Trocar o prefixo aposentou os
-    // `v1`, mas nada os removia: ficavam no navegador para sempre, inclusive
-    // depois do TTL, porque a expiração só é avaliada na leitura e ninguém
-    // lia. É o que alguém digitou num formulário, guardado sem prazo.
+  it("⚠️ a chave ANTIGA e global é APAGADA, e não é oferecida", () => {
+    // Ela não sabe de qual formulário veio, então não dá para migrá-la; e só a
+    // leitura avalia a expiração, então ignorada ficaria no navegador para sempre.
     gravar(CHAVE_ANTIGA, {
       ident: { nome: "Maria" },
       selecionadas: ["arte"],
@@ -141,18 +114,6 @@ describe("o rascunho local", () => {
     });
     montar();
     expect(window.localStorage.getItem(CHAVE_ANTIGA)).toBeNull();
-  });
-
-  it("⚠️ e o rascunho da chave ANTIGA e global é ignorado", () => {
-    // O `v2` aposenta os globais de propósito: eles não sabem de qual
-    // formulário vieram, então não dá para migrá-los com honestidade.
-    gravar(CHAVE_ANTIGA, {
-      ident: { nome: "Maria" },
-      selecionadas: ["arte"],
-      valores: {},
-      passo: 2,
-    });
-    montar();
     expect(screen.queryByText(/Continuar de onde parei/i)).toBeNull();
   });
 
@@ -168,10 +129,8 @@ describe("o rascunho local", () => {
   });
 
   it("⚠️ seção APAGADA no editor não deixa a tela em branco", async () => {
-    // ⚠️ A CHAVE POR FORMULÁRIO NÃO COBRE ISTO: a seção pode ter sido apagada
-    // no editor entre a visita e o retorno, e o editor da fatia C2 tornou isso
-    // possível. O `passo` volta a zero e a pessoa é avisada, em vez de cair
-    // numa página sem nada.
+    // A chave por formulário não cobre isto: a seção pode ter sido apagada no
+    // editor entre a visita e o retorno. O `passo` volta a zero e a pessoa é avisada.
     gravar("fazae:rascunho-solicitacao:v2:f1", {
       ident: { nome: "Maria" },
       selecionadas: ["acesso", "secao-apagada"],
@@ -187,53 +146,20 @@ describe("o rascunho local", () => {
   });
 });
 
-describe("camposDeIdentificacao", () => {
-  it("⚠️ NOME e E-MAIL vêm sempre, e vêm primeiro", () => {
-    // Eles não são configuráveis: a fila é organizada por quem pediu, e a
-    // resposta automática de mudança de status precisa do endereço.
-    const campos = camposDeIdentificacao({
-      telefone: null,
-      area: null,
-      polo: null,
-    });
-    expect(campos.map((c) => c.id)).toEqual(["nome", "email"]);
-  });
-
-  it("o rótulo renomeado é o que aparece", () => {
-    const campos = camposDeIdentificacao({
-      telefone: "WhatsApp",
-      area: null,
-      polo: "Unidade",
-    });
-    expect(campos.map((c) => c.label)).toEqual([
-      "Nome",
-      "E-mail",
-      "WhatsApp",
-      "Unidade",
-    ]);
-  });
-});
-
 describe("a etapa de identificação, montada de verdade", () => {
   it("⚠️ o campo DESLIGADO some da tela", async () => {
-    // "Polo" é vocabulário da FECAF e não significa nada num formulário de TI.
     montar({ telefone: "Telefone", area: null, polo: null });
     expect(await screen.findByLabelText(/^Nome/)).toBeTruthy();
     expect(screen.getByLabelText(/^Telefone/)).toBeTruthy();
     expect(screen.queryByLabelText(/^Polo/)).toBeNull();
     expect(screen.queryByLabelText(/^Área/)).toBeNull();
 
-    // ⚠️⚠️ A CONTAGEM É A ASSERÇÃO QUE MORDE, e as de cima não bastam. Ao
-    // sabotar o filtro para deixar passar rótulo vazio, o campo CONTINUAVA
-    // renderizado -- só que sem nome -- e os `queryByLabelText` acima
-    // continuavam devolvendo `null`, porque um label vazio não casa com nada.
-    // Uma caixa de texto sem pergunta é pior que o campo indesejado.
+    // A contagem é o que morde: um campo de rótulo vazio continuaria na tela, e
+    // os `queryByLabelText` acima não o achariam (label vazio não casa com nada).
     expect(document.querySelectorAll('input[id^="id-"]')).toHaveLength(3);
   });
 
   it("⚠️ e DEIXA DE SER EXIGIDO -- senão o avançar trava sem explicação", async () => {
-    // Este é o defeito que a metade do trabalho causaria: o campo some da tela
-    // mas continua obrigatório, e o botão fica cinza por um motivo invisível.
     montar({ telefone: null, area: null, polo: null });
     preencher([]);
     const avancar = (await screen.findByText(/Continuar|Avançar|Próximo/i))
@@ -242,9 +168,6 @@ describe("a etapa de identificação, montada de verdade", () => {
   });
 
   it("⚠️ o que o formulário NÃO pergunta vai como `null`, e não como \"\"", async () => {
-    // ⚠️ O BACKEND DISTINGUE OS DOIS: `null` é "não perguntou", `""` é
-    // "perguntou e ficou em branco". Mandar `""` poria na fila um campo vazio
-    // como se a pessoa tivesse deixado em branco -- o que é mentira.
     vi.mocked(api.enviarSolicitacaoPublica).mockResolvedValue({
       protocol: "ABC123",
       created: 1,
@@ -266,11 +189,6 @@ describe("a etapa de identificação, montada de verdade", () => {
   });
 
   it("⚠️ a mensagem de erro NÃO cobra campo que a tela não desenha", async () => {
-    // ⚠️ ACHADO PELA REVISÃO DE 31/08. A mensagem era fixa -- "Preencha nome,
-    // e-mail válido, telefone, área e polo" -- e num formulário de TI ela
-    // acusava a pessoa de pular "área e polo", campos que a tela nem desenha.
-    // É exatamente o defeito que o comentário do `identOk()` diz que não pode
-    // acontecer, escrito uma função acima.
     montar({ telefone: "WhatsApp", area: null, polo: null });
     fireEvent.change(await screen.findByLabelText(/^Nome/), {
       target: { value: "Maria" },
@@ -288,8 +206,6 @@ describe("a etapa de identificação, montada de verdade", () => {
   });
 
   it("⚠️ a revisão não deixa separador pendurado sem telefone", async () => {
-    // A última tela antes de enviar é o pior lugar para uma dúvida: com o
-    // telefone desligado, ela mostrava "Maria · maria@x ·" com um · solto.
     vi.mocked(api.enviarSolicitacaoPublica).mockResolvedValue({
       protocol: "ABC123",
       created: 1,
@@ -307,9 +223,7 @@ describe("a etapa de identificação, montada de verdade", () => {
     expect(document.body.textContent).not.toContain("· ·");
   });
 
-  it("⚠️ o TÍTULO vem do banco -- ele estava escrito na mão", async () => {
-    // `"FazAê · Solicitações de Marketing"` estava fixo aqui, mesmo com o
-    // formulário tendo `title` no banco desde a fatia A.
+  it("⚠️ o TÍTULO vem do banco, e não de um texto fixo", async () => {
     montar();
     expect(await screen.findByText("Pedido de acesso — TI")).toBeTruthy();
     expect(screen.queryByText(/FazAê/)).toBeNull();
@@ -321,11 +235,6 @@ describe("a etapa de identificação, montada de verdade", () => {
   });
 });
 
-// =====================================================================
-// Revisão de títulos (21/09) -- a tela de sucesso
-// =====================================================================
-// SABOTAGEM (medida): em `FormularioSolicitacao`, tirar o `focus()` do efeito
-// de `resultado`. Deve cair "⚠️ enviado, o foco vai para o título".
 describe("depois de enviar", () => {
   it("⚠️ enviado, o foco vai para o título", async () => {
     // O envio troca a tela inteira e o botão que tinha o foco some. Sem mover

@@ -1,5 +1,4 @@
-// Spec 052, fatia E -- o que o editor da descrição precisa do navegador e o
-// jsdom não tem.
+// O que o editor da descrição precisa do navegador e o jsdom não tem.
 //
 // ⚠️ O JSDOM NÃO FAZ LAYOUT: `getClientRects` e `getBoundingClientRect` de
 // `Range` não existem. O ProseMirror os chama ao pôr o cursor e rolar até ele

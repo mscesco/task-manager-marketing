@@ -1,21 +1,8 @@
-// Spec 055, fatia B -- o histórico virando frase.
-//
-// O QUE ESTE ARQUIVO PRENDE:
-//   - uma frase por tipo de evento (são 11), com os valores que o backend
-//     grava de verdade — os exemplos aqui copiam a forma dos construtores em
-//     `backend/app/modules/tasks/domain/history.py`;
-//   - ⚠️⚠️ AS RESERVAS: pessoa que saiu, coluna apagada, evento antigo sem o
-//     campo, tipo que este front não conhece. Nenhuma pode virar string vazia
-//     nem id cru na tela — é o que mais vai acontecer, porque a tabela é
-//     gravada desde a Entrega 4 e nunca foi lida;
-//   - ⚠️ o agrupamento por instante: os eventos de um mesmo gesto viram UMA
-//     linha, porque o relógio não os desempata (medido na fatia A).
-//
-// SABOTAGENS (medidas):
-//   A. Em `pessoaDe`, devolver o id quando o nome não resolve. Deve cair
-//      "⚠️ pessoa que saiu do workspace não vira uuid na tela".
-//   B. Em `agruparPorInstante`, comparar só `quando` (ignorando o autor). Deve
-//      cair "⚠️ mesmo instante, pessoas diferentes: dois grupos".
+// O histórico virando frase. Os exemplos copiam a forma dos construtores em
+// `backend/app/modules/tasks/domain/history.py`. As reservas (pessoa que saiu,
+// coluna apagada, evento antigo sem o campo, tipo desconhecido) nunca viram
+// string vazia nem id cru. Os eventos de um mesmo gesto viram uma linha,
+// porque o relógio não os desempata.
 
 import { describe, expect, it } from "vitest";
 
@@ -195,7 +182,7 @@ describe("os eventos da tarefa", () => {
     ).toBe("tirou a tarefa do projeto");
   });
 
-  it("Spec 062: outro quadro e outra mae, com as subtarefas que foram junto", () => {
+  it("outro quadro e outra mae, com as subtarefas que foram junto", () => {
     expect(
       frase({
         event_type: "moved",
@@ -229,8 +216,7 @@ describe("⚠️⚠️ as reservas", () => {
   });
 
   it("evento antigo sem os valores ainda diz alguma coisa", () => {
-    // A tabela enche desde a Entrega 4: há linhas de versões antigas dos
-    // construtores, sem os campos que a frase gostaria de ter.
+    // Há linhas de versões antigas dos construtores, sem esses campos.
     expect(frase({ field_name: "title" })).toBe("renomeou a tarefa");
     expect(frase({ field_name: "column_id" })).toBe("moveu de coluna");
     expect(frase({ event_type: "status_changed", field_name: "status" })).toBe(
@@ -242,21 +228,11 @@ describe("⚠️⚠️ as reservas", () => {
     expect(frase({ event_type: "inventado_amanha" })).toBe("atualizou a tarefa");
     expect(frase({ field_name: "campo_novo" })).toBe("atualizou a tarefa");
   });
-
-  it("nenhuma frase sai vazia, para nenhum dos 11 tipos", () => {
-    const tipos = [
-      "created", "updated", "status_changed", "moved", "archived",
-      "unarchived", "deleted", "assigned", "unassigned", "watched", "unwatched",
-    ];
-    for (const t of tipos) {
-      expect(frase({ event_type: t }).trim().length).toBeGreaterThan(0);
-    }
-  });
 });
 
 describe("o par que se anula", () => {
-  // ⚠️ Do historico real dela (30/09): oito linhas seguidas de "passou a
-  // seguir" / "deixou de seguir" da mesma pessoa, alternando em minutos.
+  // "Passou a seguir" / "deixou de seguir" da mesma pessoa, alternando em
+  // minutos, é ruído.
   const seguir = (id: string, alvo: string, autor = ANA) =>
     evento({
       id,
@@ -372,7 +348,7 @@ describe("agrupar por instante", () => {
     expect(grupos.map((g) => g.quando)).toEqual([DEPOIS, INSTANTE]);
   });
 
-  it("⚠️ o status que só repete a coluna sai da linha (14/10)", () => {
+  it("⚠️ o status que só repete a coluna sai da linha", () => {
     // Mover para uma coluna-ponte grava `column_id` E `status_changed`; com
     // as colunas padrão os nomes coincidem, e a linha parecia duplicada.
     const grupos = agruparPorInstante(

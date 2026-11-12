@@ -5,7 +5,7 @@ import { todasAsPaginas } from "../todasAsPaginas";
 const item = (n: number) => ({ id: `c${n}` });
 
 describe("todasAsPaginas", () => {
-  it("passa da primeira pagina quando o total e maior (auditoria 11/11)", async () => {
+  it("passa da primeira pagina quando o total e maior", async () => {
     const todos = Array.from({ length: 5 }, (_, i) => item(i));
     const buscar = vi.fn(async (page: number, size: number) => ({
       items: todos.slice((page - 1) * size, page * size),

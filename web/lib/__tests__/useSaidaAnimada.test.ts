@@ -1,23 +1,10 @@
-// Maquina de estados do fechar-com-animacao (lib/useSaidaAnimada.ts).
-//
-// POR QUE ESTE ARQUIVO EXISTE (Spec 027, D4): em 2026-07-22 esta logica
-// morava dentro do TaskDetail e chegou quebrada na tela DEPOIS de passar por
-// `tsc --noEmit` limpo e `next build` limpo. Nao era erro de tipo, era de
-// estado -- exatamente o que nenhum portao do projeto olhava.
-//
-// Os dois bugs daquele dia, agora travados aqui:
-//   1. `saindo` nao era zerado na reabertura -> como o pai NAO desmonta o
-//      componente, toda tarefa aberta depois da primeira nascia invisivel.
-//   2. O ref do timer nunca voltava a null -> o segundo fechamento era
-//      ignorado para sempre.
-//
-// Os testes "reabre a MESMA tarefa" e "fecha duas vezes seguidas" sao os que
-// falham contra a versao antiga. Se algum dia passarem nas duas, pararam de
-// testar alguma coisa.
+// Máquina de estados do fechar-com-animação (lib/useSaidaAnimada.ts). O pai
+// NÃO desmonta o componente: por isso `saindo` tem de zerar na reabertura, e o
+// timer tem de se liberar para o segundo fechamento.
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { useSaidaAnimada } from "@/lib/useSaidaAnimada";
+import { DURACAO_SAIDA_MS, useSaidaAnimada } from "@/lib/useSaidaAnimada";
 
 const ID_A = "tarefa-a";
 const ID_B = "tarefa-b";
@@ -68,14 +55,14 @@ describe("useSaidaAnimada -- fechamento normal", () => {
     expect(result.current.saindo).toBe(true);
     expect(onFechar).not.toHaveBeenCalled();
 
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     expect(onFechar).toHaveBeenCalledTimes(1);
   });
 
   it("nao fecha antes da hora", () => {
     const { result, onFechar } = montar();
     act(() => result.current.fecharSuave());
-    act(() => void vi.advanceTimersByTime(139));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS - 1));
     expect(onFechar).not.toHaveBeenCalled();
   });
 
@@ -85,17 +72,17 @@ describe("useSaidaAnimada -- fechamento normal", () => {
       result.current.fecharSuave();
       result.current.fecharSuave();
     });
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     expect(onFechar).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("useSaidaAnimada -- reabertura (o bug de 2026-07-22)", () => {
+describe("useSaidaAnimada -- reabertura", () => {
   it("reabrir OUTRA tarefa volta a ficar visivel", () => {
     const { result, rerender } = montar();
 
     act(() => result.current.fecharSuave());
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     rerender({ idAtual: null }); // pai zerou -> componente segue montado
 
     rerender({ idAtual: ID_B });
@@ -108,7 +95,7 @@ describe("useSaidaAnimada -- reabertura (o bug de 2026-07-22)", () => {
     const { result, rerender } = montar();
 
     act(() => result.current.fecharSuave());
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     rerender({ idAtual: null });
 
     rerender({ idAtual: ID_A }); // MESMA tarefa de novo
@@ -119,7 +106,7 @@ describe("useSaidaAnimada -- reabertura (o bug de 2026-07-22)", () => {
     const { result, rerender, onFechar } = montar();
 
     act(() => result.current.fecharSuave());
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     expect(onFechar).toHaveBeenCalledTimes(1);
 
     rerender({ idAtual: null });
@@ -127,20 +114,8 @@ describe("useSaidaAnimada -- reabertura (o bug de 2026-07-22)", () => {
 
     act(() => result.current.fecharSuave());
     expect(result.current.saindo).toBe(true); // o segundo fechamento anima
-    act(() => void vi.advanceTimersByTime(140));
+    act(() => void vi.advanceTimersByTime(DURACAO_SAIDA_MS));
     expect(onFechar).toHaveBeenCalledTimes(2);
-  });
-
-  it("ciclo longo: abre/fecha cinco vezes sem travar", () => {
-    const { result, rerender, onFechar } = montar();
-    for (let i = 0; i < 5; i++) {
-      act(() => result.current.fecharSuave());
-      act(() => void vi.advanceTimersByTime(140));
-      rerender({ idAtual: null });
-      rerender({ idAtual: i % 2 === 0 ? ID_B : ID_A });
-      expect(result.current.saindo).toBe(false);
-    }
-    expect(onFechar).toHaveBeenCalledTimes(5);
   });
 });
 

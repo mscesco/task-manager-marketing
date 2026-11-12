@@ -1,4 +1,4 @@
-// A entrada escalonada (redesign 19/10). O que vale guardar aqui é a REGRA do
+// A entrada escalonada. O que vale guardar aqui é a REGRA do
 // atraso -- quem sobe depois de quem, e onde o escalonamento para --, porque
 // um erro nela não dá tela vermelha: dá uma lista que demora a chegar.
 

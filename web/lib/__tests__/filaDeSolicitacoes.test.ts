@@ -22,7 +22,7 @@ describe("quandoChegou", () => {
 });
 
 describe("rotuloDoDia", () => {
-  it("hoje, ontem e a data curta -- no dia de Brasília", () => {
+  it("hoje, ontem e a data curta, no dia de Brasília", () => {
     expect(rotuloDoDia("2026-10-15T12:30:00Z", AGORA)).toBe("Hoje");
     expect(rotuloDoDia("2026-10-15T02:00:00Z", AGORA)).toBe("Ontem");
     expect(rotuloDoDia("2026-10-10T15:00:00Z", AGORA)).toBe("10/10");

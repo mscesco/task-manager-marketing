@@ -1,9 +1,5 @@
-// Exclusao de tarefa (Spec 031, C5).
-//
-// ⚠️ Isto cobre o AVISO, nao a exclusao. O caminho destrutivo em si
-// (TaskDetail -> deleteTask -> soft-delete cascateado) e fiacao de componente
-// e NAO tem teste automatico neste projeto: o vitest.config.ts limita o
-// `include` a `lib/**`. A conferencia daquilo e a mao.
+// O aviso de exclusão de tarefa. O caminho destrutivo (TaskDetail ->
+// deleteTask) é fiação de componente e não é coberto aqui.
 import { describe, expect, it } from "vitest";
 
 import { mensagemExclusao } from "@/lib/exclusao";

@@ -48,7 +48,7 @@ describe("ehRaiz / estaVazio", () => {
   });
 });
 
-describe("podeEditar -- o cadeado vem do servidor (Spec 049, fatia F)", () => {
+describe("podeEditar -- o cadeado vem do servidor", () => {
   it("subtime que o servidor diz editavel: edita", () => {
     expect(podeEditar({ ...time(), can_update: true })).toBe(true);
   });
@@ -63,14 +63,14 @@ describe("podeEditar -- o cadeado vem do servidor (Spec 049, fatia F)", () => {
     expect(podeEditar(time())).toBe(false);
   });
 
-  it("ninguem edita a raiz -- nem com o servidor dizendo sim (D5)", () => {
+  it("ninguem edita a raiz -- nem com o servidor dizendo sim", () => {
     expect(podeEditar({ ...time({ parent_team_id: null }), can_update: true })).toBe(
       false,
     );
   });
 });
 
-describe("podeApagarTime -- o cadeado vem do servidor (Spec 051, fatia D)", () => {
+describe("podeApagarTime -- o cadeado vem do servidor", () => {
   it("subtime que o servidor diz apagavel: apaga", () => {
     expect(podeApagarTime(time(APAGA))).toBe(true);
   });
@@ -83,7 +83,7 @@ describe("podeApagarTime -- o cadeado vem do servidor (Spec 051, fatia D)", () =
     expect(podeApagarTime(time())).toBe(false);
   });
 
-  it("ninguem apaga a raiz -- nem com o servidor dizendo sim (D5)", () => {
+  it("ninguem apaga a raiz -- nem com o servidor dizendo sim", () => {
     expect(podeApagarTime(time({ ...APAGA, parent_team_id: null }))).toBe(false);
   });
 });
@@ -144,7 +144,7 @@ describe("confirmacaoValida", () => {
     expect(confirmacaoValida("CRM E AUTOMAÇÃO", "CRM e Automação")).toBe(true);
   });
 
-  it("recusa vazio -- e o clique acidental que o D2 existe pra impedir", () => {
+  it("recusa vazio -- o clique acidental", () => {
     expect(confirmacaoValida("", "Copy")).toBe(false);
     expect(confirmacaoValida("   ", "Copy")).toBe(false);
   });

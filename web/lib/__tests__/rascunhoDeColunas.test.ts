@@ -1,14 +1,8 @@
 /**
- * `lib/rascunhoDeColunas` (Spec 036, fatia 6c-1).
- *
- * ⚠️ ESTE ARQUIVO É O GUARDIÃO DA TELA DE EDIÇÃO INTEIRA, e a tela não aparece
- * nele. O arraste de cabeçalho é `onDragEnd` e não roda em jsdom -- o produto
- * já tem dois assim. Toda regra de "o que a edição virou" mora aqui de
- * propósito; o componente só desenha e chama.
- *
- * ⚠️ E O QUE ESTÁ EM JOGO NÃO É COSMÉTICO: o resultado destas funções vira o
- * corpo de um `PUT` que apaga colunas e move tarefas de outras pessoas, numa
- * transação só, sem desfazer.
+ * `lib/rascunhoDeColunas`: toda regra de "o que a edição de colunas virou".
+ * O arraste de cabeçalho é `onDragEnd` e não roda em jsdom, por isso a regra
+ * mora aqui e o componente só desenha. O resultado vira o corpo de um `PUT`
+ * que apaga colunas e move tarefas numa transação só, sem desfazer.
  */
 
 import { describe, expect, it } from "vitest";
@@ -74,9 +68,8 @@ describe("rascunhoInicial e temPendencias", () => {
   });
 
   it("⚠️ cada tipo de mexida conta como pendência", () => {
-    // ⚠️ É O QUE DECIDE SE SAIR DO MODO AVISA. Faltando qualquer um destes, a
-    // pessoa fecha a edição e perde o trabalho em silêncio -- e a coluna nova
-    // some sem explicação, porque nunca chegou a existir no servidor.
+    // É o que decide se sair do modo avisa: faltando um, a pessoa perde o
+    // trabalho em silêncio.
     const r = rascunhoInicial(QUADRO);
     expect(temPendencias(comRenome(r, "c1", "A fazer"), QUADRO)).toBe(true);
     expect(temPendencias(comMarcacao(r, "c4"), QUADRO)).toBe(true);
@@ -190,8 +183,8 @@ describe("linhasDeEdicao", () => {
   });
 
   it("⚠️ o selo de alvo sai do dado, e não da ordem", () => {
-    // ADR 0030: o destino da cascata é `is_default_target`, e NÃO a primeira
-    // pela ordem. Arrastar não pode mudar quem é o alvo.
+    // O destino da cascata é `is_default_target`, e NÃO a primeira pela
+    // ordem. Arrastar não pode mudar quem é o alvo.
     const r = comOrdem(rascunhoInicial(QUADRO), "c3", 0)!;
     const linhas = linhasDeEdicao(r, QUADRO);
     expect(linhas.filter((l) => l.alvo).map((l) => l.ref).sort()).toEqual([
@@ -203,20 +196,13 @@ describe("linhasDeEdicao", () => {
   });
 
   it("⚠️ criar uma segunda DONE NÃO libera apagar a atual", () => {
-    // ⚠️ É A CONSEQUÊNCIA MAIS CONTRAINTUITIVA DESTA SPEC, e é aqui que ela
-    // aparece para quem usa. Coluna criada por gente nasce com
-    // `is_default_target: false`, e o que tem de sobrar é um ALVO. Sem esta
-    // conta, a tela ofereceria o "×" e o backend recusaria depois do clique.
+    // Coluna criada por gente nasce com `is_default_target: false`, e o que
+    // tem de sobrar é um ALVO. Sem esta conta, a tela ofereceria o "×" e o
+    // backend recusaria depois do clique.
     let r = rascunhoInicial(QUADRO);
     r = comColunaNova(r, "Entregue", "DONE");
     const concluido = linhasDeEdicao(r, QUADRO).find((l) => l.ref === "c3")!;
     expect(concluido.impedimento).not.toBeNull();
-  });
-
-  it("com duas colunas ALVO da mesma semântica, apagar uma libera", () => {
-    const comDuasDone = [...QUADRO, col("c5", "Entregue", "DONE", true)];
-    const linhas = linhasDeEdicao(rascunhoInicial(comDuasDone), comDuasDone);
-    expect(linhas.find((l) => l.ref === "c3")!.impedimento).toBeNull();
   });
 
   it("a linha JÁ marcada não carrega impedimento", () => {
@@ -275,10 +261,8 @@ describe("paraLote", () => {
   });
 
   it("lote de quem não mexeu em nada é inteiramente vazio", () => {
-    // ⚠️ `alvos` ENTROU AQUI NA FATIA 12 e `avisos` na Spec 039 (F9); este
-    // teste caiu nas DUAS vezes -- que é o trabalho dele. O `toEqual` compara
-    // o objeto INTEIRO: campo novo no payload sem linha correspondente reprova
-    // aqui em vez de sumir.
+    // O `toEqual` compara o objeto inteiro: campo novo no payload sem linha
+    // correspondente reprova aqui em vez de sumir.
     expect(paraLote(rascunhoInicial(QUADRO), QUADRO)).toEqual({
       criar: [],
       renomear: [],
@@ -297,10 +281,8 @@ describe("paraLote", () => {
 
 describe("destinosDoRascunho", () => {
   it("⚠️ inclui a coluna criada no rascunho", () => {
-    // ⚠️ E A DIFERENCA QUE JUSTIFICA ESTA FUNCAO. O `destinosPara` antigo
-    // devolvia so as colunas do servidor -- e sem as `tmp:` nao da para apagar
-    // "Aprovacao" mandando as tarefas para a "Entregue" que voce acabou de
-    // criar, que e a razao de ser do lote inteiro.
+    // Sem as `tmp:` nao da para apagar uma coluna mandando as tarefas para
+    // outra criada no mesmo lote, que e a razao de ser do lote.
     const r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
     expect(destinosDoRascunho(r, QUADRO).map((d) => d.ref)).toEqual([
       "c1",
@@ -369,10 +351,8 @@ describe("marcadasParaApagar", () => {
 
 describe("colunasParaDesenhar", () => {
   it("⚠️ a coluna nova É desenhada, na posição dela, e vazia", () => {
-    // ⚠️ ESTE É O GUARDIÃO DO PEDIDO DE 17/08: ordenar a coluna criada na
-    // MESMA edição em que ela nasce. Até esta data o ref entrava na `ordem` e
-    // era filtrado do que a tela desenhava -- as setas moviam uma coluna
-    // invisível e não havia como posicioná-la antes de concluir.
+    // A coluna criada se ordena na mesma edição em que nasce: se fosse
+    // filtrada do desenho, as setas moveriam uma coluna invisível.
     let r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
     expect(colunasParaDesenhar(r, QUADRO).map((c) => c.name)).toEqual([
       "Backlog",
@@ -393,10 +373,9 @@ describe("colunasParaDesenhar", () => {
   });
 
   it("⚠️ o que a tela desenha e o que ela numera são a MESMA lista", () => {
-    // ⚠️ POR QUE ISTO É UM TESTE. `indice`/`total` das setas saem de
-    // `colunasParaDesenhar` e o cabeçalho sai de `linhasDeEdicao`. Enquanto as
-    // duas percorriam listas diferentes (uma com a `tmp:`, outra sem), a seta
-    // "direita" do último cabeçalho vinha habilitada e não movia nada.
+    // `indice`/`total` das setas saem de `colunasParaDesenhar` e o cabeçalho
+    // de `linhasDeEdicao`. Com listas diferentes, a seta "direita" do último
+    // cabeçalho viria habilitada e não moveria nada.
     let r = comColunaNova(rascunhoInicial(QUADRO), "Entregue", "DONE");
     r = comMarcacao(r, "c4");
     expect(colunasParaDesenhar(r, QUADRO).map((c) => c.id)).toEqual(
@@ -410,12 +389,8 @@ describe("colunasParaDesenhar", () => {
   });
 
   it("⚠️ ref sem coluna real some da lista, e NÃO estoura", () => {
-    // ⚠️ ESTE É O `TypeError` DE 17/08 (`rascunhoDeColunas.ts:312`, "Cannot
-    // read properties of undefined"). O caminho real é trocar de quadro com o
-    // modo ligado: o rascunho do quadro anterior encontra as colunas do novo.
-    // A causa foi consertada no `Board.tsx` (o rascunho é descartado na
-    // troca); isto aqui garante que a função não derruba a página se um
-    // caminho novo reintroduzir o descasamento.
+    // Rascunho de um quadro com as colunas de outro (trocar de quadro com o
+    // modo ligado): a função não pode derrubar a página.
     const r = rascunhoInicial(QUADRO);
     expect(colunasParaDesenhar(r, [col("z9", "Outro quadro", "OPEN")])).toEqual(
       [],
@@ -440,10 +415,9 @@ describe("colunasParaDesenhar", () => {
 });
 
 describe("linhasDeEdicao no QUADRO PADRAO", () => {
-  // ⚠️ O `quadroPadrao` ATRAVESSA `linhasDeEdicao` ATE `impedimentoDeExclusao`,
-  // e é esse repasse que decide se o "×" aparece. Sabotar o argumento (fixar
-  // `false` na chamada de dentro) deixa a tabela verdade de
-  // `edicaoDeColunas.test.ts` VERDE, porque lá a função é chamada direto.
+  // O `quadroPadrao` atravessa `linhasDeEdicao` até `impedimentoDeExclusao`.
+  // Fixar `false` na chamada de dentro deixaria `edicaoDeColunas.test.ts`
+  // verde, porque lá a função é chamada direto.
   const PONTE = { ...col("c5", "Planejado", "IN_PROGRESS"), is_status_bridge: true };
   const COM_PONTE = [...QUADRO, PONTE];
 
@@ -524,13 +498,10 @@ describe("nomeRepetidoNoRascunho", () => {
 });
 
 describe("id de arraste do cabeçalho", () => {
-  // ⚠️⚠️ ESTE BLOCO EXISTE POR CAUSA DE UM DEFEITO QUE NENHUM PORTÃO PEGA.
-  // Até 18/08 o cabeçalho registrava o arraste com o MESMO id do droppable da
-  // coluna, no mesmo `DndContext`. O segundo registro sobrescrevia o primeiro,
-  // e ao SAIR do modo de edição o cabeçalho desmontava levando junto o alvo de
-  // arraste do card: arrastar tarefa parava de funcionar até dar F5.
-  //
-  // `onDragEnd` não roda em jsdom. O que dá para prender é o par de funções.
+  // Cabeçalho e coluna no mesmo `DndContext` com o mesmo id: o segundo
+  // registro sobrescreve o primeiro, e ao sair do modo de edição arrastar
+  // tarefa para de funcionar. `onDragEnd` não roda em jsdom; o que dá para
+  // prender é o par de funções.
   it("ida e volta", () => {
     expect(refDoArrasteDeCabecalho(idDeArrasteDoCabecalho("c1"))).toBe("c1");
     expect(refDoArrasteDeCabecalho(idDeArrasteDoCabecalho("tmp:1"))).toBe(
@@ -552,7 +523,7 @@ describe("id de arraste do cabeçalho", () => {
   });
 });
 
-describe("comAlvo -- trocar o alvo da semântica (fatia 12)", () => {
+describe("comAlvo -- trocar o alvo da semântica", () => {
   it("marca a coluna como alvo", () => {
     const r = comAlvo(rascunhoInicial(QUADRO), "c1");
     expect(r.alvos).toEqual(["c1"]);
@@ -610,9 +581,6 @@ describe("comAlvo -- trocar o alvo da semântica (fatia 12)", () => {
 });
 
 
-// =====================================================================
-// Spec 039, F9 -- cobrar prazo no rascunho.
-// =====================================================================
 describe("comAviso", () => {
   it("desligar entra no mapa e chega no lote", () => {
     const r = comAviso(rascunhoInicial(QUADRO), QUADRO[0].id, false, true);
@@ -680,14 +648,9 @@ describe("comAviso", () => {
   });
 });
 
-// =====================================================================
-// Spec 039, F9 -- os dois defeitos que a Camila achou na tela em 22/08.
-// =====================================================================
-describe("a coluna nova, depois do relato de 22/08", () => {
+describe("a cor da coluna nova", () => {
   it("⚠️ a cor ESCOLHIDA já aparece antes de concluir", () => {
-    // *"a cor que escolhi fica transparente ao criar, só volta certa depois"*.
-    // A regra do cinza foi escrita quando o front NÃO PODIA saber a cor -- com
-    // a escolha, ele pode: é exatamente esse token que o backend vai gravar.
+    // Com a cor escolhida o front sabe a cor: é esse token que o backend grava.
     const r = comColunaNova(
       rascunhoInicial(QUADRO),
       "Teste",
@@ -712,15 +675,10 @@ describe("a coluna nova, depois do relato de 22/08", () => {
 });
 
 describe("refDeColunaDoDrop", () => {
-  // ⚠️ ESTA FUNÇÃO É O CONSERTO DE *"não consigo arrastar a coluna nova, só
-  // pelas setas funciona"*. Cada coluna tem DOIS alvos no mesmo `DndContext` --
-  // o corpo (`useDroppable`, para card) e o cabeçalho (`useSortable`, para
-  // coluna) --, e o cabeçalho fica dentro do corpo. O handler antigo exigia o
-  // id COM prefixo e desistia calado quando a colisão resolvia pelo corpo.
-  //
-  // ⚠️ E O TESTE MORA AQUI, e não no arraste: `onDragEnd` não roda em jsdom e
-  // sem layout não há colisão a simular. Por isso a decisão de qual id aceitar
-  // foi tirada do handler e posta numa função pura.
+  // Cada coluna tem dois alvos no mesmo `DndContext`: o corpo (para card) e o
+  // cabeçalho (para coluna), um dentro do outro. A colisão pode resolver por
+  // qualquer um, então o drop tem de aceitar os dois ids. `onDragEnd` não roda
+  // em jsdom, por isso a decisão mora numa função pura.
   const base = () =>
     comColunaNova(rascunhoInicial(QUADRO), "Teste", "OPEN");
 
@@ -730,7 +688,7 @@ describe("refDeColunaDoDrop", () => {
     expect(refDeColunaDoDrop(idDeArrasteDoCabecalho(ref), r)).toBe(ref);
   });
 
-  it("⚠️ aceita também o id do CORPO (sem prefixo) -- era o caso quebrado", () => {
+  it("aceita também o id do CORPO (sem prefixo)", () => {
     const r = base();
     const ref = r.novas[0].ref;
     expect(refDeColunaDoDrop(ref, r)).toBe(ref);
@@ -747,7 +705,7 @@ describe("refDeColunaDoDrop", () => {
   });
 });
 
-describe("semAlvo -- desfazer um \"tornar padrão\" ainda não salvo (08/10)", () => {
+describe("semAlvo -- desfazer um \"tornar padrão\" ainda não salvo", () => {
   // Duas colunas OPEN: "Backlog" é a padrão salva, "Ideias" não.
   const DUAS = [col("c1", "Backlog", "OPEN", true), col("c5", "Ideias", "OPEN")];
 

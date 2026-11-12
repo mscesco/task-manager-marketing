@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 
 import { criarUltimaVez } from "../ultimaVez";
 
-it("so o ultimo pedido de cada chave aplica a resposta (auditoria 11/11)", () => {
+it("so o ultimo pedido de cada chave aplica a resposta", () => {
   const vez = criarUltimaVez();
   const primeiro = vez.nova("card-1");
   const outroCard = vez.nova("card-2");

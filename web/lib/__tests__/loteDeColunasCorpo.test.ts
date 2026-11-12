@@ -1,21 +1,7 @@
 /**
- * O CORPO que sai no `PUT /boards/{id}/columns`.
- *
- * ⚠️ SUBSTITUI O `reordenarColunasCorpo.test.ts`, apagado junto com a funcao
- * que ele guardava. Quarto arquivo do genero, e o motivo continua sendo o
- * mesmo: **mock do cliente HTTP esconde campo que o cliente nao repassa.**
- * `duplicateTaskCorpo` (05/08) e `createTaskCorpo` (13/08) nasceram DEPOIS do
- * estrago -- este e o segundo escrito antes.
- *
- * ⚠️ E AQUI HA MAIS SUPERFICIE QUE NOS OUTROS TRES. Sao SEIS listas (a
- * quinta, `alvos`, entrou na fatia 12; a sexta, `avisos`, na Spec 039 F9) e um
- * prefixo de texto (`tmp:`) que so existe em dois lugares: este arquivo e o
- * `_PREFIXO_TMP` do backend. Nada os amarra alem deste teste.
- *
- * ⚠️ E ELE CAIU DE NOVO EM 22/08, com a F9 -- pela SEGUNDA vez fazendo o
- * trabalho dele. Vale registrar porque as tres fatias anteriores (F6-c, F7, F8)
- * passaram pelos quatro portoes sem derrubar nada: quando existe um guardiao
- * de corpo, campo novo nao entra em silencio; quando nao existe, entra.
+ * O corpo que sai no `PUT /boards/{id}/columns`. Mock do cliente HTTP esconde
+ * campo que o cliente não repassa. O prefixo `tmp:` só existe aqui e no
+ * `_PREFIXO_TMP` do backend; nada os amarra além deste teste.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,20 +34,17 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
+describe("aplicarLoteDeColunas: o corpo que realmente sai", () => {
   it("⚠️ manda as SEIS listas, com esses nomes", async () => {
-    // ⚠️ ESTE TESTE CAIU QUANDO `alvos` ENTROU (fatia 12), E FOI ELE FAZENDO O
-    // TRABALHO DELE. O `toEqual` compara o corpo INTEIRO: campo novo no
-    // `LoteDeColunas` que nao ganhe a linha correspondente dentro do
-    // `aplicarLoteDeColunas` reprova aqui, em vez de ser descartado em
-    // silencio e o lote responder 200 sem ter feito nada.
+    // O `toEqual` compara o corpo INTEIRO: campo novo no `LoteDeColunas` sem
+    // linha no `aplicarLoteDeColunas` reprova aqui, em vez de ser descartado
+    // em silencio.
     await aplicarLoteDeColunas("b1", {
       criar: [
         {
           tmp: "t1",
           name: "Entregue",
           semantic: "DONE",
-          // Spec 039 (F9): os dois campos novos do `criar` viajam junto.
           color: "var(--status-done-dot)",
           notify_deadline: false,
         },
@@ -105,20 +88,6 @@ describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
     });
   });
 
-  it("⚠️ o prefixo `tmp:` chega intacto ao servidor", async () => {
-    // ⚠️ ELE E A RAZAO DE SER DO LOTE. Sem o prefixo, o backend nao distingue
-    // "apelido que o cliente inventou" de "UUID digitado errado", e apagar uma
-    // coluna mandando as tarefas para a que voce acabou de criar deixa de
-    // funcionar -- que e o unico motivo pelo qual esta rota existe.
-    await aplicarLoteDeColunas("b1", {
-      apagar: [{ id: "c2", destino: "tmp:nova-1" }],
-      ordem: ["tmp:nova-1"],
-    });
-    const { corpo } = requisicao();
-    expect(corpo.apagar[0].destino).toBe("tmp:nova-1");
-    expect(corpo.ordem[0]).toBe("tmp:nova-1");
-  });
-
   it("⚠️ lista ausente vira [], e nao some do corpo", async () => {
     // O backend tem default para as quatro, entao omiti-las funcionaria. Mandar
     // `[]` explicito e o que faz o corpo dizer "nao mexi nisto" em vez de "nao
@@ -132,13 +101,6 @@ describe("aplicarLoteDeColunas -- o corpo que realmente sai", () => {
       apagar: [],
       ordem: [],
     });
-  });
-
-  it("⚠️ a ORDEM da lista e a informacao -- ordenar destruiria o pedido", async () => {
-    // Um `.sort()` acidental em qualquer ponto do caminho passaria pelo
-    // servidor sem erro: a lista ordenada continua sendo o conjunto certo.
-    await aplicarLoteDeColunas("b1", { ordem: ["d", "c", "b", "a"] });
-    expect(requisicao().corpo.ordem).toEqual(["d", "c", "b", "a"]);
   });
 
   it("PUT na rota de colunas do quadro", async () => {

@@ -1,5 +1,5 @@
 /**
- * Spec 062 -- o modal "Mover…": a busca de "Subtarefa de…", a previa do
+ * O modal "Mover…": a busca de "Subtarefa de…", a previa do
  * servidor e o corpo que o "Mover" manda. As regras (destinos, frases) sao de
  * `lib/moverTarefa.ts` e tem teste proprio; aqui so a montagem.
  */
@@ -87,7 +87,7 @@ it("no lugar onde ja esta, o Mover fica desligado e a tela diz por que", async (
 
 const TAREFA = { id: "t", title: "Arte", board_id: "g-mkt", team_id: "mkt", parent_task_id: null };
 
-it("auditoria 11/11 (7): depois de um Mover que falhou, da para tentar de novo", async () => {
+it("depois de um Mover que falhou, da para tentar de novo", async () => {
   vi.mocked(api.relocateTask).mockImplementation(async (_id, _corpo, dry) => {
     if (dry) return PREVIA;
     throw new Error("rede caiu");
@@ -103,7 +103,7 @@ it("auditoria 11/11 (7): depois de um Mover que falhou, da para tentar de novo",
   await waitFor(() => expect(botao.disabled).toBe(false));
 });
 
-it("auditoria 11/11 (8): buscar de novo desfaz a escolha que sumiu da lista", async () => {
+it("buscar de novo desfaz a escolha que sumiu da lista", async () => {
   render(<MoverTarefa task={TAREFA} onMovida={vi.fn()} onFechar={vi.fn()} />);
   fireEvent.click(await screen.findByLabelText("Subtarefa de…"));
   fireEvent.click(await screen.findByRole("button", { name: /Instagram/ }));
@@ -116,7 +116,7 @@ it("auditoria 11/11 (8): buscar de novo desfaz a escolha que sumiu da lista", as
   expect((screen.getByRole("button", { name: "Mover" }) as HTMLButtonElement).disabled).toBe(true);
 });
 
-it("auditoria 11/11 (6): o Esc durante o Movendo… nao escapa para o detalhe", async () => {
+it("o Esc durante o Movendo… nao escapa para o detalhe", async () => {
   vi.mocked(api.relocateTask).mockImplementation(async (_id, _corpo, dry) =>
     dry ? PREVIA : new Promise(() => {}),
   );

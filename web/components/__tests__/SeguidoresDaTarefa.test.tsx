@@ -1,16 +1,12 @@
-// Spec 053, fatia D -- seguir uma tarefa, no detalhe.
+// Seguir uma tarefa, no detalhe.
 //
 // O que se prende aqui e a MONTAGEM (a regra esta em `lib/seguidores.ts`):
 //   - o botao do topo e a linha leem o MESMO estado;
-//   - "Seguir" manda o POST SEM user_id (a propria pessoa);
+//   - "Seguir" manda o POST SEM user_id (com o próprio id, o servidor trataria como
+//     "por OUTRA pessoa" e cobraria a permissão);
 //   - arquivada: a lista aparece, sem botao e sem `+`;
 //   - o `+` so aparece com `can_manage_watchers`;
 //   - falha volta atras e avisa.
-//
-// SABOTAGEM (medida): em `BotaoSeguir`, trocar `estado.alternar(meuId, true)`
-// por `estado.alternar(meuId, false)`. Deve cair "Seguir manda o POST sem
-// user_id" -- o POST passaria a levar o proprio id, que o servidor trataria
-// como "por OUTRA pessoa" e cobraria a permissao.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";

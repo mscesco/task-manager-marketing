@@ -1,11 +1,3 @@
-// lib/__tests__/seguidores.test.ts -- Spec 053, fatia D
-//
-// SABOTAGENS (medidas):
-//   A. Em `pessoasOferecidas`, apagar `|| jaSegue.has(m.id)` do filtro de
-//      inativo. Deve cair "desativado que JA segue continua na lista".
-//   B. Em `permissoesDeSeguidor`, devolver `seguirASiMesmo: true` para arquivada.
-//      Deve cair "arquivada: ninguem mexe, nem em si mesmo".
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -85,7 +77,7 @@ describe("permissoesDeSeguidor", () => {
     );
   });
 
-  it("⚠️ arquivada: ninguem mexe, nem em si mesmo (D10)", () => {
+  it("⚠️ arquivada: ninguem mexe, nem em si mesmo", () => {
     expect(permissoesDeSeguidor({ arquivada: true, podeGerenciar: true })).toEqual({
       seguirASiMesmo: false,
       mexerEmOutros: false,

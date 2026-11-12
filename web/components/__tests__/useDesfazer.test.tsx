@@ -1,13 +1,13 @@
-// Spec 056, fatia H -- o Ctrl+Z da Base, ligado à tecla.
+// O Ctrl+Z da Base, ligado à tecla.
 //
 // ⚠️ O QUE ESTE ARQUIVO PRENDE: o atalho chama o servidor e recarrega quando
-// desfez; DENTRO DE UM CAMPO o Ctrl+Z é do texto e a base não é tocada (§9.4);
+// desfez; DENTRO DE UM CAMPO o Ctrl+Z é do texto e a base não é tocada;
 // segurar a tecla não dispara dez pedidos; e o que está para gravar (a visão,
 // com 600 ms de atraso) grava ANTES -- senão o Ctrl+Z desfaria a ação anterior.
 // Quando o atalho vale e o texto do aviso: `lib/__tests__/baseDesfazer.test.ts`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, renderHook, waitFor } from "@testing-library/react";
 
 import { useDesfazer } from "@/components/bases/useDesfazer";
 
@@ -44,10 +44,9 @@ describe("useDesfazer", () => {
     document.body.appendChild(campo);
     renderHook(() => useDesfazer("b1", vi.fn()));
     fireEvent.keyDown(campo, { key: "z", ctrlKey: true });
-    // ⚠️ ESPERA ANTES DE AFIRMAR: o hook grava o pendente (`antes`) e SÓ ENTÃO
-    // chama o servidor. Afirmando na mesma volta, este teste passou verde com
-    // a regra do campo desligada (sabotagem de 07/10).
-    await new Promise((r) => setTimeout(r, 50));
+    // Deixa as promessas andarem antes de afirmar: o hook grava o pendente
+    // (`antes`) e SÓ ENTÃO chama o servidor.
+    await act(async () => {});
     expect(api.undoBase).not.toHaveBeenCalled();
   });
 

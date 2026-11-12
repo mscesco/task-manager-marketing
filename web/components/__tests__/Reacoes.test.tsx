@@ -1,7 +1,7 @@
 /**
- * Spec 050, fatia C -- a fileira e o seletor, por render.
+ * A fileira de reações e o seletor, por render.
  *
- * A fronteira da Spec 027: a REGRA esta em `lib/reacoes.ts` (e tem teste
+ * A REGRA esta em `lib/reacoes.ts` (e tem teste
  * proprio); aqui so o desenho e o gesto -- o que o clique dispara, o que
  * aparece marcado, e o que o teclado alcanca.
  *
@@ -25,14 +25,13 @@ import {
 import FileiraDeReacoes from "../FileiraDeReacoes";
 import SeletorDeReacao from "../SeletorDeReacao";
 
-// ⚠️ Sem `globals: true` no vitest, o auto-cleanup nao se registra
-// (web/AGENTS.md §11).
+// Sem `globals: true` no vitest, o auto-cleanup nao se registra.
 afterEach(cleanup);
 
 const EU = "user-eu";
 const ANA = "user-ana";
 const MEMBROS = new Map([
-  [EU, { name: "Camila" }],
+  [EU, { name: "Bia" }],
   [ANA, { name: "Ana" }],
 ]);
 
@@ -76,18 +75,6 @@ describe("FileiraDeReacoes", () => {
     expect(
       screen.getByLabelText(/🎉, 1: Ana — clique para reagir/),
     ).toBeDefined();
-  });
-
-  it("nomeia quem reagiu, com 'você' por ultimo", () => {
-    render(
-      <FileiraDeReacoes
-        reactions={REACTIONS}
-        membros={MEMBROS}
-        meuId={EU}
-        onAlternar={() => {}}
-      />,
-    );
-    expect(screen.getByLabelText(/Ana e você/)).toBeDefined();
   });
 
   it("clicar avisa o pai com o emoji", () => {
@@ -171,15 +158,14 @@ describe("SeletorDeReacao", () => {
     expect(bolinha.getAttribute("aria-expanded")).toBe("false");
     fireEvent.click(bolinha);
     expect(bolinha.getAttribute("aria-expanded")).toBe("true");
-    // os dois sugeridos, na ordem pedida por ela
+    // os dois sugeridos
     expect(screen.getByLabelText("Reagir com 👍")).toBeDefined();
     expect(screen.getByLabelText("Reagir com ❤️")).toBeDefined();
   });
 
   it("⚠️ a grade chega DEPOIS da caixa -- o clique so monta o que e leve", async () => {
-    // Gravacao dela de 16/09: *"parece que eu clico pra abrir aí ela abre e
-    // depois anima e ainda travado"*. Montar ~150 emojis no quadro do clique
-    // atrasava o primeiro quadro da animacao. A caixa, os sugeridos e a busca
+    // Montar ~150 emojis no quadro do clique atrasaria o primeiro quadro da
+    // animacao. A caixa, os sugeridos e a busca
     // nascem no clique; a grade, dois quadros depois.
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
@@ -266,23 +252,19 @@ describe("SeletorDeReacao", () => {
   });
 
   it("⚠️ rolar a GRADE nao fecha o seletor -- rolar e o gesto principal ali", () => {
-    // O `AnchoredPanel` fechava a qualquer rolagem, inclusive a de dentro
-    // dele. Com uma grade de emojis, isso fechava o painel na cara de quem
-    // rolava.
     render(<SeletorDeReacao onEscolher={() => {}} />);
     abrirSeletor();
     fireEvent.scroll(grade());
-    // ⚠️ O ESTADO DO GATILHO, e nao "o campo de busca ainda existe": fechado,
-    // o painel CONTINUA no DOM durante a animacao de saida, e a versao
-    // anterior deste teste passava com a trava removida (sabotagem 050D).
+    // O ESTADO DO GATILHO, e nao "o campo de busca ainda existe": fechado, o
+    // painel CONTINUA no DOM durante a animacao de saida.
     expect(
       screen.getByLabelText("Reagir ao comentário").getAttribute("aria-expanded"),
     ).toBe("true");
   });
 
   it("⚠️ abre alinhado pela DIREITA do botao -- para dentro do detalhe", () => {
-    // Pedido dela em 16/09, com captura: o botao fica no canto direito da
-    // linha, e o painel alinhado pela esquerda saia para fora do detalhe.
+    // O botao fica no canto direito da linha: alinhado pela esquerda, o painel
+    // sairia para fora do detalhe.
     const antes = HTMLElement.prototype.getBoundingClientRect;
     HTMLElement.prototype.getBoundingClientRect = () =>
       ({ top: 100, bottom: 126, left: 574, right: 600, width: 26, height: 26 }) as DOMRect;

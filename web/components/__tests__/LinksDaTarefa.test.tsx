@@ -1,8 +1,8 @@
-// Spec 052, fatia B -- links com nome: a fileira, o editor e o modal da tarefa.
+// Links com nome: a fileira, o editor e o modal da tarefa.
 //
 // O que ele prende:
 //   - a fileira mostra o NOME como link, em aba nova, com o endereço no title;
-//   - o editor adiciona, remove, reordena e completa o https:// ao sair do campo;
+//   - o editor adiciona uma linha e completa o https:// ao sair do campo;
 //   - ⚠️ os erros só aparecem depois de tentar salvar;
 //   - na CÓPIA não há editor (os links vão pelo servidor).
 
@@ -84,19 +84,6 @@ describe("EditorDeLinks", () => {
     expect(url.value).toBe("https://drive.google.com/abc");
   });
 
-  it("remove e reordena", () => {
-    render(<EditorControlado inicial={rascunhoDe(SALVOS)} />);
-    fireEvent.click(screen.getByLabelText("Descer o link 1"));
-    expect((screen.getByLabelText("Nome do link 1") as HTMLInputElement).value).toBe(
-      "Banco de imagens",
-    );
-    fireEvent.click(screen.getByLabelText("Remover o link 1"));
-    expect((screen.getByLabelText("Nome do link 1") as HTMLInputElement).value).toBe(
-      "Pasta principal",
-    );
-    expect(screen.queryByLabelText("Nome do link 2")).toBeNull();
-  });
-
   it("⚠️ erro só aparece depois de tentar salvar", () => {
     const semNome = [{ chave: "x", title: "", url: "https://a.com" }];
     const { rerender } = render(<EditorDeLinks valor={semNome} onChange={() => {}} mostrarErros={false} />);
@@ -154,10 +141,8 @@ function mocks() {
   vi.mocked(api.putTaskLinks).mockResolvedValue(SALVOS);
 }
 
-describe("TaskModal -- links na cópia (Spec 052, fatia B)", () => {
-  // ⚠️ OS DOIS TESTES DE "EDITAR" QUE MORAVAM AQUI foram para
-  // `EdicaoNoLugar.test.tsx`: o modo editar saiu do modal na fatia D, e os
-  // links de uma tarefa existente se editam no detalhe (`LinksEditaveis`).
+describe("TaskModal -- links na cópia", () => {
+  // Os links de uma tarefa existente se editam no detalhe: ver `EdicaoNoLugar.test.tsx`.
 
   it("na cópia não há editor -- os links vão pelo servidor", async () => {
     mocks();

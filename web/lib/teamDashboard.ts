@@ -48,15 +48,6 @@ export function weekPercent(done: number, total: number): number {
 
 const WEEKDAY_SHORT = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 
-/** O rótulo de um dia dos próximos 7: "Hoje", "Amanhã", "Sex 17". */
-export function dayLabel(day: string, today: string): string {
-  const diff = epochDay(day) - epochDay(today);
-  if (diff === 0) return "Hoje";
-  if (diff === 1) return "Amanhã";
-  const [a, m, d] = day.split("-").map(Number);
-  return `${WEEKDAY_SHORT[diaDaSemana(a, m, d)]} ${d}`;
-}
-
 /** O dia da semana curto, para o pé das colunas: "Qua". */
 export function weekdayShort(day: string): string {
   const [a, m, d] = day.split("-").map(Number);

@@ -1,7 +1,7 @@
 /**
- * Spec 063: arrastar por toque e TOQUE LONGO. Voltar ao `PointerSensor`, ou
- * tirar o `delay`, faz o card prender o dedo de novo no celular -- e nenhum
- * outro portao percebe, porque o jsdom nao rola nem arrasta.
+ * Arrastar por toque e toque longo. Voltar ao `PointerSensor`, ou tirar o
+ * `delay`, faz o card prender o dedo no celular, e o jsdom não rola nem
+ * arrasta: este teste repete a config de propósito.
  */
 import { expect, it, vi } from "vitest";
 

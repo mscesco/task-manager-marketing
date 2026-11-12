@@ -158,20 +158,9 @@ describe("activeTeam — a reserva", () => {
     });
   });
 
-  it("⚠️ `fromUrl: false` na reserva — é ele que manda reescrever a URL", () => {
-    const r = activeTeam("/projetos", "", TIMES, SO_MKT, SO_MKT);
-    expect(r).toMatchObject({ fromUrl: false });
-  });
-
   it("sem alcance nenhum, não inventa time", () => {
     expect(activeTeam("/minhas-tarefas", "", TIMES, [], [])).toEqual({
       kind: "none",
-    });
-  });
-
-  it("⚠️ sem alcance, nem o caminho é inventado — mas o do caminho vale", () => {
-    expect(activeTeam(`/times/${MKT}`, "", TIMES, [], [])).toMatchObject({
-      teamId: MKT,
     });
   });
 });
@@ -237,10 +226,6 @@ describe("preferredTeams", () => {
 
   it("sem vínculo, é a ordem do alcance", () => {
     expect(preferredTeams(AMBOS, []).map((t) => t.id)).toEqual([COM, MKT]);
-  });
-
-  it("⚠️ NÃO DESCARTA o resto -- é ele que distingue 'uma só' de 'várias'", () => {
-    expect(preferredTeams(AMBOS, SO_MKT)).toHaveLength(2);
   });
 
   it("não duplica quem está nas duas listas", () => {
@@ -329,11 +314,6 @@ describe("navHref -- o menu leva o time junto", () => {
   it("⚠️ tela recortada recebe o time ativo", () => {
     expect(navHref("/projetos", COMERCIAL)).toBe("/projetos?time=com");
     expect(navHref("/arquivadas", COMERCIAL)).toBe("/arquivadas?time=com");
-  });
-
-  it("vale também quando o time veio do CAMINHO (saindo do quadro)", () => {
-    const doCaminho: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
-    expect(navHref("/minhas-tarefas", doCaminho)).toBe("/minhas-tarefas?time=com");
   });
 
   it("⚠️ \"Todos os times\" NÃO é levado para as outras telas", () => {

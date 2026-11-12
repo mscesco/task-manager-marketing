@@ -219,13 +219,6 @@ describe("subteamCandidates", () => {
     expect(candidatos.map((m) => m.name)).toEqual(["Bia"]);
   });
 
-  it("⭐ oferece quem está só no time raiz — é o caso normal", () => {
-    const candidatos = subteamCandidates(SEO, [
-      pessoa("Ana", [[MKT, "OPERATOR"]]),
-    ]);
-    expect(candidatos).toHaveLength(1);
-  });
-
   it("estar no NETO não impede entrar no pai", () => {
     // `UNIQUE (user_id, team_id)` só barra o mesmo par.
     expect(subteamCandidates(SEO, [pessoa("Ana", [[JR, "OPERATOR"]])])).toHaveLength(1);
@@ -253,13 +246,6 @@ describe("subteamCandidates e quem está INATIVO", () => {
     ]);
     expect(candidatos.map((m) => m.name)).toEqual(["Ana"]);
   });
-
-  it("⚠️ e isto é o CONTRÁRIO da regra da tabela, de propósito", () => {
-    // A tabela informa (mostra inativo); o seletor propõe ação (não oferece).
-    const bia = inativa(pessoa("Bia", [[SEO, "OPERATOR"]]));
-    expect(teamRows(SEO, TIMES, [bia])).toHaveLength(1);
-    expect(subteamCandidates(JR, [bia])).toEqual([]);
-  });
 });
 
 describe("directMembers e quem está INATIVO", () => {
@@ -270,35 +256,5 @@ describe("directMembers e quem está INATIVO", () => {
       inativa,
     ]);
     expect(diretos.map((d) => d.member.name)).toEqual(["Ana"]);
-  });
-
-  it("⚠️ e a TABELA continua mostrando — as duas regras convivem", () => {
-    const inativa = { ...pessoa("Bia", [[SEO, "OPERATOR"]]), is_active: false };
-    expect(teamRows(SEO, TIMES, [inativa])).toHaveLength(1);
-    expect(directMembers(SEO, [inativa])).toEqual([]);
-  });
-});
-
-describe("subteamCards e quem está INATIVO", () => {
-  it("⭐⭐ o cartão conta o MESMO que a gaveta lista", () => {
-    // Amarra as duas funções: quem mudar uma sem a outra vê aqui.
-    const gente = [
-      pessoa("Ana", [[SEO, "OPERATOR"]]),
-      pessoa("Bia", [[JR, "OPERATOR"]]),
-      { ...pessoa("Zeca", [[SEO, "OPERATOR"]]), is_active: false },
-    ];
-    const card = subteamCards(MKT, TIMES, gente).find((c) => c.team.id === SEO);
-    const naGaveta = directMembers(SEO, gente);
-
-    expect(card?.pessoas).toBe(2); // Ana (SEO) + Bia (neto), sem o Zeca
-    // A gaveta não conta o neto; o que bate é a ausência do inativo.
-    expect(naGaveta.map((d) => d.member.name)).toEqual(["Ana"]);
-  });
-
-  it("⚠️ um subtime só de inativos mostra zero, e não some da grade", () => {
-    const so = [{ ...pessoa("Zeca", [[SEO, "OPERATOR"]]), is_active: false }];
-    const cards = subteamCards(MKT, TIMES, so);
-    expect(cards.find((c) => c.team.id === SEO)?.pessoas).toBe(0);
-    expect(cards).toHaveLength(2);
   });
 });

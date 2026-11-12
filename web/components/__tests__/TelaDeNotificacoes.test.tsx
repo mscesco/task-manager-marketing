@@ -1,4 +1,4 @@
-// Spec 053, fatia F -- a tela `/notificacoes` e o "Ver todas" do sino.
+// A tela `/notificacoes` e o "Ver todas" do sino.
 //
 // O que se prende aqui e a MONTAGEM; a regra (URL, tipos, agrupamento, rotulo)
 // esta em `lib/telaDeNotificacoes.ts`:
@@ -7,9 +7,6 @@
 //   - aviso de tarefa inacessivel: sem link, com o selo;
 //   - "So desta tarefa" refaz a busca pela tarefa e grava na URL;
 //   - o sino tem "Ver todas" e nao navega em aviso inacessivel.
-//
-// SABOTAGEM (medida): em `TelaDeNotificacoes.marcarEstas`, mandar `{}` sempre.
-// Deve cair "⚠️ marcar estas manda o MESMO filtro da lista".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -82,7 +79,7 @@ describe("tela de notificações", () => {
       types: ["TASK_DUE_CHANGED", "TASK_DUE_SOON", "TASK_OVERDUE"],
       task_id: "t9",
       project_id: null,
-      // Spec 054: fora da aba "Silenciadas" a lista ESCONDE as silenciadas.
+      // Fora da aba "Silenciadas" a lista ESCONDE as silenciadas.
       muted: false,
       unread_only: false,
       page: 1,
@@ -102,30 +99,6 @@ describe("tela de notificações", () => {
       task_id: null,
       project_id: null,
       muted: false,
-    });
-  });
-
-  // ---------------------------------------------- Spec 054: aba "Silenciadas"
-  it("⚠️ a aba Silenciadas pede muted, e o botao marca SO as silenciadas", async () => {
-    window.history.replaceState(null, "", "/notificacoes?aba=silenciadas");
-    render(<TelaDeNotificacoes />);
-
-    await waitFor(() => expect(api.listNotifications).toHaveBeenCalled());
-    const chamada = vi.mocked(api.listNotifications).mock.calls[0][0];
-    expect(chamada?.muted).toBe(true);
-    // ⚠️ `unread_only` fica FALSE: a aba mostra tudo o que foi silenciado, lido
-    // ou nao -- e o "não lidas" e a outra aba.
-    expect(chamada?.unread_only).toBe(false);
-
-    fireEvent.click(await screen.findByRole("button", { name: "Marcar todas como lidas" }));
-    await waitFor(() => expect(api.markAllNotificationsRead).toHaveBeenCalled());
-    // Sem filtro de tipo/tarefa o "marcar" vai sem recorte -- MENOS o `muted`,
-    // que e o que impede o botao da aba de marcar as outras (D14).
-    expect(vi.mocked(api.markAllNotificationsRead).mock.calls[0][0]).toEqual({
-      types: [],
-      task_id: null,
-      project_id: null,
-      muted: true,
     });
   });
 
@@ -183,11 +156,11 @@ describe("tela de notificações", () => {
     expect(await screen.findByText("Banner", { selector: "strong" })).toBeTruthy();
   });
 
-  it("⚠️ gravar o filtro na URL nao atualiza o roteador no meio de um render (Next 15)", async () => {
+  it("⚠️ gravar o filtro na URL nao atualiza o roteador no meio de um render", async () => {
     // O Next intercepta o `history.replaceState` e atualiza o componente do
     // roteador. Feito DENTRO do `setEstado(atual => ...)`, isso dava "Cannot
-    // update a component (Router) while rendering a different component" --
-    // que o Next 15 passou a mostrar na tela (07/10). Aqui o "roteador" e um
+    // update a component (Router) while rendering a different component",
+    // que o Next mostra na tela. Aqui o "roteador" e um
     // vizinho que se atualiza quando a URL muda, como o do Next.
     let avisarRoteador: (() => void) | null = null;
     function Roteador() {

@@ -1,11 +1,8 @@
-// Spec 038, fatia A -- a cápsula "Datas" no detalhe da tarefa.
+// A cápsula "Datas" no detalhe da tarefa.
 //
-// ⚠️ POR QUE ESTE ARQUIVO EXISTE, E O QUE ELE **NÃO** COBRE. O corpo que sai no
-// `POST /tasks` é prendido em `lib/__tests__/createTaskCorpo.test.ts`, e não
-// aqui: este arquivo mocka `@/lib/api`, então ele afirma o que o componente
-// CHAMA, e nunca o que viaja no fio. A distinção não é acadêmica -- foi
-// exatamente ela que deixou o `board_id` fora do corpo por um mês com os três
-// portões verdes, e está escrita no topo daquele arquivo.
+// ⚠️ O QUE ELE **NÃO** COBRE: o corpo que sai no `POST /tasks` é prendido em
+// `lib/__tests__/createTaskCorpo.test.ts`. Este arquivo mocka `@/lib/api`,
+// então afirma o que o componente CHAMA, e nunca o que viaja no fio.
 //
 // O que ELE prende:
 //   - a pílula aparece MESMO SEM DATA (senão não há onde clicar para pôr uma);
@@ -14,12 +11,6 @@
 //   - abrir e salvar sem mudar nada NÃO chama a API;
 //   - o 422 do backend aparece na tela com a mensagem DELE;
 //   - o pai é avisado (`onTaskMoved`), senão a cor de prazo do card fica velha.
-//
-// SABOTAGENS previstas:
-//   A. Voltar a `{task.due_date && …}` na pílula. **Cai 1**: "aparece sem data".
-//   B. Mandar só o campo que mudou. **Cai 1**: "manda os dois sempre".
-//   C. Trocar `|| null` por `|| ""`. **Cai 1**: "vazio vira null".
-//   D. Tirar o `onTaskMoved`. **Cai 1**: o card ficaria com a cor velha.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -40,7 +31,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // Sem isto a busca de links vai à rede, falha, e
     // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
@@ -97,7 +88,7 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: QUADRO,
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    // O cadeado vem do servidor, em toda resposta.
     can_delete: true,
     ...over,
   };
@@ -157,9 +148,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
-  it("⚠️ a pílula aparece MESMO SEM DATA -- sabotagem A", async () => {
-    // ⚠️ Antes era `{task.due_date && …}`: sem prazo não havia pílula, e sem
+describe("TaskDetail -- a cápsula de datas", () => {
+  it("⚠️ a pílula aparece MESMO SEM DATA", async () => {
+    // ⚠️ Com `{task.due_date && …}`, sem prazo não haveria pílula, e sem
     // pílula não haveria onde clicar para PÔR um. O vazio é um estado da
     // mesma caixa, e não a ausência dela -- mesma lição do "nenhum" do projeto.
     montar();
@@ -169,19 +160,18 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
 
   it("⚠️ SUBTAREFA também tem datas -- e é diferente do projeto", async () => {
     // ⚠️ O CONTROLE DE PROJETO É TRAVADO EM TAREFA DE TOPO porque subtarefa
-    // HERDA o projeto do pai (Spec 022): não há o que editar. Data não é
+    // HERDA o projeto do pai: não há o que editar. Data não é
     // herdada -- a subtarefa tem prazo próprio, e o `TaskDetail` já o desenha
     // na checklist e já o pede na criação rápida de subtarefa.
     //
-    // A primeira versão desta fatia copiou o `ehTopo` do projeto sem pensar, e
-    // a Camila pegou na tela no mesmo dia. Este teste é o que impede a trava
-    // de voltar de carona numa refatoração do bloco vizinho.
+    // Este teste impede a trava de vir de carona numa refatoração do bloco
+    // vizinho (o `ehTopo` do projeto).
     montar({ parent_task_id: "pai", path: "pai.t1", depth: 1 });
     expect(await screen.findByLabelText("Definir datas")).toBeTruthy();
   });
 
   it("⚠️ o painel se anuncia como \"Datas\"", async () => {
-    // ⚠️ ESTAVA NO DESENHO E FOI OMITIDO na primeira entrega. Sem o título, o
+    // Sem o título, o
     // painel é dois campos soltos ancorados num "+": nada diz do que ele é.
     montar();
     await abrirPainel();
@@ -201,7 +191,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     expect(prazo.value).toBe("2026-08-19");
   });
 
-  it("⚠️ manda os DOIS campos, sempre -- sabotagem B", async () => {
+  it("⚠️ manda os DOIS campos, sempre", async () => {
     // ⚠️ O backend valida `start_date <= due_date` sobre o estado FINAL da
     // tarefa (`_validate_dates`). Mandando só o campo que mudou, o par pode
     // ficar inválido com o valor que já estava no banco -- e a recusa falaria
@@ -223,7 +213,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     );
   });
 
-  it("⚠️ campo limpo vira null, e não string vazia -- sabotagem C", async () => {
+  it("⚠️ campo limpo vira null, e não string vazia", async () => {
     // `""` não é data: o backend responderia 422 por um gesto que significa
     // "apagar". `null` é o que o `fields_set` entende como apagar.
     vi.mocked(api.updateTask).mockResolvedValue(task());
@@ -276,7 +266,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
     expect(screen.getByLabelText("Data de início")).toBeTruthy();
   });
 
-  it("⚠️ avisa o pai depois de salvar -- sabotagem D", async () => {
+  it("⚠️ avisa o pai depois de salvar", async () => {
     // Prazo muda a COR do card e o filtro "Atrasadas" do quadro. Sem avisar, a
     // tarefa fica com data nova no detalhe e cor velha atrás dele.
     const salva = task({ due_date: "2026-09-01" });
@@ -290,7 +280,7 @@ describe("TaskDetail -- a cápsula de datas (Spec 038, fatia A)", () => {
   });
 });
 
-describe("TaskDetail -- a hora do prazo (Spec 038, fatia B)", () => {
+describe("TaskDetail -- a hora do prazo", () => {
   it("⚠️ o campo de hora SÓ aparece quando há data", async () => {
     // ⚠️ Hora sem data é recusada com 422 pelo backend (`_validate_hora`).
     // Esconder é mais forte que aceitar e recusar depois: a pessoa não chega a

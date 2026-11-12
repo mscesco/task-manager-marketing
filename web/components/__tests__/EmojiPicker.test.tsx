@@ -1,5 +1,4 @@
-// EmojiPicker -- desde 08/10 no `AnchoredPanel` (era `absolute` no fluxo, e uma
-// caixa com rolagem em volta o recortava).
+// EmojiPicker, aberto no `AnchoredPanel` (uma caixa com rolagem em volta não o recorta).
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import EmojiPicker from "@/components/EmojiPicker";

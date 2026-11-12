@@ -1,28 +1,11 @@
-// Excluir projeto -- a metade da tela que nunca existiu.
-//
-// ⚠️ POR QUE ESTE ARQUIVO EXISTE. Camila, 22/08: "não dá pra excluir projeto".
-// Não havia defeito no backend: `DELETE /projects/{id}` está lá desde sempre,
-// com permissão `project.delete` e a recusa do projeto pessoal (409). O que
-// faltava era a tela -- e **nenhum portão podia pegar isso**, porque não há
-// teste para "rota de API sem chamador nenhum".
+// A página do projeto: excluir e navegação.
 //
 // O que ele prende:
-//   - sem `project.delete`, não há botão (e ele NÃO vem junto de `.update`);
+//   - sem `can_delete`, não há botão (e ele NÃO vem junto de `can_update`);
 //   - projeto PESSOAL nunca oferece o botão -- o backend recusa com 409;
+//   - o excluir mora DENTRO do painel de edição, não solto no cabeçalho;
 //   - cancelar a confirmação não chama a API;
 //   - confirmar chama e sai da página com `replace`, não `push`.
-//
-// ⚠️ E ELE VIROU O ARQUIVO DA PÁGINA, e não só do excluir: o teste de
-// navegação abaixo entrou aqui porque esta página não tinha teste NENHUM até
-// o excluir chegar. Criar um segundo arquivo para uma asserção só seria pior
-// que a mistura.
-//
-// ⚠️ O BOTÃO MUDOU DE LUGAR EM 22/08 e estes testes CAÍRAM -- que é o trabalho
-// deles. Ele era um botão vermelho no cabeçalho, ao lado de "Editar"; passou a
-// morar DENTRO do painel de edição, por decisão da Camila ("só tem um lápis de
-// edição, que é pra editar o projeto e ali dentro já deixa o excluir"). Uma
-// ação irreversível a um clique da navegação virou uma ação que exige abrir a
-// edição primeiro.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -40,11 +23,10 @@ vi.mock("next/navigation", () => ({
 // membros e tarefas, e nada disso é o assunto aqui. Montá-lo de verdade faria
 // este arquivo falhar por motivos que não têm relação com excluir projeto.
 //
-// ⚠️ MAS ELE PRECISA DESENHAR OS DOIS ENCAIXES (22/08). Desde que o cabeçalho
-// do projeto virou o cabeçalho do próprio quadro, o lápis e o painel de edição
+// ⚠️ MAS ELE PRECISA DESENHAR OS DOIS ENCAIXES: o lápis e o painel de edição
 // chegam ao `Board` como `acoesDoTitulo` e `abaixoDoCabecalho` -- um dublê que
 // os ignore esconde metade da tela e faz o arquivo inteiro falhar por motivo
-// errado. Foi o que aconteceu quando a mudança entrou.
+// errado.
 vi.mock("@/components/Board", () => ({
   default: ({
     acoesDoTitulo,
@@ -95,7 +77,7 @@ function projeto(over: Partial<Project> = {}): Project {
     completed_at: null,
     created_at: "2026-08-01T12:00:00Z",
     updated_at: "2026-08-01T12:00:00Z",
-    // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
+    // Os botões vêm do servidor, no time do projeto.
     can_update: true,
     can_delete: true,
     ...over,
@@ -103,7 +85,7 @@ function projeto(over: Partial<Project> = {}): Project {
 }
 
 function montar(over: Partial<Project> = {}) {
-  // ⚠️ Spec 051, fatia A: SEM `currentUser`. Os botões vêm do PROJETO
+  // ⚠️ SEM `currentUser`. Os botões vêm do PROJETO
   // (`can_update`, `can_delete`), calculados pelo servidor no time dele; a
   // página deixou de ler `me.permissions`, que diz "o que" e nunca "onde".
   vi.mocked(api.getProject).mockResolvedValue(projeto(over));
@@ -132,20 +114,11 @@ afterEach(() => {
 });
 
 describe("Projeto -- navegação", () => {
-  it("⚠️ o link de VOLTAR existe -- eu o apaguei sem querer em 22/08", async () => {
-    // ⚠️ ESTE TESTE EXISTE POR UMA REGRESSÃO MINHA, e ela passou pelos quatro
-    // portões. Ao refazer o cabeçalho do projeto (o nome aparecia duas vezes),
-    // apaguei o bloco que a página desenhava -- e o "‹ Projetos" morava dentro
-    // dele. Saiu junto, em silêncio: nenhum teste desta página falava de
-    // navegação, e `tsc`/`build` não têm opinião sobre link que sumiu.
-    //
-    // A Camila pegou na tela no mesmo dia: "você tirou o 'voltar' da tela
-    // quando abre um projeto né".
+  it("⚠️ o link de VOLTAR existe e leva o time do projeto", async () => {
     montar();
     const voltar = await screen.findByText(/Projetos/);
-    // ⚠️ COM O TIME DO PROJETO (14/09): o caminho puro apagava o `?time=` e a
-    // lista caía na reserva -- voltando de um projeto do Comercial, abria os do
-    // Marketing. O fixture é do `team-1`.
+    // ⚠️ COM O TIME DO PROJETO: sem o `?time=`, a lista cai na reserva e abre
+    // os projetos de outro time. O fixture é do `team-1`.
     expect(voltar.getAttribute("href")).toBe("/projetos?time=team-1");
   });
 });
@@ -158,8 +131,8 @@ describe("Projeto -- excluir", () => {
     expect(screen.queryByText("Excluir projeto")).toBeNull();
   });
 
-  it("⚠️ Spec 051: sem `can_update` não há lápis -- mesmo com a permissão em algum lugar", async () => {
-    // O caso da fatia: gerente no Marketing e operador no Comercial, abrindo um
+  it("⚠️ sem `can_update` não há lápis -- mesmo com a permissão em algum lugar", async () => {
+    // Gerente no Marketing e operador no Comercial, abrindo um
     // projeto do Comercial. `me.permissions` tem `project.update`; o projeto diz
     // que ali não. Quem manda é o projeto.
     montar({ can_update: false, can_delete: false });
@@ -169,8 +142,7 @@ describe("Projeto -- excluir", () => {
   });
 
   it("⚠️ o excluir NÃO fica solto no cabeçalho -- só dentro da edição", async () => {
-    // O que este teste prende é o LUGAR, e ele é a decisão: fora do painel, a
-    // ação irreversível ficava a um clique de distância no meio da navegação.
+    // Fora do painel, a ação irreversível ficaria a um clique no meio da navegação.
     montar();
     await screen.findByLabelText("Editar projeto");
     expect(screen.queryByText("Excluir projeto")).toBeNull();

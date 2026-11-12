@@ -1,11 +1,6 @@
-// =====================================================
-// lib/__tests__/renovarSessao.test.ts -- auditoria de 16/10
-// -----------------------------------------------------
-// O 401 de uma request dispara o refresh. Antes, QUALQUER falha do refresh
-// derrubava a sessão: o 429 do freio (a instituição sai toda por um IP) e o
-// 502 do deploy reiniciando a API deslogavam quem estava com a tela aberta,
-// com o refresh token ainda válido. Só a RECUSA do servidor encerra a sessão.
-// =====================================================
+// O 401 de uma request dispara o refresh. Só a RECUSA do servidor encerra a
+// sessão: o 429 do freio (a instituição sai toda por um IP) e o 502 de um
+// deploy não podem deslogar quem tem o refresh token ainda válido.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api, ApiError, getToken, refreshOutcomeOf, setTokens } from "@/lib/api";
@@ -43,7 +38,7 @@ describe("refreshOutcomeOf", () => {
   });
 });
 
-describe("401 sem token nenhum (auditoria de 21/10)", () => {
+describe("401 sem token nenhum", () => {
   it("encerra a sessão em vez de ficar dando 401 para sempre", async () => {
     localStorage.clear();
     vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
@@ -79,7 +74,7 @@ function servidorQueRenova() {
   return chamadas;
 }
 
-describe("o caminho feliz do refresh (auditoria de 21/10)", () => {
+describe("o caminho feliz do refresh", () => {
   it("renovou: a retentativa leva o token NOVO e a resposta chega", async () => {
     const chamadas = servidorQueRenova();
     expect(await api("/api/v1/tasks")).toEqual({ ok: true });

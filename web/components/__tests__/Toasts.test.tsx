@@ -1,4 +1,4 @@
-// A pilha de avisos do app (17/09): `AvisosProvider` + `useAvisar`.
+// A pilha de avisos do app: `AvisosProvider` + `useAvisar`.
 //
 // ⚠️ O que se prende aqui é o CONTRATO de que as telas dependem:
 //   - dentro do provider, `avisar(texto)` põe o texto na tela;
@@ -6,7 +6,7 @@
 //     montarem uma tela sozinha.
 
 import { afterEach, describe, expect, it } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
 
 import { AvisosProvider, useAvisar } from "@/components/Toasts";
 
@@ -48,8 +48,8 @@ describe("AvisosProvider", () => {
   });
 
   it("sem provider, avisar não estoura", () => {
-    render(<Botao texto="ninguém ouve" />);
-    expect(() => fireEvent.click(screen.getByText("avisar"))).not.toThrow();
-    expect(screen.queryByText("ninguém ouve")).toBeNull();
+    // Direto pelo hook: erro dentro de `onClick` não sai do `fireEvent`.
+    const { result } = renderHook(() => useAvisar());
+    expect(() => result.current("ninguém ouve")).not.toThrow();
   });
 });
