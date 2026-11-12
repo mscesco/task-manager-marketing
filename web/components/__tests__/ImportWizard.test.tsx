@@ -1,4 +1,4 @@
-// Spec 057 (15/10) -- o assistente de importação: arquivo, colunas, conferir.
+// O assistente de importação: arquivo, colunas, conferir.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ImportWizard from "@/components/bases/ImportWizard";

@@ -1,4 +1,4 @@
-// Spec 052, fatia C -- o que a descrição desenha e o que ela NÃO desenha.
+// O que a descrição desenha e o que ela NÃO desenha.
 //
 // O que ele prende:
 //   - ⭐ o briefing de uma solicitação sai com as MESMAS quebras de hoje (linha
@@ -8,8 +8,7 @@
 //   - título nunca compete com a página (`#` vira `<h3>`);
 //   - tabela, código, citação e caixa de tarefa são desenhados; imagem vira link.
 //
-// ⚠️ Os testes do editor com asteriscos e "Visualizar" saíram com ele (fatia E).
-// O editor novo está em `EditorDeDescricao.test.tsx`.
+// O editor está em `EditorDeDescricao.test.tsx`.
 
 import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
@@ -89,7 +88,7 @@ describe("TextoFormatado", () => {
     expect(h).toContain("<h4>Três</h4>");
   });
 
-  it("tabela, código, citação e risco são desenhados -- o editor os preserva (revisão de 16/09)", () => {
+  it("tabela, código, citação e risco são desenhados -- o editor os preserva", () => {
     const { container } = render(
       <TextoFormatado texto={"| a | b |\n|---|---|\n| 1 | 2 |\n\n`cod` ~~risco~~\n\n> cita\n\n- [x] feita"} />,
     );

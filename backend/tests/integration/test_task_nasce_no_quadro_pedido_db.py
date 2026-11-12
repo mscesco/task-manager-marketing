@@ -1,28 +1,11 @@
-"""Spec 036, fatia 5b-6 -- tarefa de topo nasce no quadro PEDIDO.
+"""Tarefa de topo nasce no quadro PEDIDO (`board_id`), dentro do alcance.
 
-⚠️ ISTO NAO EXISTIA, E O PLANO DIZIA QUE SIM. A §1b da fatia 5 (hoje em
-`specs/036-quadro-interno/plan.md`; era o `plan-fatia-5.md`, absorvido em 13/08)
-afirma que "quadro avulso recebe tarefa por `board_id` explicito no comando de
-criacao, que e parametro, nao descoberta". Era descricao do MODELO, e nao do
-codigo: ate 12/08, `TaskService.create` resolvia o quadro de tarefa de topo com
-`default_board_and_column_for_status`, que filtra o time RAIZ no SQL e devolve
-o Quadro geral SEMPRE. Nao havia caminho nenhum para criar tarefa em quadro
-avulso -- e a tela do time seria entregue com um quadro onde ninguem cria nada.
+⚠️ O defeito mais provavel e o router descartar `board_id` ao montar o
+`CreateTaskCommand`: o campo tem default `None`, entao a tarefa nasceria no
+Quadro geral sem erro. Por isso o ultimo teste passa pelo HTTP.
 
-⚠️ O DEFEITO QUE ESTE ARQUIVO MAIS PRECISA PEGAR NAO E O CAMINHO FELIZ. E o
-`board_id` chegar no payload e ser DESCARTADO na montagem do
-`CreateTaskCommand` -- o campo tem default `None`, entao esquecer a linha no
-router nao da erro nenhum: a tarefa nasce no Quadro geral e quem a criou dentro
-do quadro avulso simplesmente nao a encontra. Este arquivo ja mordeu esse
-mesmo defeito uma vez, com `assignee_ids` (Spec 021), e o comentario esta no
-`tasks_router.py`.
-
-⚠️ E A TRAVA DE ALCANCE E O QUE SEPARA "campo novo" de "furo de
-visibilidade". Quadro decide QUEM VE (ADR 0035 D3). Sem
-`_assert_board_in_reach`, montar o JSON na mao cria tarefa no quadro de um
-subtime alheio -- ela aparece na tela DELES, com o `team_id` de quem criou.
-Mesma porta que a Spec 037 fechou para `team_id`, e o mesmo motivo: a tela nao
-oferece, n8n e Swagger sim.
+A trava de alcance impede criar tarefa, montando o JSON na mao, no quadro de
+um subtime alheio (o quadro decide quem a ve).
 """
 
 from __future__ import annotations
@@ -57,27 +40,15 @@ pytestmark = pytest.mark.integration
 async def _mundo(db):
     """Raiz + dois subtimes, e uma pessoa que e MEMBRO de verdade da raiz.
 
-    ⚠️ O `add_member` NAO E DECORATIVO, e foi o que me custou cinco vermelhos
-    em 12/08. `acting_as` fabrica o TenantContext -- ele nao grava linha em
-    `user_team`. A validacao de responsavel (`CollaborationService`) consulta o
-    BANCO, e uma pessoa sem vinculo nenhum nao pode ser designada a coisa
-    alguma: `Um ou mais responsaveis nao podem ser designados`. Os unicos
-    testes que passavam eram os de `pytest.raises`, que estouram antes de
-    chegar la.
-
-    ⚠️ O VINCULO E NA RAIZ, e nao no subtime, de proposito. Quem esta na raiz
-    alcanca a arvore inteira, entao a mesma pessoa serve de responsavel para
-    tarefa da raiz E de subtime -- e a escolha de subtime fica fora do caminho
-    deste arquivo, que nao e sobre ela. (A trava da ADR 0008, citada aqui ate
-    a Spec 044 fatia 3, nao existe mais; a razao acima nunca dependeu dela.)
+    ⚠️ O `add_member` e necessario: `acting_as` nao grava `user_team`, e a
+    validacao de responsavel consulta o banco. Na raiz, a mesma pessoa serve de
+    responsavel para tarefa da raiz e de qualquer subtime.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
     sub_a = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
     sub_b = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    # ⚠️ ADMIN DE ORGANIZACAO e, ALEM disso, MANAGER da raiz: o papel de
-    # organizacao nao grava `user_team`, e o vinculo e o que o torna
-    # designavel (acima).
+    # ADMIN de organizacao e tambem MANAGER da raiz (o vinculo o torna designavel).
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await f.add_member(
         db, workspace_id=ws, user_id=user, team_id=raiz, role="MANAGER"
@@ -119,11 +90,7 @@ async def _quadro_avulso(db, ws, user, arvore, time, nome="Quadro do SEO"):
 
 
 async def test_sem_board_id_a_tarefa_nasce_no_quadro_GERAL(db) -> None:
-    """⚠️ O comportamento de 100% das tarefas ate 12/08 nao pode mudar.
-
-    Sao 176 vivas no Quadro geral; um default trocado aqui as mandaria para
-    outro lugar sem ninguem pedir.
-    """
+    """Sem `board_id`, o default continua o Quadro geral, mesmo havendo avulso."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -158,22 +125,14 @@ async def test_com_board_id_a_tarefa_nasce_no_quadro_PEDIDO(db) -> None:
     await db.flush()
 
     assert tarefa.board_id == quadro.id
-    # ⚠️ E NA COLUNA DAQUELE QUADRO. `column_id` apontando para uma coluna do
-    # geral com `board_id` do avulso e o par que a FK composta recusa -- mas o
-    # inverso (coluna certa, quadro errado) passaria calado.
+    # E na coluna daquele quadro.
     assert tarefa.column_id in {c.id for c in await _colunas(db, quadro.id)}
     assert tarefa.status is TaskStatus.BACKLOG
 
 
 async def test_status_sem_coluna_no_avulso_VOLTA_da_semantica(db) -> None:
-    """⚠️ ADR 0042 D2, pelo caminho da criacao.
-
-    O quadro avulso tem quatro colunas e nao conhece `PLANNED`. Pedir
-    `PLANNED` faz a tarefa cair na coluna alvo de `OPEN` -- `Backlog` -- e o
-    status TEM de acompanhar. Gravar `PLANNED` numa coluna que significa
-    `BACKLOG` poe coluna e status em desacordo, e a invariante 3 do
-    `invariantes.sql` sai de zero dias depois.
-    """
+    """O quadro avulso nao tem coluna de `PLANNED`: a tarefa cai na coluna alvo
+    de `OPEN` (`Backlog`) e o status acompanha."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -194,17 +153,12 @@ async def test_status_sem_coluna_no_avulso_VOLTA_da_semantica(db) -> None:
     )
     assert coluna.name == "Backlog"
     assert coluna.semantic is ColumnSemantic.OPEN
-    # ⚠️ E O STATUS ACOMPANHOU. Sem esta linha o teste passaria com a tarefa
-    # gravada como `PLANNED` numa coluna `BACKLOG`.
+    # E o status acompanhou, senao coluna e status ficariam em desacordo.
     assert tarefa.status is TaskStatus.BACKLOG
 
 
 async def test_quadro_FORA_do_alcance_e_recusado(db) -> None:
-    """⚠️ A TRAVA, e o modo de falha dela e a criacao ter EXITO.
-
-    Quadro decide QUEM VE (ADR 0035 D3). Sem ela, um supervisor do subtime A
-    cria tarefa no quadro do subtime B -- e ela aparece na tela deles.
-    """
+    """Supervisor do subtime A nao cria tarefa no quadro do subtime B."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro_b = await _quadro_avulso(
         db, ws, user, arvore, sub_b, nome="Quadro do B"
@@ -224,17 +178,8 @@ async def test_quadro_FORA_do_alcance_e_recusado(db) -> None:
 
 
 async def test_quadro_inexistente_e_recusado_PELA_TRAVA(db) -> None:
-    """⚠️ ESTE TESTE NAO DISCRIMINAVA, e a sabotagem provou.
-
-    Tirando `_assert_board_in_reach`, ele continuava VERDE: um `board_id`
-    inventado tambem estoura `ValidationError`, so que la adiante, quando
-    `coluna_para_status` nao acha coluna naquele quadro. Mesmo tipo de excecao,
-    defeito completamente diferente -- e o teste passava nos dois mundos.
-
-    ⚠️ O CODIGO E O QUE SEPARA OS DOIS. Sem ele, a unica forma de distinguir
-    seria comparar a mensagem, que e o acoplamento a texto que a fatia 5b-4b
-    existiu para matar.
-    """
+    """⚠️ Confere o codigo do erro: sem a trava, um `board_id` inventado
+    tambem estoura `ValidationError`, mais adiante (sem coluna no quadro)."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
 
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
@@ -251,12 +196,8 @@ async def test_quadro_inexistente_e_recusado_PELA_TRAVA(db) -> None:
 
 
 async def test_admin_alcanca_o_quadro_de_qualquer_subtime(db) -> None:
-    """⚠️ A celula que uma trava escrita so com "sou supervisor daqui" erraria.
-
-    O ADMIN (de organizacao) nao e supervisor de subtime nenhum, e a lente dele e o workspace
-    inteiro (`list_visible` devolve `None` para o filtro de time). Sem este
-    caso, uma trava por pertencimento passaria em todos os outros testes.
-    """
+    """O ADMIN de organizacao nao e supervisor de subtime nenhum e alcanca
+    todos: uma trava por pertencimento erraria aqui."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -275,12 +216,8 @@ async def test_admin_alcanca_o_quadro_de_qualquer_subtime(db) -> None:
 
 
 async def test_SUBTAREFA_ignora_o_board_id_e_herda_o_do_pai(db) -> None:
-    """⚠️ ADR 0024, e o defeito que a fatia 2 desta spec fechou.
-
-    Filha em quadro diferente do pai parte a arvore entre dois quadros -- a FK
-    composta ACEITA esse par, e nao ha erro nem tela. Passar `board_id` numa
-    subtarefa nao pode abrir essa porta de volta.
-    """
+    """Filha em quadro diferente do pai partiria a arvore (a FK composta
+    aceita o par): o `board_id` da subtarefa e ignorado."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -309,20 +246,8 @@ async def test_SUBTAREFA_ignora_o_board_id_e_herda_o_do_pai(db) -> None:
 
 
 # =====================================================================
-# ⚠️ A LINHA DO ROUTER, QUE NAO TINHA GUARDIAO NENHUM.
-#
-# Medido em 12/08: apagar `board_id=payload.board_id` da montagem do
-# `CreateTaskCommand` em `tasks_router.py` deixava os SETE testes acima verdes.
-# Todos chamam o servico direto -- nenhum passa pelo HTTP. E o campo tem
-# default `None`, entao esquece-lo NAO da erro: a tarefa nasce no Quadro geral,
-# e quem a criou dentro do quadro avulso simplesmente nao a encontra.
-#
-# ⚠️ E ESTA ARMADILHA JA MORDEU ESTE MESMO ROUTER. `assignee_ids` (Spec 021)
-# passou pelo mesmo caminho, e o comentario esta la ate hoje, tres linhas
-# abaixo da que eu acabei de acrescentar. Ler o aviso nao bastou.
-#
-# SABOTAGEM: tirar `board_id=payload.board_id` do `CreateTaskCommand` em
-# `tasks_router.py` -> tem de cair o teste abaixo, e SO ele.
+# A linha do router: os testes acima chamam o servico direto, entao apagar
+# `board_id=payload.board_id` do `CreateTaskCommand` so derruba o de baixo.
 # =====================================================================
 
 
@@ -359,11 +284,7 @@ def _client(db, ws, user, team_id, arvore):
 
 
 async def test_o_board_id_do_PAYLOAD_chega_no_comando(db) -> None:
-    """⚠️ O unico teste que prova que o campo atravessa o router.
-
-    Sem ele, a linha `board_id=payload.board_id` pode sumir numa refatoracao e
-    NADA fica vermelho -- a tarefa so passa a nascer no lugar errado.
-    """
+    """O `board_id` atravessa o router."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -380,9 +301,7 @@ async def test_o_board_id_do_PAYLOAD_chega_no_comando(db) -> None:
 
     assert r.status_code == 201, r.text
     assert r.json()["board_id"] == str(quadro.id)
-    # ⚠️ E A COLUNA E DAQUELE QUADRO. Sem esta linha, um router que gravasse o
-    # `board_id` certo e a coluna do geral passaria -- e o par so seria
-    # recusado pela FK composta em alguns casos.
+    # E a coluna e daquele quadro.
     assert r.json()["column_id"] in {
         str(c.id) for c in await _colunas(db, quadro.id)
     }

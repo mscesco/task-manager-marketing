@@ -16,7 +16,7 @@ describe("deveBloquearEnter", () => {
     expect(deveBloquearEnter("input")).toBe(true);
   });
 
-  it("bloqueia em select e em checkbox", () => {
+  it("bloqueia em select", () => {
     expect(deveBloquearEnter("SELECT")).toBe(true);
   });
 

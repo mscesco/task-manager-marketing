@@ -28,7 +28,6 @@ from app.modules.solicitations.domain.briefing import (
 )
 from app.modules.solicitations.domain.solicitation import (
     ACEITOS,
-    CATEGORIES,
     SolicitationStatus,
     can_review,
     pode_andar,
@@ -82,6 +81,8 @@ class CreatePublicCommand:
     """
 
     workspace_slug: str
+    #: De qual formulario veio o envio; as categorias validas sao as secoes dele.
+    form_id: uuid.UUID
     requester_name: str
     requester_email: str
     #: `None` = o formulario nao perguntou este campo.
@@ -90,8 +91,6 @@ class CreatePublicCommand:
     requester_polo: str | None
     items: list[SolicitationItem]
     honeypot: str = ""
-    #: De qual formulario veio o envio. `None` cai na validacao contra `CATEGORIES`.
-    form_id: uuid.UUID | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,21 +194,9 @@ class SolicitationService:
                 "ou divida em mais de um envio."
             )
 
-        # Com `form_id`, as categorias validas sao as secoes daquele formulario;
-        # sem ele, a lista fixa `CATEGORIES`. Valida todas antes de gravar.
-        if command.form_id is None:
-            for item in command.items:
-                if item.category not in CATEGORIES:
-                    raise ValidationError("Categoria de solicitacao invalida.")
-
-        # Categoria repetida so vale em secao repetivel (conferido abaixo); sem
-        # formulario nada repete.
+        # Categoria repetida so vale em secao repetivel (conferido abaixo).
         categorias = [i.category for i in command.items]
         repetidas = {c: categorias.count(c) for c in categorias if categorias.count(c) > 1}
-        if repetidas and command.form_id is None:
-            raise ValidationError(
-                "Cada tipo de solicitacao pode ser escolhido uma vez por envio."
-            )
 
         workspace = await get_workspace_by_slug(
             self.session, command.workspace_slug
@@ -220,41 +207,40 @@ class SolicitationService:
 
         # O formulario tem de ser deste workspace e estar publicado. A recusa e a
         # mesma de categoria invalida, para nao confirmar a existencia dele.
-        if command.form_id is not None:
-            secoes = (
-                await self.session.execute(
-                    select(SolicitationSection.slug, SolicitationSection.repeatable)
-                    .join(
-                        SolicitationForm,
-                        (SolicitationForm.id == SolicitationSection.form_id)
-                        & (
-                            SolicitationForm.workspace_id
-                            == SolicitationSection.workspace_id
-                        ),
-                    )
-                    .where(
-                        SolicitationForm.id == command.form_id,
-                        SolicitationForm.workspace_id == workspace.id,
-                        SolicitationForm.deleted_at.is_(None),
-                        SolicitationForm.is_published.is_(True),
-                        SolicitationSection.deleted_at.is_(None),
-                    )
+        secoes = (
+            await self.session.execute(
+                select(SolicitationSection.slug, SolicitationSection.repeatable)
+                .join(
+                    SolicitationForm,
+                    (SolicitationForm.id == SolicitationSection.form_id)
+                    & (
+                        SolicitationForm.workspace_id
+                        == SolicitationSection.workspace_id
+                    ),
                 )
-            ).all()
-            repetivel = {slug: rep for slug, rep in secoes}
-            for item in command.items:
-                if item.category not in repetivel:
-                    raise ValidationError("Categoria de solicitacao invalida.")
-            for slug, vezes in repetidas.items():
-                if not repetivel[slug]:
-                    raise ValidationError(
-                        "Cada tipo de solicitacao pode ser escolhido uma vez por envio."
-                    )
-                if vezes > MAX_REPETICOES_POR_SECAO:
-                    raise ValidationError(
-                        f"Uma secao repete no maximo {MAX_REPETICOES_POR_SECAO} "
-                        "vezes por envio."
-                    )
+                .where(
+                    SolicitationForm.id == command.form_id,
+                    SolicitationForm.workspace_id == workspace.id,
+                    SolicitationForm.deleted_at.is_(None),
+                    SolicitationForm.is_published.is_(True),
+                    SolicitationSection.deleted_at.is_(None),
+                )
+            )
+        ).all()
+        repetivel = {slug: rep for slug, rep in secoes}
+        for item in command.items:
+            if item.category not in repetivel:
+                raise ValidationError("Categoria de solicitacao invalida.")
+        for slug, vezes in repetidas.items():
+            if not repetivel[slug]:
+                raise ValidationError(
+                    "Cada tipo de solicitacao pode ser escolhido uma vez por envio."
+                )
+            if vezes > MAX_REPETICOES_POR_SECAO:
+                raise ValidationError(
+                    f"Uma secao repete no maximo {MAX_REPETICOES_POR_SECAO} "
+                    "vezes por envio."
+                )
 
         # Identificacao conferida contra o cabecalho do formulario.
         contato = await self._identificacao_conferida(command, workspace.id)
@@ -277,7 +263,6 @@ class SolicitationService:
                 category=item.category,
                 summary=item.summary.strip()[:500],
                 answers=item.answers,
-                # Sem `form_id` o pedido nasce orfao e aparece fora do time dono.
                 form_id=command.form_id,
                 status=SolicitationStatus.PENDING,
             )
@@ -300,24 +285,13 @@ class SolicitationService:
         """Telefone, area e polo: o formulario pede? entao tem de vir.
 
         Rotulo preenchido no cabecalho = pergunta e exige; `NULL` = nao pergunta
-        e o valor enviado e descartado. Sem `form_id`, os tres sao exigidos.
+        e o valor enviado e descartado.
         """
         vindos = {
             "phone": (command.requester_phone or "").strip(),
             "department": (command.requester_department or "").strip(),
             "polo": (command.requester_polo or "").strip(),
         }
-        rotulos = {"phone": "Telefone", "department": "Área", "polo": "Polo"}
-
-        if command.form_id is None:
-            for chave, valor in vindos.items():
-                if not valor:
-                    raise ValidationError(
-                        f"{rotulos[chave]} é obrigatório.",
-                        details={"field": f"requester_{chave}"},
-                    )
-            return dict(vindos)
-
         cabecalho = (
             await self.session.execute(
                 select(

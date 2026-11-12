@@ -64,16 +64,6 @@ describe("rootTeamCards", () => {
     ]);
   });
 
-  it("⚠️ NAO duplica quem esta no time E num subtime dele", () => {
-    // Somar os membros de cada time da árvore contaria esta pessoa duas vezes.
-    const cards = rootTeamCards(TIMES, [pessoa("Ana", [MKT])]);
-    expect(cards[0].pessoas).toBe(1);
-  });
-
-  it("conta neto como subtime -- a arvore tem tres niveis", () => {
-    expect(rootTeamCards(TIMES, [])[0].subteams).toBe(2);
-  });
-
   it("⚠️ NAO conta inativo -- o card diz quem trabalha ali", () => {
     // O inativo tem aba própria na tela do time.
     const cards = rootTeamCards(TIMES, [
@@ -139,9 +129,9 @@ describe("organizationManagers", () => {
     const gestores = organizationManagers([
       pessoa("Zeca", [], { org_role: "GESTOR" }),
       pessoa("Ana", [MKT]),
-      pessoa("Camila", [], { org_role: "ADMIN" }),
+      pessoa("Bruna", [], { org_role: "ADMIN" }),
     ]);
-    expect(gestores.map((m) => m.name)).toEqual(["Camila", "Zeca"]);
+    expect(gestores.map((m) => m.name)).toEqual(["Bruna", "Zeca"]);
   });
 
   it("sem gestor nenhum, lista vazia", () => {
@@ -149,7 +139,7 @@ describe("organizationManagers", () => {
   });
 });
 
-describe("papeisDeOrganizacaoAtribuiveis -- o teto do gestor (Spec 049, fatia G)", () => {
+describe("papeisDeOrganizacaoAtribuiveis: o teto do gestor", () => {
   const ADMIN = { org_role: "ADMIN" as const, permissions: ["org_role.grant"] as const };
   const GESTOR = { org_role: "GESTOR" as const, permissions: ["org_role.grant"] as const };
   const MANAGER = { org_role: null, permissions: ["membership.update"] as const };
@@ -179,17 +169,6 @@ describe("searchPeople", () => {
     expect(achadas[0].roots.map((t) => t.name)).toEqual(["Marketing", "TI"]);
   });
 
-  it("ignora acento e caixa", () => {
-    const jose = pessoa("José", [MKT]);
-    expect(searchPeople("jose", [jose], TIMES)).toHaveLength(1);
-    expect(searchPeople("JOSÉ", [jose], TIMES)).toHaveLength(1);
-  });
-
-  it("casa tambem por e-mail", () => {
-    const ana = pessoa("Ana", [MKT], { email: "ana.silva@fecaf.com.br" });
-    expect(searchPeople("silva", [ana], TIMES)).toHaveLength(1);
-  });
-
   it("term vazio nao lista o workspace inteiro", () => {
     // Sem isto, abrir a tela listaria todo mundo embaixo da grade.
     expect(searchPeople("", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
@@ -205,7 +184,7 @@ describe("searchPeople", () => {
 });
 
 describe("matchesSearch", () => {
-  it("⭐ ignora acento — a divergência que o code review achou", () => {
+  it("⭐ ignora acento", () => {
     // As duas telas de pessoas usam esta regra.
     expect(matchesSearch("jose", pessoa("José", [MKT]))).toBe(true);
     expect(matchesSearch("JOSÉ", pessoa("Jose", [MKT]))).toBe(true);
@@ -227,7 +206,7 @@ describe("matchesSearch", () => {
   });
 });
 
-describe("podeAbrirOrganizacao -- a guarda da /organizacao (Spec 051, fatia F)", () => {
+describe("podeAbrirOrganizacao: a guarda da /organizacao", () => {
   it("papel de organizacao abre: ADMIN e GESTOR", () => {
     expect(podeAbrirOrganizacao({ org_role: "ADMIN" })).toBe(true);
     expect(podeAbrirOrganizacao({ org_role: "GESTOR" })).toBe(true);

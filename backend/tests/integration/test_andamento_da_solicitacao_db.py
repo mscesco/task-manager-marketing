@@ -1,24 +1,20 @@
-"""Em andamento e Concluída (Spec 043, fatia D).
+"""Em andamento e Concluída: o andamento depois da triagem.
 
-⚠️⚠️ ACRESCENTAR UM STATUS NAO E ACRESCENTAR UMA LINHA NO ENUM. Havia CINCO
-lugares comparando com `APPROVED` sozinho, e cada um que ficasse para tras
-viraria um defeito diferente -- todos silenciosos:
+⚠️ Um status novo toca CINCO lugares que comparam com `APPROVED`:
 
   1. o CHECK `solicitation_status_valid`, no banco;
-  2. ⚠️ o CHECK `solicitation_task_requires_approved` -- **a armadilha**: ele
-     PROIBIA mover para "em andamento" qualquer pedido que ja tivesse tarefa
-     marcada, ou seja, exatamente aqueles em que o trabalho comecou. Erro de
-     integridade no meio de um clique inocente, e nenhum teste de SERVICO o
+  2. ⚠️ o CHECK `solicitation_task_requires_approved` -- **a armadilha**: se
+     ele cobrir so APPROVED, mover para "em andamento" um pedido que ja tem
+     tarefa marcada vira erro de integridade, e nenhum teste de SERVICO o
      veria, porque a regra nao mora no Python;
-  3. o indice parcial `solicitation_aprovadas_sem_tarefa` -- se ele cobrisse
-     so APPROVED enquanto a consulta procura os tres, o Postgres deixaria de
-     usa-lo em silencio e o filtro viraria varredura de tabela;
+  3. o indice parcial `solicitation_aprovadas_sem_tarefa` -- se ele cobrir
+     so APPROVED enquanto a consulta procura os tres, o Postgres deixa de
+     usa-lo em silencio;
   4. o filtro "SEM_TAREFA" da fila;
   5. a guarda do `mark_task`.
 
-⚠️ E `can_review` NAO MUDOU, o que tambem esta testado aqui. Os estados novos
-sao ANDAMENTO, e nao uma segunda triagem: passar por eles nao pode reescrever
-quem aprovou nem quando.
+⚠️ Os estados novos sao ANDAMENTO, e nao uma segunda triagem: passar por eles
+nao reescreve quem aprovou nem quando.
 """
 
 from __future__ import annotations
@@ -34,12 +30,11 @@ from app.modules.solicitations.application.service import (
 )
 from app.shared.exceptions.base import BusinessRuleError, ValidationError
 from app.shared.pagination import PageParams
-from tests.integration import factories as f
 from tests.integration.conftest import acting_as, mship
 from tests.integration.test_solicitations_db import (
     _criar_uma,
-    _make_ws_with_slug,
     _reviewer,
+    _ws_com_formulario,
 )
 
 pytestmark = pytest.mark.integration
@@ -47,7 +42,7 @@ pytestmark = pytest.mark.integration
 
 async def _cena(db):
     """Workspace com um pedido PENDENTE e um triador MANAGER."""
-    ws, slug = await _make_ws_with_slug(db)
+    ws, slug = await _ws_com_formulario(db)
     pedido = await _criar_uma(db, slug)
     team, user = await _reviewer(db, ws)
     return ws, pedido, team, user
@@ -253,26 +248,3 @@ async def test_pedido_CONCLUIDO_sai_do_contador_de_pendentes(db) -> None:
         await _aprovar(db, pedido)
         await _andar(db, pedido, "DONE")
         assert await svc.count_pending(None) == 0
-
-
-async def test_permissao_e_a_mesma_da_triagem(db) -> None:
-    """⚠️ `solicitation.review` também governa o andamento: quem tria é quem
-    acompanha. OPERATOR não enxerga a fila, então não pode mover nela."""
-    ws, pedido, team, user = await _cena(db)
-    with acting_as(**_como(ws, user, team)):
-        await _aprovar(db, pedido)
-
-    outro = await f.make_user(db, workspace_id=ws)
-    await f.add_member(
-        db, workspace_id=ws, user_id=outro, team_id=team, role="OPERATOR"
-    )
-    await db.flush()
-    # ⚠️ A GUARDA DE PERMISSAO E DA ROTA, e nao do servico -- o teste HTTP de
-    # `test_solicitations_db.py` ja prende isso para `/aprovar`, e a rota nova
-    # declara a MESMA dependencia. Aqui se registra a decisao, e o portao de
-    # verdade e o `require_permission` no router.
-    from app.modules.auth.domain.permissions import permissions_for_roles
-
-    assert "solicitation.review" not in permissions_for_roles(
-        frozenset({"OPERATOR"})
-    )

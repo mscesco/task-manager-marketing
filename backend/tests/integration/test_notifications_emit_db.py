@@ -1,4 +1,4 @@
-"""Emissao de TASK_ASSIGNED via add_assignee (Spec 018, F2).
+"""Emissao de TASK_ASSIGNED via add_assignee.
 
 Cobre: designar emite 1 notificacao pro destinatario com payload correto;
 auto-designacao emite 0; re-designar (idempotente) nao duplica.

@@ -1,16 +1,8 @@
-// A tela do editor de formulário (Spec 043, fatia C2).
+// A tela do editor de formulário.
 //
-// ⚠️ ELA NASCEU DE UMA PERGUNTA DE UMA LINHA: "consigo criar mas onde eu
-// edito? kkk" (Camila, 26/08). A fatia C1 entregou a lista, e o primeiro
-// formulário criado por ela bateu num beco -- "um formulário sem perguntas não
-// pode ser publicado", e nenhum lugar onde pôr perguntas.
-//
-// ⚠️⚠️ E O TESTE MAIS IMPORTANTE AQUI É O DO `options`, porque ele é o hop que
-// eu já deixei aberto uma vez nesta mesma spec. Ao ligar o `form_id` no envio
-// público (fatia B), tirei a linha do componente para conferir se algum teste
-// caía: **nenhum caiu**. Os nove testes provavam que o dado chegava ao
-// componente, e nenhum provava que ele entrava no CORPO. São hops diferentes.
-// Aqui o corpo é assertado direto.
+// ⚠️⚠️ O TESTE MAIS IMPORTANTE AQUI É O DO `options`: provar que o dado chega
+// ao componente não prova que ele entra no CORPO. Aqui o corpo é assertado
+// direto.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -18,7 +10,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import EditorPage from "@/app/formularios/[id]/page";
 import type { FormularioDetalhado, PerguntaDoEditor } from "@/lib/api";
 
-// ⚠️ Os avisos saíram de `window.alert` para a pilha do app (17/09). O teste
+// ⚠️ Os avisos vão para a pilha do app. O teste
 // espia o `useAvisar` em vez de montar o `AvisosProvider`.
 const avisar = vi.hoisted(() => vi.fn());
 vi.mock("@/components/Toasts", async (importOriginal) => ({
@@ -80,11 +72,9 @@ const ALVO = pergunta({
   options: ["Sessão de fotos", "Edição de fotos"],
   position: 0,
 });
-// ⚠️ ESTA PERGUNTA DE TEXTO EXISTE PARA O TESTE DO SELECT, e a razão de estar
-// aqui é uma sabotagem que passou verde: com só o ALVO antes da DEP, tirar o
-// filtro de tipo não mudava a lista oferecida, porque o único candidato já era
-// de escolha. A fixture concordava com o código por acaso -- foi o mesmo erro
-// da Spec 039 (sabotagem D), em que a ordem do array já batia com a esperada.
+// ⚠️ ESTA PERGUNTA DE TEXTO EXISTE PARA O TESTE DO SELECT: com só o ALVO antes
+// da DEP, tirar o filtro de tipo não mudaria a lista oferecida, porque o único
+// candidato já seria de escolha.
 const MEIO = pergunta({ id: "meio", label: "Observação", kind: "texto", position: 1 });
 
 const DEP = pergunta({
@@ -153,10 +143,8 @@ function formularioApertado(): FormularioDetalhado {
 }
 
 /**
- * ⚠️ `getAllByText("Editar")[0]` ERA FRÁGIL E QUEBROU. O painel do cabeçalho
- * (fatia G) nasceu acima das seções e roubou o índice 0 -- o teste da seção
- * passou a clicar no cabeçalho. Cada um passa a ser aberto pelo seu próprio
- * ancoradouro, e não por posição.
+ * ⚠️ Cada painel é aberto pelo seu próprio ancoradouro, e não por posição:
+ * `getAllByText("Editar")[0]` pega o do cabeçalho, que fica acima das seções.
  */
 async function abrirCabecalho() {
   const linha = (await screen.findByText("Cabeçalho")).closest("div")!;
@@ -184,7 +172,7 @@ afterEach(() => {
 });
 
 // =====================================================================
-// ⚠️ O cabeçalho (Spec 043, fatia G)
+// ⚠️ O cabeçalho
 // =====================================================================
 describe("o cabeçalho do formulário", () => {
   it("⚠️ NOME e E-MAIL aparecem como sempre pedidos, e explicados", async () => {
@@ -243,11 +231,8 @@ describe("o cabeçalho do formulário", () => {
   });
 
   it("⚠️ CANCELAR desfaz -- o resumo não pode mentir sobre o banco", async () => {
-    // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08, e é o de consequência mais silenciosa
-    // dos quatro. `Cancelar` só fechava o painel; o estado local guardava a
-    // mudança descartada, e o resumo fechado lia esse estado. Resultado:
-    // a tela dizia "não pede mais Polo" com o banco pedindo -- e a porta
-    // pública continuava perguntando.
+    // ⚠️⚠️ O resumo fechado não pode ler a mudança descartada: diria "não pede
+    // mais Polo" com o banco pedindo.
     montar();
     await abrirCabecalho();
     fireEvent.click(screen.getAllByRole("checkbox")[2]); // desliga Polo
@@ -258,11 +243,9 @@ describe("o cabeçalho do formulário", () => {
   });
 
   it("⚠️ e reabrir depois do Cancelar não reenvia o que foi descartado", async () => {
-    // ⚠️ O SEGUNDO ESTRAGO DO MESMO DEFEITO, e o pior: semanas depois alguém
-    // reabre para corrigir uma vírgula no título e clica Salvar. O painel
-    // manda os três rótulos sempre (é onde a intenção é decidida), então o
-    // `polo_label: null` esquecido ia junto -- e o backend, por contrato,
-    // trata `null` como DESLIGUE. O rótulo sumia sem ninguém pedir.
+    // ⚠️ O painel manda os três rótulos sempre, então um `polo_label: null`
+    // descartado iria junto num Salvar posterior -- e o backend, por contrato,
+    // trata `null` como DESLIGUE.
     vi.mocked(api.renomearFormulario).mockResolvedValue({} as never);
     montar();
     await abrirCabecalho();
@@ -324,7 +307,7 @@ describe("o corpo que sai nas escritas", () => {
   });
 
   it("⚠️ editar SEM mexer no tipo NÃO manda `options` -- omitir é 'não mexa'", async () => {
-    // ⚠️ ESTE É O TESTE QUE A FATIA B NÃO TINHA. Mandar `options: []` num
+    // ⚠️ Mandar `options: []` num
     // `texto` é inofensivo; o perigo é o contrário -- se o campo viesse sempre,
     // o backend não teria como distinguir "esvazie" de "não mexa", e quem só
     // corrigiu uma vírgula no título perderia a lista inteira.
@@ -429,7 +412,7 @@ describe("as guardas da condicional", () => {
     expect(subir.getAttribute("title")).toContain("Data da sessão");
   });
 
-  it("⚠️ e a seta do GATILHO também -- é o mesmo defeito pela outra mão", async () => {
+  it("⚠️ e a seta do GATILHO também -- é a mesma regra pela outra mão", async () => {
     // Descer o gatilho para baixo da dependente dá no mesmo que subir a
     // dependente. É fácil prender um lado e esquecer o outro.
     montar(formularioApertado());
@@ -529,11 +512,9 @@ describe("erros", () => {
   });
 
   it("⚠️ um erro NÃO apaga o que a pessoa digitou (criar seção)", async () => {
-    // ⚠️⚠️ ACHADO PELA REVISÃO DE 31/08. O helper `agir` engolia a exceção,
-    // então `await agir(…)` sempre resolvia com sucesso -- e os quatro botões
-    // de Salvar limpavam os campos e fechavam o painel MESMO com o backend
-    // recusando. A pessoa via a mensagem que NOMEIA o problema e o texto que
-    // ela precisava corrigir já tinha sumido.
+    // ⚠️⚠️ Os botões de Salvar não podem limpar os campos nem fechar o painel
+    // quando o backend recusa: a mensagem NOMEIA o problema, e o texto que a
+    // pessoa precisa corrigir tem de continuar lá.
     //
     // ⚠️ E slug repetido é a recusa mais comum aqui.
     vi.mocked(api.criarSecao).mockRejectedValue(
@@ -604,18 +585,18 @@ describe("erros", () => {
     expect(await screen.findByText(/não existe mais/i)).toBeTruthy();
   });
 
-  it("⚠️ o voltar existe -- ele já foi esquecido uma vez na tela de projeto", async () => {
+  it("⚠️ o voltar existe e leva o time do formulário", async () => {
     montar();
     const voltar = await screen.findByText("‹ Formulários");
-    // ⚠️ COM O TIME DO FORMULÁRIO (14/09): o caminho puro apagava o `?time=`
-    // e a lista caía na reserva. O fixture é do `t1`. (No ramo de erro, sem
+    // ⚠️ COM O TIME DO FORMULÁRIO: sem o `?time=`,
+    // a lista cai na reserva. O fixture é do `t1`. (No ramo de erro, sem
     // formulário carregado, o voltar segue puro -- não há time para levar.)
     expect(voltar.getAttribute("href")).toBe("/formularios?time=t1");
   });
 });
 
 /** Acha um botão pelo texto DENTRO de um trecho -- `getByText` global pegaria
- *  o da linha vizinha, que foi exatamente um erro meu na Spec 039. */
+ *  o da linha vizinha. */
 function within_(raiz: HTMLElement, texto: string): HTMLElement {
   const alvo = [...raiz.querySelectorAll("button")].find(
     (b) => b.textContent?.trim() === texto

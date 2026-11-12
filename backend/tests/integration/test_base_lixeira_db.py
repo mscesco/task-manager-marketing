@@ -1,12 +1,10 @@
-"""Spec 056, fatia D -- excluir, restaurar (D4, D5) e a rotina diaria (§11).
+"""Base: excluir, restaurar e a rotina diaria de limpeza.
 
     excluir      -> some da lista e de toda rota (404), entra na lixeira
     restaurar    -> volta com tudo; recusa se nao esta excluida, ou se o
                     prazo de 10 dias passou
     rotina       -> apaga de vez so o que passou do prazo, e tira das celulas
                     a coluna e a opcao que somem
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations

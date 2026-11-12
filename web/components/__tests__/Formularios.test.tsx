@@ -1,17 +1,12 @@
-// A tela de gestão dos formulários (Spec 043, fatia C — primeira metade).
+// A tela de gestão dos formulários.
 //
-// ⚠️ ATÉ AQUI O CRUD SÓ EXISTIA NA API. A fatia A o entregou dizendo, com
-// todas as letras, que ele nascia sem chamador no front -- e um mês depois
-// "cada equipe cria o seu formulário" ainda significaria `curl`. Esta tela é o
-// chamador, e este arquivo é o portão dela.
-//
-// O que ele prende, e cada item é uma decisão e não uma preferência:
-//   - sem `solicitation_form.manage`, a tela LÊ e não oferece ação nenhuma;
+// O que ele prende:
+//   - sem as permissões de formulário, a tela LÊ e não oferece ação nenhuma;
 //   - o aviso do EXCLUIR diz o que acontece com as solicitações que já
 //     chegaram (elas NÃO são apagadas);
 //   - a mensagem do backend aparece INTEIRA quando publicar é recusado -- é
 //     ela que ensina o próximo passo;
-//   - o time padrão é a RAIZ, e não o primeiro da lista alfabética.
+//   - o time padrão é o TIME ATIVO, e não a primeira raiz da lista.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -24,7 +19,7 @@ import {
 } from "@/lib/useActiveTeam";
 
 // ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
-// fornece (Spec 048, fatia E). Sem isto a tela fica carregando para sempre:
+// fornece. Sem isto a tela fica carregando para sempre:
 // ela ESPERA a barra resolver o time antes de listar.
 //
 // ⚠️ Variável mutável porque os testes precisam de valores diferentes, e a
@@ -129,7 +124,7 @@ describe("Formulários -- a lista", () => {
     expect(screen.getByText("Publicado")).toBeTruthy();
   });
 
-  it("⚠️ GESTOR (Spec 049, fatia D): publica, e NÃO oferece excluir", async () => {
+  it("⚠️ GESTOR: publica, e NÃO oferece excluir", async () => {
     // O botão de excluir tem o próprio verbo. Dentro de `podeGerir` ele
     // apareceria para o GESTOR e levaria 403 no clique.
     montar([formulario()], ["form.update", "form.publish"]);
@@ -155,17 +150,11 @@ describe("Formulários -- a lista", () => {
 });
 
 describe("Formulários -- criar", () => {
-  it("⚠⚠ o time padrão é o TIME ATIVO (reescrito na Spec 048)", async () => {
-    // O argumento original deste teste segue valendo, e é dele que sai a
-    // correção: *"o time é ESCOLHA DEFINITIVA, então o padrão errado vira
-    // formulário no time errado sem volta"*.
-    //
-    // ⚠️ O QUE MUDOU: o padrão era "a primeira raiz", e o comentário antigo o
-    // justificava com *"em produção o Marketing É a raiz"* -- verdade quando
-    // foi escrito, e mentira desde a Spec 046. Com duas raizes,
-    // `find(parent === null)` devolve a primeira que a API listar, e o
-    // formulário nasceria no Comercial enquanto a pessoa olha o Marketing.
-    // Mesmo defeito que o `createProject` pagou em 10/09.
+  it("⚠⚠ o time padrão é o TIME ATIVO", async () => {
+    // O time é ESCOLHA DEFINITIVA: o padrão errado vira formulário no time
+    // errado sem volta. Com duas raízes, "a primeira raiz" (`find(parent ===
+    // null)`) faria o formulário nascer no Comercial enquanto a pessoa olha o
+    // Marketing.
     contextoDoTeste = {
       active: { kind: "team", teamId: SUB, fromUrl: true },
       search: `?time=${SUB}`,
@@ -222,7 +211,7 @@ describe("Formulários -- criar", () => {
     expect(screen.getByText(/Não dá para mudar depois/i)).toBeTruthy();
   });
 
-  it("⚠️ só oferece os times em que a pessoa CRIA -- o Comercial some para o gestor do Marketing (08/10)", async () => {
+  it("⚠️ só oferece os times em que a pessoa CRIA -- o Comercial some para o gestor do Marketing", async () => {
     vi.mocked(api.listarFormularios).mockResolvedValue([]);
     vi.mocked(api.listTeamsAll).mockResolvedValue([
       time(RAIZ, "Marketing", null),
@@ -236,7 +225,7 @@ describe("Formulários -- criar", () => {
     const select = screen.getByLabelText("Time responsável") as HTMLSelectElement;
     await waitFor(() => expect(select.value).toBe(RAIZ));
     const nomes = Array.from(select.options).map((o) => o.textContent);
-    // Subtime entra (decisão dela); o Comercial não.
+    // Subtime entra; o Comercial não.
     expect(nomes).toEqual(["Marketing", "Audiovisual"]);
   });
 

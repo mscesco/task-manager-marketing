@@ -1,6 +1,8 @@
-"""Integração: GET /me/assignments (Entrega 6 / ADR 0017/0018)."""
+"""Integração: GET /me/assignments e `MeService.list_assignments`."""
 
 from __future__ import annotations
+
+from datetime import UTC, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -36,8 +38,7 @@ def _forest(r, a, b):
 
 
 async def _list(db, **kw):
-    # ⚠️ `under_team_id=None` = sem recorte por time (Spec 048). Estes testes
-    # sao sobre RELACAO e lente, nao sobre o recorte de tela -- ele tem arquivo
+    # `under_team_id=None` = sem recorte por time; o recorte tem arquivo
     # proprio (`test_tarefas_sob_o_time_db.py`).
     return await MeService(db).list_assignments(
         PageParams(size=100), relations=ALL, **kw, under_team_id=None
@@ -127,30 +128,25 @@ async def test_soft_deleted_nao_aparece(db) -> None:
             team_id=a,
             assignee_ids=[me]),
         )
+        viva = await svc.create(CreateTaskCommand(
+            title="viva",
+            project_id=proj,
+            team_id=a,
+            assignee_ids=[me]),
+        )
         await svc.soft_delete(task_id=t.id)
         page = await _list(db)
-    assert all(row.task.id != t.id for row in page.items)
+    assert {row.task.id for row in page.items} == {viva.id}
 
 
 # ----------------------------------------------------------
-# A LENTE DE TIME, aqui como em todo o resto (Spec 037, E5/E6)
+# A lente de time vale aqui: ser responsavel ou observador nao concede
+# leitura. Sem alcance, a task nao vem.
 # ----------------------------------------------------------
-# ⚠️ OS QUATRO TESTES DA MARCA DA ADR 0017 VIRARAM ESTES TRES, E A TROCA E A
-# ENTREGA. Eles afirmavam que a task fora da lente APARECIA nesta lista com um
-# booleano `True`. A ADR 0038 (E6) recusou a excecao por relacao: ser
-# responsavel ou observador nao concede leitura. Sem alcance, a task nao vem.
-#
-# ⚠️ NAO FORAM APAGADOS, foram invertidos -- os cenarios sao os mesmos (a
-# designacao feita por admin, o admin que ve tudo, a edicao que nao passa).
-# Apagar deixaria a regra sem afirmacao e nada impediria a camada (B) de sumir
-# de `list_my_relations` outra vez, em silencio.
 
 
 async def test_designado_em_subtime_invisivel_NAO_aparece(db) -> None:
-    """O cenario classico da ADR 0017: o admin me designou fora da minha lente.
-
-    Antes: aparecia com a marca `True`. Agora: nao aparece.
-    """
+    """Fui designado numa task fora da minha lente: ela nao vem."""
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
@@ -166,12 +162,8 @@ async def test_designado_em_subtime_invisivel_NAO_aparece(db) -> None:
 
 
 async def test_dentro_da_lente_aparece(db) -> None:
-    """O contrapeso, e ele nao e opcional.
-
-    ⚠️ SEM ESTE TESTE, a camada (B) poderia ser escrita larga demais e sumir
-    com TUDO -- o teste acima passaria verde com a lista vazia. Sao os dois
-    lados do mesmo filtro.
-    """
+    """Contraprova do teste acima: sem ela, um filtro que some com tudo
+    passaria verde."""
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=me, team_id=a, role="OPERATOR")
@@ -186,12 +178,8 @@ async def test_dentro_da_lente_aparece(db) -> None:
 
 
 async def test_admin_ve_de_qualquer_subtime(db) -> None:
-    """Lente `None` = ADMIN de organizacao: sem filtro de TIME (o de workspace continua).
-
-    ⚠️ ESTE E O TESTE QUE IMPEDE `_lente_de_time` DE SER CHAMADA COM `None`.
-    Escrever a camada (B) sem o `if visible is not None` barraria o admin em
-    tudo -- e os dois testes acima passariam do mesmo jeito.
-    """
+    """Lente `None` = ADMIN de organizacao: sem filtro de time (o de
+    workspace continua). Trava o `if visible is not None` da lente."""
     ws, r, a, b = await _tree(db)
     admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     outro = await f.make_user(db, workspace_id=ws)
@@ -215,17 +203,23 @@ async def test_ordena_updated_at_desc(db) -> None:
     t2 = await f.make_task(
         db, workspace_id=ws, created_by=me, team_id=a, project_id=proj, title="segunda"
     )
+    t3 = await f.make_task(
+        db, workspace_id=ws, created_by=me, team_id=a, project_id=proj, title="terceira"
+    )
+    # NOW() e constante na transacao: sem datas plantadas, todas empatam.
+    t1.updated_at = datetime(2026, 1, 2, tzinfo=UTC)
+    t2.updated_at = datetime(2026, 1, 3, tzinfo=UTC)
+    t3.updated_at = datetime(2026, 1, 1, tzinfo=UTC)
+    await db.flush()
     with acting_as(
         workspace_id=ws, user_id=me, memberships=(mship(a, "OPERATOR"),), team_tree=_forest(r, a, b)
     ):
         page = await _list(db)
-    ts = [row.task.updated_at for row in page.items]
-    assert ts == sorted(ts, reverse=True)
-    assert {t1.id, t2.id} <= {row.task.id for row in page.items}
+    assert [row.task.id for row in page.items] == [t2.id, t1.id, t3.id]
 
 
 # ----------------------------------------------------------
-# fatia HTTP
+# HTTP
 # ----------------------------------------------------------
 def _client(db, ctx):
     app = create_app()
@@ -271,12 +265,6 @@ async def test_http_200_default(db) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["total"] == 1
-    # ⚠️ O CAMPO DA ADR 0017 SAIU DO CORPO (Spec 037, E5). A assercao
-    # inverteu: antes ela exigia a presenca, agora exige a AUSENCIA. E uma
-    # mudanca de contrato da API, e e por isso que ela e afirmada em HTTP e
-    # nao so no service -- quem consome e o front, e o que ele recebe e este
-    # JSON.
-    assert "out_of_scope" not in body["items"][0]
     assert "creator" in body["items"][0]["relations"]
 
 
@@ -311,11 +299,10 @@ async def test_http_paginacao(db) -> None:
 
 
 async def test_http_item_traz_assignee_ids(db) -> None:
-    """Regressao: /me/assignments deve carregar assignee_ids (paridade com a
-    lista do quadro, ADR 0025). Sem o campo, a tela "Minhas tarefas" reaproveita
-    o item e o detalhe mostra "Ninguem designado" mesmo pra quem esta designado.
+    """O item traz `assignee_ids`, como a lista do quadro. Sem o campo, o
+    detalhe aberto de "Minhas tarefas" mostra "Ninguem designado".
 
-    Cenario do print: sou responsavel de uma task que NAO criei (creator=outro).
+    Sou responsavel de uma task que NAO criei (creator=outro).
     """
     ws, r, a, b = await _tree(db)
     me = await f.make_user(db, workspace_id=ws)

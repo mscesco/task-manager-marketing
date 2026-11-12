@@ -1,23 +1,11 @@
-"""As rotas de formulario respondem no endereco certo (Spec 043, fatia C).
+"""As rotas de formulario respondem no endereco certo.
 
-⚠️⚠️ ESTE ARQUIVO NASCEU DE UM 422 EM PRODUCAO, e o defeito nao estava em
-codigo nenhum -- estava na ORDEM DE REGISTRO dos routers.
+⚠️ O risco e a ORDEM DE REGISTRO dos routers: se o de solicitacoes vier antes,
+`GET /solicitacoes/formularios` casa com `GET /solicitacoes/{solicitation_id}`
+e devolve 422 ("formularios" nao e UUID). Testes de servico nao pegam: rota so
+quebra em rota.
 
-`GET /solicitacoes/{solicitation_id}` mora no router de solicitacoes, e ele
-estava registrado ANTES do de formularios. O FastAPI casa rota na ordem de
-registro, entao `GET /solicitacoes/formularios` batia no `{solicitation_id}`,
-tentava ler "formularios" como UUID e devolvia 422. A tela abria vazia com
-"Dados da requisicao invalidos", e nada nos 986 testes do front nem nos 924 do
-backend acusou -- porque os dois lados estavam certos, e o que estava errado
-era o encontro deles.
-
-⚠️ POR QUE OS TESTES DE SERVICO NAO PEGAM: eles chamam
-`SolicitationFormService` direto. Rota so quebra em rota, e este e o unico
-arquivo desta fatia que passa pela pilha HTTP inteira.
-
-⚠️ E O QUE ELE PRENDE NAO E "a rota funciona": e que ela NAO E 422. Um 403, um
-404 ou um 200 sao todos aceitaveis aqui -- o que nao pode acontecer e o
-FastAPI achar que "formularios" e o id de uma solicitacao.
+O que se prende e que a resposta NAO e 422; 403, 404 ou 200 sao aceitaveis.
 """
 
 from __future__ import annotations

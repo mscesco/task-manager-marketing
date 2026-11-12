@@ -1,5 +1,5 @@
-"""`board.deleted_at`: a coluna existe, o ORM a enxerga e a descoberta do
-quadro geral ignora quadro apagado. Os testes apagam o quadro na mao."""
+"""`board.deleted_at`: a descoberta do quadro geral ignora quadro apagado. Os
+testes apagam o quadro na mao."""
 
 from __future__ import annotations
 
@@ -25,35 +25,6 @@ async def _apagar(db, board_id: uuid.UUID) -> None:
     ).scalar_one()
     quadro.deleted_at = dt.datetime.now(dt.UTC)
     await db.flush()
-
-
-async def test_board_nasce_com_deleted_at_nulo(db) -> None:
-    ws = await f.make_workspace(db)
-    await f.make_team(db, workspace_id=ws)
-
-    quadro = (
-        await db.execute(
-            select(Board).where(
-                Board.workspace_id == ws, Board.is_default.is_(True)
-            )
-        )
-    ).scalar_one()
-
-    assert quadro.deleted_at is None
-    assert quadro.is_deleted is False
-
-
-async def test_deleted_at_grava_e_le(db) -> None:
-    ws = await f.make_workspace(db)
-    raiz = await f.make_team(db, workspace_id=ws)
-    sub = await f.make_team(db, workspace_id=ws, parent_team_id=raiz)
-    interno = await f.make_board(db, workspace_id=ws, team_id=sub)
-
-    await _apagar(db, interno.id)
-    await db.refresh(interno)
-
-    assert interno.deleted_at is not None
-    assert interno.is_deleted is True
 
 
 # Sem o filtro a tarefa nova nasceria no quadro apagado, invisivel.

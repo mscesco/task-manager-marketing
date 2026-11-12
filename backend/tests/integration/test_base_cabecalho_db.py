@@ -1,4 +1,4 @@
-"""Spec 056, fatia I -- o cabecalho de coluna como o do Notion, no backend.
+"""O cabecalho de coluna da Base (como o do Notion), no backend.
 
     - inserir a esquerda/direita: a coluna nasce NA posicao, e as de la em
       diante andam uma casa;
@@ -7,8 +7,6 @@
     - ⚠️ o Ctrl+Z de um renomear continua valendo depois de outra coluna ser
       inserida a esquerda -- a posicao empurrada nao e conflito;
     - congelar: `frozen_column` e aceito na config da visao.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -119,7 +117,7 @@ async def test_congelar_e_aceito_na_config_da_visao(db) -> None:
     assert visao.config == {"frozen_column": str(m["coluna"])}
 
 
-# ------------------------------------------------------------ arrastar (14/10)
+# ------------------------------------------------------------ arrastar
 
 
 async def _tres_colunas(db, m: dict) -> None:

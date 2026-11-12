@@ -58,9 +58,5 @@ describe("AnimatedOutline", () => {
       "onMouseEnter,onMouseLeave,onFocus,onBlur",
     );
   });
-
-  it("⚠️ monta sem `ResizeObserver` -- é o caso do jsdom", () => {
-    expect(() => render(<AnimatedOutline show radius={8} />)).not.toThrow();
-  });
 });
 

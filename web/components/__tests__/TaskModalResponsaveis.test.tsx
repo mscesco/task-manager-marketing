@@ -242,7 +242,7 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     expect(api.listMembersDoTime).toHaveBeenCalledWith(RAIZ);
   });
 
-  it("com a raiz na prop, nem PERGUNTA a raiz (07/10: o Next 15 mostrava o erro na tela)", async () => {
+  it("com a raiz na prop, nem PERGUNTA a raiz", async () => {
     // Sem pergunta, sem `console.error` (o Next desenha por cima da tela em dev).
     mocksComDuasRaizes();
     const erro = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -264,7 +264,7 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     }
   });
 
-  it("⚠️ O SELETOR DE PROJETO CONTINUA NA TELA (a outra metade do defeito)", async () => {
+  it("⚠️ com a raiz na prop, o SELETOR DE PROJETO CONTINUA NA TELA", async () => {
     // `teamId` responde o escopo e `internal` o seletor de projeto; separados,
     // responder a raiz não apaga o seletor.
     mocksComDuasRaizes();

@@ -1,4 +1,4 @@
-"""Soft-delete cascateado + cascade_count + history (ADR 0005)."""
+"""Soft-delete cascateado + cascade_count + history."""
 
 from __future__ import annotations
 
@@ -113,12 +113,10 @@ async def test_history_deleted_com_cascade_count(db) -> None:
 
 
 async def test_apagar_PROJETO_deixa_as_tarefas_avulsas_e_abriveis(db) -> None:
-    """⚠️ Auditoria de 21/10: apagar o projeto so marcava `project.deleted_at`.
+    """Apagar o projeto deixa as tarefas avulsas, abriveis e editaveis.
 
-    As tarefas continuavam nas listas (o join com projeto nao filtra apagado),
-    mas abrir, editar ou arquivar dava 404 ate para o ADMIN: a guarda de
-    visibilidade nao acha o projeto e trata como inconsistencia. A tela promete
-    que elas "ficam no quadro sem projeto" -- e e isso que o teste prende.
+    Se so marcasse `project.deleted_at`, elas seguiriam nas listas mas dariam
+    404 ao abrir: a guarda de visibilidade nao acharia o projeto.
     """
     from app.modules.tasks.application.project_service import ProjectService
 

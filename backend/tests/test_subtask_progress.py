@@ -1,16 +1,12 @@
-"""Regras da checklist de subtarefa -- teste PURO (Spec 042).
+"""Regras da checklist de subtarefa, puras.
 
-⚠️ CADA TESTE AQUI CORRESPONDE A UM DEFEITO QUE JA FOI PARA A TELA, e os
-quatro estao documentados em `domain/subtask_progress.py` e no gemeo do front
-(`web/lib/subtarefas.ts::progresso`). Este arquivo e a trava que impede a
-regra de ser "simplificada" de volta.
+As regras estao documentadas em `domain/subtask_progress.py` e no gemeo do
+front (`web/lib/subtarefas.ts::progresso`). Este arquivo impede que sejam
+"simplificadas".
 
-⚠️ A PARIDADE COM A QUERY NAO E TESTADA AQUI. Este arquivo prova a regra; o
-teste de integracao (`tests/integration/`) prova que
-`TaskRepository.subtask_progress_for_tasks` devolve o MESMO numero. Os dois
-sao obrigatorios -- e a mesma dupla pure-domain + SQL de `archival.py` e
-`board_semantics.py`, e o motivo de existir e que sem o par a query faz uma
-coisa, o unitario prova outra, e os dois ficam verdes.
+A paridade com a query NAO e testada aqui: o teste de integracao prova que
+`TaskRepository.subtask_progress_for_tasks` devolve o MESMO numero. Sem o par,
+a query faz uma coisa, o unitario prova outra, e os dois ficam verdes.
 """
 
 from __future__ import annotations
@@ -55,7 +51,7 @@ def test_conta_pela_coluna_DONE():
 
 
 def test_cancelada_NAO_conta_como_concluida():
-    """⚠️ Regra (b). `DONE` e nao terminal.
+    """Regra (b). `DONE` e nao terminal.
 
     Trocar por "terminal" faria subtarefa CANCELADA aparecer como entregue na
     barra. E a mesma distincao que o enum ja registra: DONE e CANCELLED nao
@@ -67,7 +63,7 @@ def test_cancelada_NAO_conta_como_concluida():
 
 
 def test_arquivada_sai_do_numerador_E_do_denominador():
-    """⚠️ Regra (c).
+    """Regra (c).
 
     A checklist responde "quanto falta do trabalho vivo". Contar o que saiu do
     fluxo faria a porcentagem CAIR quando alguem arquiva -- o oposto de
@@ -84,7 +80,7 @@ def test_arquivada_sai_do_numerador_E_do_denominador():
 
 
 def test_filha_so_arquivada_da_zero_sobre_zero():
-    """⚠️ Consequencia DELIBERADA da regra (c), e ela ja confundiu antes.
+    """Consequencia deliberada da regra (c).
 
     A tela desenha as linhas (a checklist mostra as arquivadas quando a caixa
     esta marcada) e NAO desenha contador nem barra -- nao ha trabalho vivo
@@ -96,7 +92,7 @@ def test_filha_so_arquivada_da_zero_sobre_zero():
 
 
 def test_coluna_desconhecida_nao_conclui_mas_entra_no_total():
-    """⚠️ Regra (d).
+    """Regra (d).
 
     Sumir do denominador inflaria a porcentagem em silencio: duas filhas, uma
     concluida e uma sem coluna resolvida, mostrariam 100%.

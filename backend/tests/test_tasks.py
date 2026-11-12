@@ -1,20 +1,6 @@
-"""Testes do submodulo Tasks.
-
-Cobertura nesta suite (pura logica, sem DB):
-    - Defaults dos commands.
-    - _label_for (formato t<hex>).
-    - _compute_path_and_depth (raiz e com pai).
-    - _validate_dates (todas as combinacoes).
-    - _diff_for_update:
-        * PATCH sem mudancas -> 0 entries
-        * PATCH 1 campo -> 1 entry
-        * PATCH N campos -> N entries
-        * PATCH status -> STATUS_CHANGED
-        * PATCH title igual -> 0 entries (sem fantasma)
-    - Builders de history (CREATED, MOVED, DELETED com cascade).
-
-Testes que exercitam escrita real no Postgres (hierarquia, move
-cascateado, history) ficam na suite de integracao separada.
+"""Tasks, logica pura: label LTREE, path/depth, datas e hora, diff do PATCH
+para o historico e builders de historico. Escrita real no Postgres fica em
+`tests/integration/`.
 """
 
 from __future__ import annotations
@@ -27,12 +13,11 @@ import pytest
 
 from app.db.models.enums import PriorityLevel, TaskStatus
 from app.modules.tasks.application.task_service import (
-    CreateTaskCommand,
-    MoveTaskCommand,
     TaskFilters,
     TaskService,
     UpdateTaskCommand,
 )
+from app.modules.tasks.domain.dates import validate_dates
 from app.modules.tasks.domain.history import (
     TaskHistoryEventType,
     build_created_entry,
@@ -68,45 +53,8 @@ def _fake_task(**kwargs) -> _FakeTask:
 
 
 # --------------------------------------------------------
-# Commands / defaults
+# Filtros
 # --------------------------------------------------------
-def test_create_command_defaults() -> None:
-    """CreateTaskCommand tem defaults previsiveis."""
-    cmd = CreateTaskCommand(project_id=uuid.uuid4(), title="X")
-    assert cmd.title == "X"
-    assert cmd.description == ""
-    assert cmd.parent_task_id is None
-    assert cmd.team_id is None
-    assert cmd.status == TaskStatus.BACKLOG
-    assert cmd.priority == PriorityLevel.MEDIUM
-    assert cmd.start_date is None
-    assert cmd.due_date is None
-
-
-def test_update_command_defaults_all_none() -> None:
-    """UpdateTaskCommand -- todos None significa 'nao mexer'."""
-    cmd = UpdateTaskCommand()
-    assert all(
-        v is None
-        for v in (
-            cmd.title,
-            cmd.description,
-            cmd.status,
-            cmd.priority,
-            cmd.team_id,
-            cmd.start_date,
-            cmd.due_date,
-        )
-    )
-
-
-def test_move_command_defaults_all_none() -> None:
-    """MoveTaskCommand sem args = no-op silencioso."""
-    cmd = MoveTaskCommand()
-    assert cmd.parent_task_id is None
-    assert cmd.project_id is None
-
-
 def test_task_filters_default_excludes_archived() -> None:
     f = TaskFilters()
     assert f.include_archived is False
@@ -118,20 +66,12 @@ def test_task_filters_default_excludes_archived() -> None:
 # _label_for
 # --------------------------------------------------------
 def test_label_for_format() -> None:
-    """Label = 't' + uuid.hex (ADR 0002)."""
+    """Label = 't' + uuid.hex, sem hifen (invalido em LTREE)."""
     task_id = uuid.UUID("f81d4fae-7dec-11d0-a765-00a0c91e6bf6")
     label = TaskService._label_for(task_id)
     assert label == "tf81d4fae7dec11d0a76500a0c91e6bf6"
     assert label.startswith("t")
     assert len(label) == 33  # 't' + 32 hex chars
-
-
-def test_label_for_no_hyphens() -> None:
-    """Label nao pode conter hifens (invalido em LTREE)."""
-    for _ in range(20):
-        label = TaskService._label_for(uuid.uuid4())
-        assert "-" not in label
-        assert all(c.isalnum() or c == "_" for c in label)
 
 
 # --------------------------------------------------------
@@ -153,38 +93,35 @@ def test_compute_path_and_depth_with_parent() -> None:
 
 
 # --------------------------------------------------------
-# _validate_dates
+# validate_dates (TaskService e ProjectService usam a mesma)
 # --------------------------------------------------------
-def test_validate_dates_none_combinations() -> None:
-    TaskService._validate_dates(None, None)
-    TaskService._validate_dates(date(2026, 1, 1), None)
-    TaskService._validate_dates(None, date(2026, 1, 1))
-
-
-def test_validate_dates_equal_dates_ok() -> None:
-    d = date(2026, 1, 1)
-    TaskService._validate_dates(d, d)
-
-
-def test_validate_dates_start_before_due_ok() -> None:
-    TaskService._validate_dates(date(2026, 1, 1), date(2026, 6, 1))
+@pytest.mark.parametrize(
+    ("start", "due"),
+    [
+        (None, None),
+        (date(2026, 1, 1), None),
+        (None, date(2026, 1, 1)),
+        (date(2026, 1, 1), date(2026, 1, 1)),
+        (date(2026, 1, 1), date(2026, 6, 1)),
+    ],
+)
+def test_validate_dates_aceita(start: date | None, due: date | None) -> None:
+    validate_dates(start, due)
 
 
 def test_validate_dates_rejects_start_after_due() -> None:
     with pytest.raises(ValidationError) as exc:
-        TaskService._validate_dates(date(2026, 6, 1), date(2026, 1, 1))
+        validate_dates(date(2026, 6, 1), date(2026, 1, 1))
     assert exc.value.details["field"] == "due_date"
 
 
 # --------------------------------------------------------
-# _validate_hora  (Spec 038, fatia B)
+# _validate_hora
 #
-# ⚠️ POR QUE ESTA REGRA E DO SERVICO, E NAO DO SCHEMA. Um `@model_validator` no
-# Pydantic devolveria **500 e nao 422** neste projeto -- medido, e anotado no
-# `TaskUpdateRequest` para a exclusao mutua entre `status` e `column_id`.
+# A regra fica no servico, nao no schema: um `@model_validator` no Pydantic
+# devolve 500 e nao 422 neste projeto (ver `TaskUpdateRequest`).
 # --------------------------------------------------------
 def test_validate_hora_sem_hora_sempre_passa() -> None:
-    """`None` em `due_time` e o estado de 100% das tarefas ate 18/08."""
     TaskService._validate_hora(None, None)
     TaskService._validate_hora(date(2026, 8, 19), None)
 
@@ -194,35 +131,20 @@ def test_validate_hora_com_data_e_hora_passa() -> None:
 
 
 def test_validate_hora_recusa_hora_sem_data() -> None:
-    """⚠️ HORA SOZINHA NAO SITUA NADA, e guardada vira dado orfao.
-
-    Ela ficaria invisivel na tela (que so desenha hora ao lado de data), viva no
-    banco, e pronta para reaparecer com o dia errado no primeiro PATCH que
-    preenchesse `due_date`.
-    """
+    """Hora sem data vira dado orfao: invisivel na tela e pronta para
+    reaparecer com o dia errado no primeiro PATCH que preencher `due_date`."""
     with pytest.raises(ValidationError) as exc:
         TaskService._validate_hora(None, time(18, 0))
     assert exc.value.details["field"] == "due_time"
 
 
 def test_validate_hora_meia_noite_NAO_e_ausencia() -> None:
-    """⚠️ `time(0, 0)` E UMA HORA, e o teste existe por causa do desenho.
-
-    Este e o caso que fez o `timestamptz` ser recusado: com um timestamp unico,
-    "vence dia 19" e "vence dia 19 a meia-noite" sao o mesmo valor. Aqui sao
-    estados distintos -- `None` contra `time(0, 0)` -- e uma implementacao que
-    tratasse meia-noite como "sem hora" (um `if not due_time:` no lugar de
-    `is not None`) faria os dois voltarem a colidir.
-    """
+    """`time(0, 0)` e uma hora, distinta de `None`. Um `if not due_time:` no
+    lugar de `is not None` faria "vence dia 19" e "vence dia 19 a
+    meia-noite" colidirem."""
     TaskService._validate_hora(date(2026, 8, 19), time(0, 0))
     with pytest.raises(ValidationError):
         TaskService._validate_hora(None, time(0, 0))
-
-
-def test_update_command_aceita_due_time() -> None:
-    """O campo existe no comando, com default `None`."""
-    cmd = UpdateTaskCommand()
-    assert cmd.due_time is None
 
 
 # --------------------------------------------------------

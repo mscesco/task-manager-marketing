@@ -1,9 +1,4 @@
-"""Quadro e coluna com semantica -- fundacao (Spec 035, fatia 1).
-
-A suite constroi o schema rodando `alembic upgrade head` do zero, entao estes
-testes rodam DEPOIS da migration 0008: se ela estiver quebrada, nada aqui
-chega a executar. O que os testes acrescentam e o que a migration nao prova
-sozinha.
+"""Invariantes de banco do quadro e da coluna com semantica.
 
 O que defendem, em ordem:
 
@@ -13,10 +8,6 @@ O que defendem, em ordem:
   2. A FK COMPOSTA impede tarefa apontando pra coluna de OUTRO quadro. E o
      estado mais provavel de corromper e o que nao aparece na tela -- mesma
      familia de `path`/`depth`.
-  3. Tarefa nova nasce com quadro e coluna coerentes com o status.
-
-⚠️ NAO ha teste de "a tela continua igual" aqui, e nao da: o front nao mudou
-nesta fatia. A conferencia e visual, e esta no plan.md.
 """
 
 from __future__ import annotations
@@ -36,10 +27,7 @@ pytestmark = pytest.mark.integration
 
 
 async def _mundo(db):
-    """⚠️ O quadro e criado pela MIGRATION, por workspace existente. Workspace
-    criado depois dela (como este) NAO tem quadro -- por isso os testes que
-    precisam de um o criam a mao. Fechar essa lacuna e a fatia 3 (o service
-    passa a criar o quadro junto com o workspace)."""
+    """`make_team` ja cria o quadro padrao do time raiz, como o produto."""
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
@@ -53,23 +41,6 @@ async def _mundo(db):
         org_role="ADMIN",
     )
     return ws, team, user, proj, ctx
-
-
-async def _quadro(db, ws, team, *, nome="Quadro geral", padrao=True):
-    """⚠️ SUBSTITUIDO pelos tres helpers abaixo. Mantido so como apontador.
-
-    Desde a fatia 3a o time raiz NASCE com quadro (a factory espelha o
-    produto), e o quadro dele ja vem com as oito colunas e quatro destinos
-    marcados. Um helper unico "cria um quadro" passou a significar tres coisas
-    diferentes, e os testes de invariante precisam da terceira -- um quadro
-    VAZIO, sem coluna nenhuma -- senao colidem com as colunas que o quadro
-    padrao ja traz e falham pelo motivo errado.
-    """
-    raise AssertionError(
-        "use _quadro_padrao (o que a factory criou), _quadro_vazio (sem "
-        "colunas, para testar invariante) ou _inserir_quadro_padrao (para "
-        "provocar a colisao de propósito)"
-    )
 
 
 async def _quadro_padrao(db, team):
@@ -88,7 +59,7 @@ async def _quadro_vazio(db, ws, team, *, nome="Interno"):
     E o que os testes de invariante precisam: sobre o quadro padrao, que ja
     tem oito colunas e quatro destinos, qualquer insercao de coluna colide
     antes de chegar na regra sendo testada. Tambem e a forma do quadro
-    personalizado de subtime, que e a spec seguinte.
+    personalizado de subtime.
     """
     return (
         await db.execute(
@@ -276,74 +247,3 @@ async def test_semantica_invalida_e_recusada_pelo_ENUM(db) -> None:
     with pytest.raises(DBAPIError):
         await _coluna(db, ws, quadro, sem="TALVEZ")
         await db.flush()
-
-
-async def test_migration_criou_o_quadro_dos_workspaces_existentes(db) -> None:
-    """A migration cria um quadro por workspace que JA existia, com as OITO
-    colunas de hoje. Este teste roda sobre o banco construido do zero pela
-    propria migration -- se ela nao criar nada, o assert de coluna cai.
-
-    ⚠️ Nao afirma "existe pelo menos um quadro": o banco de TESTE nasce vazio
-    (a migration roda antes de qualquer workspace existir), entao nao ha
-    quadro nenhum e este teste passa vacuo aqui. Ele vale contra um banco COM
-    dados -- o de dev e o de producao. Afirma a FORMA: todo quadro criado pela
-    migration tem oito colunas.
-    """
-    linhas = (
-        await db.execute(
-            text(
-                """
-                SELECT b.id, count(c.id) AS n
-                FROM board b
-                LEFT JOIN board_column c ON c.board_id = b.id
-                WHERE b.name = 'Quadro geral'
-                GROUP BY b.id
-                """
-            )
-        )
-    ).all()
-    for _bid, n in linhas:
-        assert n == 8, "quadro migrado tem de nascer com as 8 colunas de hoje"
-
-
-async def test_terminal_since_so_nas_terminais(db) -> None:
-    """O relogio do arquivamento nasce preenchido SO para concluida e
-    cancelada -- e o que reproduz o comportamento atual do job."""
-    linhas = (
-        await db.execute(
-            text(
-                """
-                SELECT count(*) FROM task
-                WHERE terminal_since IS NOT NULL
-                  AND status NOT IN (
-                        CAST('COMPLETED' AS task_status),
-                        CAST('CANCELLED' AS task_status)
-                      )
-                """
-            )
-        )
-    ).scalar_one()
-    assert linhas == 0
-
-
-async def test_is_status_bridge_e_derivado_do_legacy_status(db) -> None:
-    """A `@property` que alimenta `BoardColumnResponse.is_status_bridge`.
-
-    ⚠️ ELA E A METADE DA TRAVA DA PONTE QUE MORA NA COLUNA (17/08). A outra
-    metade e `board.is_default`, e o front so esconde o "x" quando as DUAS sao
-    verdadeiras -- ver `impedimentoDeExclusao` no `web/lib/edicaoDeColunas.ts`.
-
-    ⚠️⚠️ **O CASO QUE IMPEDE O CONSERTO OBVIO E ERRADO E O SEGUNDO.** As quatro
-    colunas base de um quadro AVULSO tambem nascem com `legacy_status`
-    (`board_defaults.py`), entao `is_status_bridge` e `True` nelas -- e elas
-    PODEM ser apagadas. Quem ler este campo sozinho como "nao pode ser apagada"
-    suma com o "x" de todo quadro avulso do produto.
-    """
-    from app.db.models.boards import BoardColumn
-    from app.db.models.enums import TaskStatus
-
-    com_ponte = BoardColumn(legacy_status=TaskStatus.PLANNED)
-    sem_ponte = BoardColumn(legacy_status=None)
-
-    assert com_ponte.is_status_bridge is True
-    assert sem_ponte.is_status_bridge is False

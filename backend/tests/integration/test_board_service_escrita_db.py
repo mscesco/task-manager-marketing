@@ -1,6 +1,6 @@
-"""Fatia 5b-3 -- quem cria e renomeia quadro, e sobre qual time.
+"""Quem cria e renomeia quadro, e sobre qual time.
 
-⚠️ ESTA E A MATRIZ, E ELA E O PONTO INTEIRO DA FATIA. Errar uma celula abre
+⚠️ Errar uma celula desta matriz abre
 escrita para quem nao devia, e o modo de falha e a requisicao ter EXITO -- nao
 ha FK, tipo nem constraint que perceba. Nenhum portao automatico existe para
 isto alem destes testes.
@@ -18,8 +18,8 @@ diz \"o que\", nao \"onde\". Sem `_assert_pode_gerir`, qualquer supervisor
 administra o quadro de qualquer subtime e as outras onze celulas continuam
 verdes.
 
-⚠️ ADMIN aqui e ADMIN DE ORGANIZACAO (`org_role`); desde a 0031 nao existe
-vinculo ADMIN de time.
+⚠️ ADMIN aqui e ADMIN DE ORGANIZACAO (`org_role`); nao existe vinculo ADMIN de
+time.
 
 ⚠️ `ADMIN x subtime` NAO E OBVIA e por isso tem teste proprio: o ADMIN nao e
 SUPERVISOR de subtime nenhum, entao a pergunta de escopo o barraria. E a saida
@@ -59,7 +59,7 @@ async def _mundo(db):
 
 
 def _ctx(ws, user, arvore, *membros, org_role=None):
-    # ⚠️ ADMIN entra por `org_role`: desde a 0031 nao e mais papel de time.
+    # ⚠️ ADMIN entra por `org_role`: nao e papel de time.
     return dict(
         workspace_id=ws,
         user_id=user,
@@ -120,7 +120,7 @@ async def test_quadro_criado_nasce_com_as_quatro_colunas_base(db) -> None:
         assert obtida.is_default_target is esperada.is_default_target, posicao
         assert obtida.position == posicao
 
-    # Uma coluna alvo por semantica -- e o que a ADR 0042 consulta no degrau 2.
+    # Uma coluna alvo por semantica -- e o que a criacao de tarefa consulta.
     alvos = {c.semantic for c in colunas if c.is_default_target}
     assert alvos == set(ColumnSemantic)
 
@@ -136,9 +136,7 @@ async def test_supervisor_cria_quadro_no_proprio_subtime(db) -> None:
 
 
 async def test_supervisor_NAO_cria_quadro_em_subtime_alheio(db) -> None:
-    """⚠️ A CELULA QUE CARREGA A FATIA.
-
-    O mapa de permissao responde `board.manage.subteam` = sim para este ator.
+    """⚠️ O mapa de permissao responde `board.manage.subteam` = sim para este ator.
     Sem a trava de escopo, o quadro NASCE -- com exito, sem erro, no time de
     outra pessoa.
     """
@@ -151,7 +149,7 @@ async def test_supervisor_NAO_cria_quadro_em_subtime_alheio(db) -> None:
 
 
 async def test_supervisor_NAO_cria_quadro_na_raiz(db) -> None:
-    """A linha que separa o supervisor do Quadro geral (176 tarefas, 11/08)."""
+    """A linha que separa o supervisor do Quadro geral."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         with pytest.raises(AuthorizationError):
@@ -235,35 +233,6 @@ async def test_nome_longo_demais_e_recusado_antes_do_banco(db) -> None:
 # ---------------------------------------------------------------- renomear
 
 
-async def test_renomear_usa_a_mesma_trava_de_escopo(db) -> None:
-    """A trava e UMA, e os dois metodos a chamam.
-
-    O supervisor de A NAO renomeia o quadro de B.
-
-    ⚠️ O QUADRO DE B VEM DA FACTORY, E NAO DO SERVICO. A primeira versao o
-    criava chamando `criar_quadro` como ADMIN -- e o teste passou a cair
-    tambem quando a sabotagem quebrava a SAIDA DO ADMIN, ou seja, pelo setup e
-    nao pela afirmacao. Medido em 11/08: a sabotagem da saida derrubava tres
-    testes e este era o terceiro, pelo motivo errado. Setup nao exercita o
-    codigo sob teste.
-    """
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro_b = await f.make_board(
-        db,
-        workspace_id=ws,
-        team_id=sub_b,
-        name="Do B",
-        colunas=COLUNAS_BASE,
-    )
-    await db.flush()
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).renomear_quadro(
-                board_id=quadro_b.id, nome="Sequestrado"
-            )
-
-
 async def test_renomear_recusado_nao_muda_o_nome(db) -> None:
     """O 403 acontece ANTES da atribuicao -- e isto afirma o banco.
 
@@ -304,7 +273,7 @@ async def test_renomear_recusado_nao_muda_o_nome(db) -> None:
 async def test_renomear_nao_mexe_em_time_nem_em_colunas(db) -> None:
     """⚠️ Renomear e SO o nome.
 
-    `team_id` decide quem enxerga o quadro (ADR 0035 D3): mudar de time seria
+    `team_id` decide quem enxerga o quadro: mudar de time seria
     uma operacao de visibilidade disfarcada de edicao, e as tarefas de dentro
     mudariam de publico sem historico.
     """
@@ -341,10 +310,7 @@ async def test_renomear_nao_mexe_em_time_nem_em_colunas(db) -> None:
 
 
 async def test_admin_renomeia_o_quadro_geral(db) -> None:
-    """Renomear o geral e permitido -- nao mexe em coluna nenhuma.
-
-    Apagar e editar COLUNA do geral e que continuam fora, na 5b-4.
-    """
+    """Renomear o geral e permitido, e ele continua padrao."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = (
         await db.execute(

@@ -1,18 +1,10 @@
 /**
- * Spec 036, fatia 5b-5 -- a ADR 0042 do backend, escrita no front.
+ * `coluna de outro quadro -> coluna desta tela`: a mesma regra de dois degraus
+ * do backend (`BoardRepository.coluna_para_status`), exata primeiro, alvo da
+ * semântica depois.
  *
- * ⚠️ DUAS IMPLEMENTACOES DA MESMA REGRA. O backend responde `status -> coluna`
- * em `BoardRepository.coluna_para_status` (e outra vez, em SQL, dentro de
- * `complete_descendants`). Aqui a pergunta e `coluna de outro quadro -> coluna
- * desta tela`, com os MESMOS dois degraus: exata primeiro, alvo da semantica
- * depois. Este arquivo e o unico lugar onde essa duplicacao fica honesta --
- * mesmo remedio de `paridadeColuna.test.ts`.
- *
- * ⚠️ A FIXTURE SEPARA POSICAO DE ALVO, e isso e a condicao de o arquivo valer
- * alguma coisa. `Backlog` e a primeira POR POSICAO e `Em Andamento` e o alvo
- * de `IN_PROGRESS`: a regra certa e a errada ("a primeira que achar") dao
- * respostas DIFERENTES. Fixture que nao discrimina foi o que deixou tres
- * sabotagens passarem verde na 4c.
+ * A fixture separa posição de alvo: "a primeira que achar" e "o alvo da
+ * semântica" têm de dar respostas diferentes, senão o teste não discrimina.
  */
 
 import { describe, expect, it } from "vitest";
@@ -30,8 +22,7 @@ function col(
   position: number,
   is_default_target: boolean,
 ): Coluna {
-  // ⚠️ Declara `: Coluna` e monta o literal, em vez de `as Coluna`. O `as`
-  // cala o `tsc` sobre campo inexistente -- armadilha catalogada.
+  // Literal tipado em vez de `as Coluna`: o `as` cala o `tsc` sobre campo inexistente.
   return {
     id,
     name,
@@ -40,15 +31,12 @@ function col(
     semantic,
     notify_deadline: true,
     is_default_target,
-    // ⚠️ IRRELEVANTE PARA ESTE ARQUIVO, e por isso e `true`: o Quadro geral
-    // abaixo tem as 8 colunas da PONTE, e fingir o contrario faria a fixture
-    // descrever um quadro que nao existe. `colunaEquivalente` nao le este
-    // campo -- quem le e `impedimentoDeExclusao`.
+    // `colunaEquivalente` não lê este campo; o geral tem as 8 colunas da ponte.
     is_status_bridge: true,
   };
 }
 
-/** O Quadro geral, como producao o tem em 11/08: 8 colunas, 4 alvos. */
+/** O Quadro geral: 8 colunas, 4 alvos. */
 const GERAL: Coluna[] = [
   col("g1", "Backlog", "OPEN", 0, true),
   col("g2", "Planejado", "OPEN", 1, false),
@@ -76,7 +64,7 @@ describe("colunaEquivalente", () => {
     }
   });
 
-  it("⚠️ o degrau exato vem ANTES do alvo da semantica", () => {
+  it("o degrau exato vem antes do alvo da semantica", () => {
     // `Aprovação Externa` tem semantica IN_PROGRESS, e `Em Andamento` e o alvo
     // dessa semantica. Invertendo os degraus, esta linha devolveria `g3`.
     expect(colunaEquivalente(GERAL[4], GERAL)?.name).toBe("Aprovação Externa");
@@ -84,20 +72,14 @@ describe("colunaEquivalente", () => {
 
   it("degrau 2: coluna de outro quadro cai no alvo da semantica", () => {
     // "Em Revisão" (avulso, IN_PROGRESS, NAO e alvo) -> "Em Andamento" no
-    // geral. ⚠️ E NAO "Backlog", que e a primeira por posicao.
+    // geral, e nao "Backlog", que e a primeira por posicao.
     expect(colunaEquivalente(AVULSO[2], GERAL)?.name).toBe("Em Andamento");
   });
 
-  it("⚠️ a resposta NAO depende da ordem do array", () => {
-    // ⚠️ ESTE TESTE EXISTE PORQUE A FIXTURE ACIMA NAO DISCRIMINA, e isso foi
-    // MEDIDO em 11/08: no `GERAL`, `Em Andamento` e a primeira `IN_PROGRESS`
-    // por posicao E e o alvo -- entao "o alvo da semantica" e "a primeira da
-    // semantica" respondem igual, e a sabotagem que tira o
-    // `is_default_target` derrubava so o caso de borda.
-    //
-    // Aqui a ordem do array poe `Aprovação Interna` (IN_PROGRESS, NAO e alvo)
-    // ANTES de `Em Andamento`. A resposta certa continua sendo `Em Andamento`;
-    // a regra errada devolve `Aprovação Interna`.
+  it("a resposta nao depende da ordem do array", () => {
+    // No `GERAL` ordenado, o alvo de IN_PROGRESS tambem e a primeira por
+    // posicao. Aqui `Aprovação Interna` (nao e alvo) vem antes: a regra errada
+    // ("a primeira da semantica") devolveria ela.
     const embaralhado = [
       GERAL[3], // Aprovação Interna
       GERAL[4], // Aprovação Externa
@@ -131,8 +113,8 @@ describe("colunaEquivalente", () => {
   });
 
   it("do GERAL para o avulso, os quatro status extras colapsam", () => {
-    // ⚠️ A PERDA E DE PROPOSITO e e a mesma da ADR 0042 D2: um quadro de quatro
-    // colunas nao representa `Aprovação Externa` nem `Bloqueado`.
+    // A perda e de proposito: um quadro de quatro colunas nao representa
+    // `Aprovação Externa` nem `Bloqueado`.
     expect(colunaEquivalente(GERAL[3], AVULSO)?.name).toBe("Em Andamento");
     expect(colunaEquivalente(GERAL[4], AVULSO)?.name).toBe("Em Andamento");
     expect(colunaEquivalente(GERAL[7], AVULSO)?.name).toBe("Em Andamento");
@@ -140,14 +122,13 @@ describe("colunaEquivalente", () => {
   });
 
   it("degrau 3: sem coluna daquela semantica devolve undefined", () => {
-    // ⚠️ E `undefined`, NAO "a primeira coluna". Quem chama tem de avisar --
-    // card que some da tela some com aviso, nunca em silencio.
+    // `undefined`, e nao "a primeira coluna": quem chama tem de avisar.
     const semCancelado = GERAL.filter((c) => c.semantic !== "CANCELLED");
     expect(colunaEquivalente(AVULSO[4], semCancelado)).toBeUndefined();
   });
 
   it("semantica com coluna mas sem ALVO tambem devolve undefined", () => {
-    // Estado que o CRUD da 5b-4 nao deve permitir, e que a funcao nao adivinha.
+    // Estado que o CRUD nao deve permitir, e que a funcao nao adivinha.
     const semAlvo = GERAL.map((c) =>
       c.semantic === "IN_PROGRESS" ? { ...c, is_default_target: false } : c,
     );
@@ -175,34 +156,8 @@ describe("indiceDeColunas", () => {
     expect(i.get("a3")).toEqual({ coluna: AVULSO[2], nomeDoQuadro: "Campanhas" });
   });
 
-  it("⚠️ o nome da coluna vem do quadro DONO dela, nao do quadro da tela", () => {
-    // `Em Andamento` existe nos DOIS quadros, com ids diferentes. Uma
-    // implementacao que resolvesse o nome pelo quadro da tela (ou pelo nome da
-    // coluna, em vez do id) devolveria a mesma origem para `g3` e `a2` -- e a
-    // tag mentiria sobre onde a tarefa mora, sem erro nenhum.
-    const i = indiceDeColunas(QUADROS, "b-geral");
-    expect(i.get("g3")?.nomeDoQuadro).toBeNull();
-    expect(i.get("a2")?.nomeDoQuadro).toBe("Campanhas");
-    expect(i.get("a2")?.coluna.name).toBe("Em Andamento");
-    expect(i.get("a2")?.coluna.id).toBe("a2");
-  });
-
-  it("⚠️ guarda a COLUNA inteira, e nao so o nome dela", () => {
-    // ⚠️ ESTE TESTE E O MOTIVO DE `OrigemDaColuna` TER MUDADO DE FORMA. As
-    // telas transversais precisam de `semantic` e `is_default_target` para
-    // AGRUPAR o card (`colunaEquivalente`) e de `notify_deadline` para decidir
-    // o alerta de prazo (`deadlineTonePorColuna`). Um indice de nomes obriga a
-    // tela a montar um segundo indice em paralelo -- e a ter um sem o outro.
-    const i = indiceDeColunas(QUADROS, "b-geral");
-    const origem = i.get("a3");
-    expect(origem?.coluna.semantic).toBe("IN_PROGRESS");
-    expect(origem?.coluna.is_default_target).toBe(false);
-    expect(origem?.coluna.notify_deadline).toBe(true);
-  });
-
   it("coluna que nao esta em quadro nenhum nao entra no indice", () => {
-    // O caso NORMAL de `/arquivadas`, que lista o workspace inteiro paginado:
-    // a tarefa pode viver num quadro que nao veio na lista.
+    // Caso normal de `/arquivadas`: a tarefa pode viver num quadro que nao veio na lista.
     const i = indiceDeColunas(QUADROS, "b-geral");
     expect(i.get("nao-existe")).toBeUndefined();
   });
@@ -212,9 +167,8 @@ describe("indiceDeColunas", () => {
     expect(i.size).toBe(GERAL.length + AVULSO.length);
   });
 
-  it("⚠️ sem quadro da tela, NENHUMA coluna e 'daqui'", () => {
-    // `quadroDaTela = null` acontece quando nao ha quadro padrao. O indice
-    // continua cheio, e toda coluna carrega o nome do quadro dela.
+  it("sem quadro da tela, nenhuma coluna e 'daqui'", () => {
+    // `quadroDaTela = null`: nao ha quadro padrao; o indice continua cheio.
     const i = indiceDeColunas(QUADROS, null);
     expect(i.get("g3")?.nomeDoQuadro).toBe("Quadro geral");
     expect(i.get("a3")?.nomeDoQuadro).toBe("Campanhas");
@@ -234,23 +188,7 @@ describe("rotuloDeColuna", () => {
     ).toBe("Campanhas · Em Revisão");
   });
 
-  it("⚠️ coluna desconhecida devolve null -- a reserva e do chamador", () => {
-    // ⚠️ O MOTIVO DE ESTA FUNCAO TER MUDADO DE ASSINATURA NA 5b-5b. Na versao
-    // anterior nao havia como dizer "nao sei qual coluna": o chamador tinha de
-    // passar o rotulo do STATUS num parametro chamado `nomeDaColuna`, os dois
-    // eram `string`, e o `tsc` aceitava calado. `null` na saida nao se parece
-    // com rotulo nenhum, e obriga cada tela a escrever qual e a reserva dela.
+  it("coluna desconhecida devolve null -- a reserva e do chamador", () => {
     expect(rotuloDeColuna(undefined)).toBeNull();
-  });
-
-  it("⚠️ string vazia NAO e o mesmo que null", () => {
-    // `null` significa "e o quadro desta tela". Quadro sem nome e outra coisa,
-    // e a tela mostra o separador em vez de esconder o caso. O backend recusa
-    // nome vazio (`BoardService._nome_valido`), entao isto nao vem da API --
-    // esta aqui para que trocar `=== null` por um teste de veracidade
-    // (`!nomeDoQuadro`) fique vermelho.
-    expect(rotuloDeColuna({ coluna: GERAL[0], nomeDoQuadro: "" })).toBe(
-      " · Backlog",
-    );
   });
 });

@@ -1,32 +1,14 @@
-"""Spec 045, fatia D (§4.4) -- comando na raiz nao acumula subtime. LOGICA PURA.
+"""Comando na raiz nao acumula subtime. Logica pura.
 
-⚠️⚠️ ESTE ARQUIVO EXISTE POR CAUSA DA §3 DA SPEC, e nao por gosto de teste
-unitario. A regra e "comando **nesta** arvore". A implementacao errada --
-"comando em qualquer lugar" -- passa em TODO teste de integracao, porque o
-indice parcial da migration `0004` so deixa existir UMA raiz por workspace
-ate a Spec 046 derruba-lo. Com uma arvore so, as duas leituras dao o mesmo
-resultado sempre.
+A regra e "comando **nesta** arvore". A implementacao errada, "comando em
+qualquer lugar", so se distingue com duas raizes no mesmo workspace, e por isso
+a segunda arvore e montada em memoria aqui.
 
-Logo: a unica forma de provar a diferenca hoje e montar a segunda arvore em
-MEMORIA. E por isso `find_command_with_subteam` e uma funcao pura em
-`team_scope`, e nao um laco dentro do `MemberService`.
-
-⚠️⚠️ SE ALGUEM MUDAR `root_of` POR "a primeira raiz do workspace", quem
-denuncia e `test_comando_no_TI_com_subtime_do_TI_e_achado` -- e **nao** o
-`test_comando_em_OUTRA_arvore_nao_conta`, apesar do nome.
-
-    MEDIDO, e nao deduzido: a primeira versao deste arquivo afirmava o
-    contrario, em dois comentarios. A sabotagem (trocar `root_of` pela
-    primeira raiz e rodar a suite inteira) mostrou 1 falha, e era a outra.
-
-    O motivo, uma vez visto, e obvio: com "a primeira raiz" a funcao passa a
-    responder `None` para TUDO na segunda arvore. Um teste que ESPERA `None`
-    nao pode pegar isso -- ele fica verde pelo motivo errado. Quem pega e o
-    que espera ACHAR algo.
-
-⚠️ ENTAO OS DOIS SAO NECESSARIOS, e nenhum basta: um prova que a regra nao
-dispara atravessando arvores; o outro prova que ela ainda dispara DENTRO da
-segunda. Apagar o segundo deixa o primeiro verde para sempre.
+Armadilha: se alguem trocar `root_of` por "a primeira raiz do workspace", quem
+denuncia e `test_comando_no_TI_com_subtime_do_TI_e_achado`, e nao
+`test_comando_em_OUTRA_arvore_nao_conta`, apesar do nome. Com "a primeira
+raiz", a funcao responde `None` para tudo na segunda arvore, e um teste que
+ESPERA `None` fica verde pelo motivo errado. Os dois sao necessarios.
 """
 
 from __future__ import annotations
@@ -40,7 +22,7 @@ from app.modules.auth.domain.team_scope import (
     is_command_role,
 )
 
-# Duas arvores independentes -- o que o banco ainda nao aceita.
+# Duas arvores independentes no mesmo workspace.
 MARKETING = uuid.uuid4()
 SEO = uuid.uuid4()
 TI = uuid.uuid4()
@@ -64,7 +46,7 @@ def test_manager_e_comando_operator_e_supervisor_nao() -> None:
 
 
 def test_papel_desconhecido_nao_ganha_comando_por_omissao() -> None:
-    """⚠️ AQUI A FALHA FECHADA SERIA ERRADA, ao contrario da R5 do nivel.
+    """Aqui a falha fechada seria errada, ao contrario da regra de nivel.
 
     Falhar fechado (tratar desconhecido como comando) travaria cadastro por
     causa de um papel que ninguem classificou. Falhar aberto (conceder
@@ -89,17 +71,10 @@ def test_comando_na_raiz_com_subtime_da_mesma_arvore_e_achado() -> None:
 
 
 def test_comando_em_OUTRA_arvore_nao_conta() -> None:
-    """⭐⭐ O TESTE QUE JUSTIFICA ESTE ARQUIVO INTEIRO.
-
-    Ser MANAGER do TI nao diz nada sobre o Marketing: la ela nao alcanca
+    """Ser MANAGER do TI nao diz nada sobre o Marketing: la ela nao alcanca
     subtime nenhum por autoridade, entao o vinculo em SEO e a UNICA coisa
-    que a poe la -- e tem de passar.
-
-    ⚠️ ELE SOZINHO NAO GUARDA NADA, e o nome engana: trocar `root_of` pela
-    primeira raiz faz a funcao responder `None` para tudo na segunda arvore,
-    e este teste ESPERA `None` -- fica verde pelo motivo errado. Quem pega a
-    sabotagem e `test_comando_no_TI_com_subtime_do_TI_e_achado`, logo abaixo.
-    Os dois juntos e que fecham a regra.
+    que a poe la, e tem de passar. Sozinho nao guarda a regra: ver o par
+    logo abaixo.
     """
     achado = find_command_with_subteam(
         [(TI, UserTeamRole.MANAGER), (SEO, UserTeamRole.OPERATOR)],
@@ -109,15 +84,9 @@ def test_comando_em_OUTRA_arvore_nao_conta() -> None:
 
 
 def test_comando_no_TI_com_subtime_do_TI_e_achado() -> None:
-    """⭐⭐ O PAR DO TESTE ACIMA, E O QUE REALMENTE GUARDA A REGRA.
-
-    Na arvore DELA, a trava vale igual. E este e o teste que morre quando
-    `root_of` vira "a primeira raiz": ai a funcao devolve `None` para tudo
-    que esta na segunda arvore, e so quem espera ACHAR algo percebe.
-
-    Sabotagem rodada: `raiz = next(n.team_id for n in tree if n.parent_team_id
-    is None)`, suite inteira -> 1 failed, e foi este.
-    """
+    """O par do teste acima: na arvore do TI a trava vale igual. E o teste
+    que morre quando `root_of` vira "a primeira raiz", porque so quem espera
+    ACHAR algo percebe o `None` para tudo na segunda arvore."""
     achado = find_command_with_subteam(
         [(TI, UserTeamRole.MANAGER), (INFRA, UserTeamRole.OPERATOR)],
         ARVORE,
@@ -152,8 +121,8 @@ def test_so_a_raiz_sem_subtime_nenhum_passa() -> None:
 
 
 def test_dois_subtimes_sem_raiz_passa() -> None:
-    """A Spec 044 fatia 3 derrubou a trava de um subtime por pessoa; esta
-    regra nao pode reintroduzi-la pela porta dos fundos."""
+    """Uma pessoa pode estar em varios subtimes; esta regra nao pode
+    reintroduzir a trava de um subtime por pessoa."""
     achado = find_command_with_subteam(
         [(SEO, UserTeamRole.OPERATOR), (INFRA, UserTeamRole.OPERATOR)],
         ARVORE,

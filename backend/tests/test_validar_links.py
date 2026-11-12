@@ -1,4 +1,4 @@
-"""Spec 052, fatia B -- a validacao dos links, pura (sem banco)."""
+"""A validacao dos links, pura (sem banco)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ def test_http_tambem_vale():
 @pytest.mark.parametrize(
     "url",
     [
-        "javascript:alert(1)",  # ⚠️ o motivo da trava no servidor
+        "javascript:alert(1)",  # o motivo da trava no servidor
         "data:text/html,oi",
         "drive.google.com/x",  # sem esquema: a TELA poe https://, o servidor nao adivinha
         "https://",

@@ -1,10 +1,9 @@
 /**
- * A tela do modo de edição de colunas (Spec 036, fatia 6c-2).
+ * A tela do modo de edição de colunas.
  *
- * ⚠️ O QUE ESTE ARQUIVO NÃO PODE PEGAR: o arraste de cabeçalho. `onDragEnd` não
- * roda em jsdom -- o produto já tem dois assim, e este é o terceiro. É por isso
- * que as SETAS existem: elas chamam a mesma função pura que o arraste
- * (`comOrdem`, testada em `rascunhoDeColunas.test.ts`), e são o único caminho
+ * ⚠️ O QUE ESTE ARQUIVO NÃO PODE PEGAR: o arraste de cabeçalho (`onDragEnd` não
+ * roda em jsdom). As SETAS chamam a mesma função pura que o arraste
+ * (`comOrdem`, testada em `rascunhoDeColunas.test.ts`) e são o único caminho
  * que fica preso aqui.
  */
 
@@ -28,7 +27,7 @@ function linha(over: Partial<LinhaDeEdicao> = {}): LinhaDeEdicao {
     alvo: false,
     alvoPedido: false,
     impedimento: null,
-    // Spec 039 (F9). O default do produto: coluna cobra prazo.
+    // O default do produto: coluna cobra prazo.
     avisaPrazo: true,
     ...over,
   };
@@ -136,7 +135,7 @@ describe("CabecalhoDeColunaEditavel -- renomear no lugar", () => {
   });
 });
 
-describe("CabecalhoDeColunaEditavel -- sem `column.delete` (Spec 049, fatia D)", () => {
+describe("CabecalhoDeColunaEditavel -- sem `column.delete`", () => {
   it("⚠️ não oferece apagar coluna salva -- o GESTOR edita e não apaga", () => {
     montar({}, { podeApagar: false });
     expect(screen.queryByLabelText("Apagar Backlog")).toBeNull();
@@ -205,7 +204,7 @@ describe("CabecalhoDeColunaEditavel -- setas e selo", () => {
   });
 
   it("⚠️ o selo de alvo aparece só em quem é alvo", () => {
-    // ADR 0030: o destino da cascata é `is_default_target` e NÃO a primeira
+    // O destino da cascata é `is_default_target` e NÃO a primeira
     // pela ordem. Sem o selo, alguém põe "Entregue" antes de "Concluído" e
     // espera que as tarefas caiam lá -- e não vão, sem nada avisar.
     montar({ alvo: true });
@@ -243,10 +242,8 @@ describe("FormNovaColuna", () => {
       target: { value: "DONE" },
     });
     fireEvent.click(screen.getByText("Criar"));
-    // ⚠️ `undefined` E NAO uma cor concreta: e "a rotacao do backend decide",
-    // que e como toda coluna nasceu ate 22/08. Um default concreto aqui faria
-    // a tela decidir o que e do servidor -- e todas as colunas novas sairiam
-    // da mesma cor.
+    // ⚠️ `undefined` e não uma cor concreta: "a rotação do backend decide". Um
+    // default concreto aqui faria todas as colunas novas saírem da mesma cor.
     expect(onCriar).toHaveBeenCalledWith(
       "Aguardando cliente",
       "DONE",
@@ -270,29 +267,15 @@ describe("FormNovaColuna", () => {
     expect(onCancelar).toHaveBeenCalled();
   });
 
-  // =====================================================================
-  // Spec 039, F9 -- a cor e a cobrança de prazo.
-  //
-  // ⚠️ AQUI MORAVA O TESTE "NÃO tem campo de cor", e ele caiu em 22/08 fazendo
-  // exatamente o que prometia. O comentário dele dizia: "se este teste ficar
-  // vermelho, alguém trouxe a fatia para dentro sem passar pelo plano". Desta
-  // vez a fatia PASSOU pelo plano -- a Camila decidiu "os 8 tokens agora, roda
-  // RGB depois" --, então ele foi substituído em vez de apagado, e o que ele
-  // guardava continua guardado: hex livre segue fora.
-  // =====================================================================
-
   it("⚠️ a cor sai de uma PALETA de tokens -- não há campo de hex", () => {
-    // O que o teste antigo protegia continua valendo: `<input type="color">`
-    // devolveria hex, e hex não inverte no tema escuro (Spec 031, C1a). A roda
-    // RGB é fatia própria porque obriga a derivar a cor do texto por
-    // luminância.
+    // `<input type="color">` devolveria hex, e hex não inverte no tema escuro.
     montarForm();
     expect(document.querySelector('input[type="color"]')).toBeNull();
     expect(
       screen.getByRole("radiogroup", { name: "Cor" }),
     ).toBeTruthy();
-    // Os oito tentos mais a opção "Automática".
-    expect(screen.getAllByRole("radio").length).toBe(9);
+    // Os tentos da paleta mais a opção "Automática".
+    expect(screen.getAllByRole("radio").length).toBe(CORES_DE_COLUNA.length + 1);
   });
 
   it('⚠️ "Automática" vem marcada, e é uma escolha de verdade', () => {
@@ -321,9 +304,7 @@ describe("FormNovaColuna", () => {
   });
 
   it("⚠️ desmarcar “Cobrar prazo” chega no `onCriar`", () => {
-    // ⚠️ ESTE É O "AGUARDANDO CLIENTE" QUE A ADR 0030 PROMETEU e o produto não
-    // entregava: até 22/08 o campo não tinha escritor nenhum, e a coluna
-    // nascia cobrando prazo.
+    // Uma coluna como "Aguardando cliente" não deve cobrar prazo.
     const { onCriar } = montarForm();
     fireEvent.change(screen.getByLabelText("Nome da coluna"), {
       target: { value: "Aguardando cliente" },
@@ -339,7 +320,7 @@ describe("FormNovaColuna", () => {
   });
 
   it("⚠️ em coluna TERMINAL a caixa some -- controle inerte é mentira", () => {
-    // §7.3, item 3. Em Concluído e Cancelado o backend IGNORA a flag; deixar a
+    // Em Concluído e Cancelado o backend IGNORA a flag; deixar a
     // caixa na tela prometeria um efeito que não existe.
     montarForm();
     expect(screen.getByLabelText(/Cobrar prazo nesta coluna/)).toBeTruthy();
@@ -368,8 +349,8 @@ describe("FormNovaColuna", () => {
 
 describe("CabecalhoDeColunaEditavel -- o selo da coluna nova", () => {
   it('⚠️ coluna do rascunho é marcada "nova"', () => {
-    // ⚠️ DESDE 17/08 A COLUNA CRIADA APARECE NO QUADRO, para poder ser
-    // posicionada no mesmo gesto em que nasce. Sem este selo ela fica
+    // A coluna criada aparece no quadro, para ser posicionada no mesmo gesto
+    // em que nasce. Sem este selo ela fica
     // indistinguível de uma coluna vazia de verdade -- e a diferença importa:
     // sair sem concluir a descarta, e a cor dela ainda vai ser escolhida pelo
     // servidor.
@@ -384,9 +365,8 @@ describe("CabecalhoDeColunaEditavel -- o selo da coluna nova", () => {
 
   it("⚠️ a coluna nova pode ser movida e apagada como qualquer outra", () => {
     // ⚠️ APAGAR UMA `tmp:` É REMOVER DO RASCUNHO, e não marcar (`comMarcacao`
-    // trata os dois casos). O cabeçalho não precisa saber a diferença -- mas
-    // se o "×" ou as setas sumissem para ela, o pedido de 17/08 morreria pela
-    // metade: apareceria na tela e não daria para mexer.
+    // trata os dois casos). O cabeçalho não precisa saber a diferença, mas o
+    // "×" e as setas têm de existir para ela.
     const { onMover, onMarcar } = montar({
       ref: "tmp:1",
       nome: "Entregue",
@@ -400,12 +380,10 @@ describe("CabecalhoDeColunaEditavel -- o selo da coluna nova", () => {
   });
 });
 
-describe("o teto do nome de coluna (18/08)", () => {
-  it("⚠️ o campo de RENOMEAR tem maxLength 60 -- faltava, e criar sempre teve", () => {
-    // ⚠️ POR QUE ISTO IMPORTA: renomear passa pelo LOTE, e no lote a recusa
-    // perde a edição INTEIRA. Sem este atributo, renomear três colunas com uma
-    // passando do teto perdia as três -- e o 422 do servidor era a primeira
-    // notícia. Mesmo motivo de `nomeDeQuadroValido` existir no front.
+describe("o teto do nome de coluna", () => {
+  it("⚠️ o campo de RENOMEAR tem maxLength 60, como o de criar", () => {
+    // Renomear passa pelo LOTE, e no lote a recusa do servidor (422) perde a
+    // edição INTEIRA, não só a coluna que passou do teto.
     montar({ ref: "c1", nome: "Backlog", semantic: "OPEN" });
     fireEvent.click(screen.getByText("Backlog"));
     const campo = screen.getByLabelText("Nome da coluna Backlog");
@@ -413,7 +391,7 @@ describe("o teto do nome de coluna (18/08)", () => {
   });
 });
 
-describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
+describe("o selo padrão é o controle do alvo", () => {
   it("⚠️ na coluna que JÁ é o alvo, o selo NÃO é botão", () => {
     // ⚠️ Não existe desmarcar -- um clique que não faz nada é pior que um
     // texto que não clica. Sem alvo, `OPEN` e `DONE` fazem toda criação de
@@ -424,9 +402,6 @@ describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
   });
 
   it("⚠️ na que NÃO é, aparece o convite -- e ele chama `onTornarAlvo`", () => {
-    // ⚠️ Até a fatia 12 o selo era só texto, e isso tinha custo escrito no
-    // `plan.md`: ele "anuncia que existe uma coluna escolhida e não oferece
-    // como trocá-la". A resposta era "apague o quadro e recomece".
     const { onTornarAlvo } = montar({
       ref: "c2",
       nome: "Ideias",
@@ -437,7 +412,7 @@ describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
     expect(onTornarAlvo).toHaveBeenCalled();
   });
 
-  it("o padrão PEDIDO agora tem o × de desfazer; o salvo não (08/10)", () => {
+  it("o padrão PEDIDO tem o × de desfazer; o salvo não", () => {
     const onDesfazerAlvo = vi.fn();
     montar({ ref: "c2", nome: "Ideias", semantic: "OPEN", alvo: true, alvoPedido: true }, { onDesfazerAlvo });
     fireEvent.click(screen.getByRole("button", { name: /Desfazer: Ideias deixa de ser/ }));
@@ -462,15 +437,8 @@ describe("o selo padrão virou o controle (Spec 036, fatia 12)", () => {
   });
 });
 
-// =====================================================================
-// Spec 039, F9 (§7.3, item 2) -- cobrar prazo, no modo de edição.
-//
-// ⚠️ ESTE CONTROLE EXISTE PARA AS 8 COLUNAS DE PRODUÇÃO. Elas nasceram antes
-// de o campo ter escritor, e até 22/08 a única forma de mudar era SQL no
-// Adminer -- o `notify_deadline` era lido pelo serviço de notificação e
-// exposto na API, mas nenhuma rota escrevia nele.
-// =====================================================================
-describe("CabecalhoDeColunaEditavel -- cobrar prazo (F9)", () => {
+// Cobrar prazo no modo de edição: é a única rota que escreve `notify_deadline`.
+describe("CabecalhoDeColunaEditavel -- cobrar prazo", () => {
   it("o sino diz o estado por `aria-pressed`, e não pela cor", () => {
     // ⚠️ COR SOZINHA NÃO É ESTADO. Um sino cinza-claro contra um cinza-médio
     // não diz nada a quem não distingue os dois, e o `web/AGENTS.md` proíbe
@@ -492,7 +460,7 @@ describe("CabecalhoDeColunaEditavel -- cobrar prazo (F9)", () => {
   });
 
   it("⚠️ coluna TERMINAL não tem o controle -- lá a flag é ignorada", () => {
-    // §7.3, item 3. O backend ignora `notify_deadline` em DONE e CANCELLED;
+    // O backend ignora `notify_deadline` em DONE e CANCELLED;
     // mostrar o sino prometeria um efeito que não existe.
     montar({ semantic: "DONE" });
     expect(screen.queryByLabelText(/Cobrar prazo na coluna/)).toBeNull();

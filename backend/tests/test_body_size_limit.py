@@ -1,7 +1,7 @@
-"""Auditoria de 21/10 -- teto de corpo na API (`BodySizeLimitMiddleware`).
+"""Teto de corpo na API (`BodySizeLimitMiddleware`).
 
-Sem ele, o POST anonimo do formulario publico era lido e decodificado inteiro
-antes do freio por IP e dos `max_length`: 1 GB de JSON ocupava um worker.
+Sem ele, o POST anonimo do formulario publico seria lido e decodificado
+inteiro antes do freio por IP e dos `max_length`: 1 GB de JSON ocupa um worker.
 """
 
 from collections.abc import AsyncIterator
@@ -43,7 +43,7 @@ async def test_corpo_acima_do_teto_e_413() -> None:
 
 
 async def test_corpo_chunked_sem_content_length_tambem_e_413() -> None:
-    """⚠️ O caso que um teto pelo cabecalho `Content-Length` deixaria passar."""
+    """O caso que um teto pelo cabecalho `Content-Length` deixaria passar."""
 
     async def pedacos() -> AsyncIterator[bytes]:
         yield b'{"a": "'

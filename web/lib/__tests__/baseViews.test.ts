@@ -152,7 +152,7 @@ describe("agruparNoQuadro", () => {
     expect(g.map((x) => x.rotulo)).toEqual(["Publicado", "Cancelado", "Sem valor"]);
     expect(g[2].linhas.map((l) => l.id)).toEqual(["c"]);
   });
-  it("opção apagada conta como sem valor (D17)", () => {
+  it("opção apagada conta como sem valor", () => {
     const g = agruparNoQuadro([linha("x", { s: "apagada" })], STATUS);
     expect(g[2].linhas.map((l) => l.id)).toEqual(["x"]);
   });
@@ -181,7 +181,7 @@ describe("calendário (sem Date)", () => {
   });
 });
 
-describe("congelar (fatia I)", () => {
+describe("congelar", () => {
   it("sem escolha, só o título", () => {
     expect(quantasCongeladas(COLUNAS, vazia)).toBe(1);
   });
@@ -211,7 +211,7 @@ describe("visaoAtiva", () => {
   });
 });
 
-describe("calendário em janela (fatia J)", () => {
+describe("calendário em janela", () => {
   it("dias corridos ida e volta, sem Date, inclusive no bissexto e na virada", () => {
     expect(diasDesdeEpoca(1970, 1, 1)).toBe(0);
     expect(diasDesdeEpoca(2000, 3, 1) - diasDesdeEpoca(2000, 2, 28)).toBe(2); // 29/02 existiu
@@ -257,7 +257,7 @@ describe("calendário em janela (fatia J)", () => {
   });
 });
 
-describe("larguraArrastada (fatia J)", () => {
+describe("larguraArrastada", () => {
   it("soma o deslocamento e fica nos limites do servidor", () => {
     expect(larguraArrastada(160, 40.4)).toBe(200);
     expect(larguraArrastada(160, -500)).toBe(LARGURA_MIN);
@@ -265,7 +265,7 @@ describe("larguraArrastada (fatia J)", () => {
   });
 });
 
-describe("link em lista (fatia J)", () => {
+describe("link em lista", () => {
   const LINK = col("l", "link");
   const valor = [{ title: "Post do reels", url: "https://instagram.com/p/abc" }];
   it("o filtro procura no nome e no endereço", () => {
@@ -286,7 +286,7 @@ describe("link em lista (fatia J)", () => {
   });
 });
 
-describe("ajustar e arrastar a coluna (14/10)", () => {
+describe("ajustar e arrastar a coluna", () => {
   it("larguraQueCabe: a maior, dentro dos limites", () => {
     expect(larguraQueCabe([120.2, 300.4, 90])).toBe(301);
     expect(larguraQueCabe([5000])).toBe(LARGURA_MAX);

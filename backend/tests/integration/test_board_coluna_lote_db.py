@@ -1,14 +1,14 @@
-"""A edição de colunas em LOTE (Spec 036, fatia 6a-ter).
+"""A edição de colunas em LOTE (`BoardService.aplicar_lote`).
 
-⚠️ POR QUE O LOTE EXISTE, EM UMA FRASE: sem ele e impossivel trocar uma coluna
-por outra. Seria criar "Entregue", salvar, e so entao apagar "Aprovacao"
-mandando as tarefas para la -- duas idas, em duas telas. O teste
-`test_troca_uma_coluna_por_outra_num_lote_so` e esse caso, e e a razao de ser
-do arquivo inteiro.
+⚠️ POR QUE O LOTE EXISTE: sem ele e impossivel trocar uma coluna por outra
+(criar "Entregue" e apagar "Aprovacao" mandando as tarefas para la) num gesto
+so, porque a coluna nova nao tem id quando a pessoa escolhe o destino.
 
-⚠️ E O QUE O LOTE COMPRA COM ISSO: recusa perde tudo. Nao existe lote meio
-aplicado -- `test_recusa_no_meio_desfaz_as_etapas_anteriores` e o que prende
-essa promessa, e sem ela o modelo inteiro deixa de valer a pena.
+⚠️ O QUE O LOTE COMPRA COM ISSO: recusa perde tudo. O desfazer e do UoW do
+router; aqui se prende que o metodo nao comita (`test_aplicar_lote_NAO_comita`).
+
+Escrita de coluna so e alcancada por aqui: a autorizacao dos metodos avulsos
+(`criar_coluna`, `apagar_coluna`, `reordenar_colunas`...) e testada pelo lote.
 """
 
 from __future__ import annotations
@@ -93,9 +93,7 @@ def _nomes(colunas):
 
 
 async def test_troca_uma_coluna_por_outra_num_lote_so(db) -> None:
-    """⚠️ ESTE E O TESTE QUE JUSTIFICA A FATIA INTEIRA.
-
-    Criar "Entregue", mandar as tarefas de "Em Andamento" para ela, apagar "Em
+    """Criar "Entregue", mandar as tarefas de "Em Andamento" para ela, apagar "Em
     Andamento", e por "Entregue" no lugar dela -- tudo num pedido. Sem lote isso
     e impossivel: a coluna nova nao tem id quando a pessoa escolhe o destino.
     """
@@ -289,17 +287,10 @@ async def test_aplicar_lote_NAO_comita(db, monkeypatch) -> None:
     proximo lote dela, montado da tela antiga, cai em `colunas_divergentes` sem
     que ninguem entenda por que.
 
-    ⚠️ A PRIMEIRA VERSAO DESTE TESTE ESTAVA ERRADA, E CAIU (13/08). Ela
-    provocava a recusa e chamava `await db.rollback()` para conferir que nada
-    ficou. Mas a fixture usa `join_transaction_mode="create_savepoint"`: o
-    rollback voltou ao SAVEPOINT EXTERNO e levou workspace, time, quadro e
-    colunas junto -- a lista veio `[]` e o teste falhou afirmando o oposto do
-    que queria. E o ⚠️ que o handoff de 11/08 ja registrava.
-
-    ⚠️ E NAO DA PARA MEDIR ISSO POR HTTP TAMBEM: afirmar o banco depois de um
-    caminho recusado cai pelo mesmo mecanismo. **O desfazer do lote nao e
-    testavel nesta bancada** -- o que da para prender e a ausencia do commit,
-    que e a linha da qual o desfazer depende.
+    ⚠️ Por que espiar o commit em vez de conferir o banco depois da recusa: a
+    fixture usa `join_transaction_mode="create_savepoint"`, e um rollback volta
+    ao SAVEPOINT EXTERNO levando workspace, time e quadro junto. Por HTTP cai
+    pelo mesmo mecanismo.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -327,9 +318,8 @@ async def test_as_travas_de_apagar_valem_dentro_do_lote(db) -> None:
     """Apagar a unica coluna de inicio continua recusado, mesmo em lote.
 
     ⚠️ E CRIAR OUTRA `OPEN` NO MESMO LOTE NAO SALVA: coluna criada por gente
-    nasce com `is_default_target=False`, e a trava exige que sobre um ALVO.
-    E aqui que a ausencia de "trocar o alvo de uma semantica" (item 5 do que
-    falta na spec) aparece pela primeira vez de forma visivel.
+    nasce com `is_default_target=False`, e a trava exige que sobre um ALVO
+    (trocar o alvo e a lista `alvos` do lote).
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -349,22 +339,6 @@ async def test_as_travas_de_apagar_valem_dentro_do_lote(db) -> None:
 # ------------------------------------------------------------- autorização
 
 
-async def test_operator_nao_aplica_lote(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).aplicar_lote(
-                board_id=quadro.id,
-                renomear=[
-                    LoteRenomear(
-                        id=(await _colunas(db, quadro.id))[0].id, name="X"
-                    )
-                ],
-            )
-
-
 async def test_lote_VAZIO_tambem_autoriza(db) -> None:
     """⚠️ SEM A TRAVA NO TOPO DE `aplicar_lote`, ISTO RESPONDERIA 200.
 
@@ -381,7 +355,6 @@ async def test_lote_VAZIO_tambem_autoriza(db) -> None:
 
 
 async def test_ADMIN_aplica_lote_no_quadro_geral(db) -> None:
-    """A 6a-bis abriu o geral; o lote tem de valer la tambem."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = (
         await db.execute(
@@ -403,16 +376,53 @@ async def test_ADMIN_aplica_lote_no_quadro_geral(db) -> None:
     assert _nomes(colunas)[-1] == "Aguardando"
 
 
-async def test_quadro_inexistente_devolve_404(db) -> None:
-    from app.shared.exceptions.base import EntityNotFoundError
+@pytest.mark.parametrize(
+    "quem, quadro_de, pode",
+    [
+        ("supervisor_a", "sub_b", False),  # subtime alheio
+        ("supervisor_a", "raiz", False),  # quadro geral
+        ("admin", "sub_b", True),  # admin, sem vinculo no subtime
+    ],
+)
+async def test_quem_edita_as_colunas_de_qual_quadro(db, quem, quadro_de, pode) -> None:
+    """Papel x alvo. Sem UoW, entao "nada gravado" na recusa e medivel aqui."""
+    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
+    if quadro_de == "raiz":
+        quadro_id = (
+            await db.execute(
+                select(Board.id).where(Board.team_id == raiz, Board.is_default.is_(True))
+            )
+        ).scalar_one()
+    else:
+        quadro_id = (await _quadro_avulso(db, ws, user, arvore, sub_b)).id
+    antes = len(await _colunas(db, quadro_id))
+    if quem == "admin":
+        ctx = {**_ctx(ws, user, arvore), "org_role": "ADMIN"}
+    else:
+        ctx = _ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))
+    lote = {
+        "board_id": quadro_id,
+        "criar": [LoteCriar(tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN)],
+    }
 
+    with acting_as(**ctx):
+        if pode:
+            await BoardService(db).aplicar_lote(**lote)
+        else:
+            with pytest.raises(AuthorizationError):
+                await BoardService(db).aplicar_lote(**lote)
+
+    assert len(await _colunas(db, quadro_id)) == antes + (1 if pode else 0)
+
+
+async def test_quadro_inexistente_devolve_404(db) -> None:
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         with pytest.raises(EntityNotFoundError):
             await BoardService(db).aplicar_lote(board_id=uuid.uuid4())
 
 
-# ------------------------------------------------- o alvo da semantica (12)
+# ------------------------------------------------- o alvo da semantica
 
 
 async def _alvo(db, board_id, semantica):
@@ -428,16 +438,10 @@ async def _alvo(db, board_id, semantica):
 
 
 async def test_trocar_alvo_TIRA_do_antigo_e_poe_no_novo(db) -> None:
-    """⚠️ A ORDEM DAS DUAS ESCRITAS E A FATIA INTEIRA.
-
-    `board_column_um_destino_por_semantica` e
-    `UNIQUE (board_id, semantic) WHERE is_default_target`, e NAO e DEFERRABLE:
-    marcar o novo antes de desmarcar o antigo faz o Postgres recusar com
-    `IntegrityError` -- que neste projeto sai como **500**, e nao como o 422 que
-    a tela sabe ler.
-
-    ⚠️ ESTE TESTE FALHARIA COM ERRO DE BANCO, e nao com assercao, se a ordem
-    fosse invertida -- e e assim que ele denuncia.
+    """A ordem importa: `board_column_um_destino_por_semantica` e um indice
+    unico parcial nao DEFERRABLE, entao marcar o novo antes de desmarcar o
+    antigo da `IntegrityError` (500). Com a ordem invertida o teste falha com
+    erro de banco, nao com assercao.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -500,29 +504,11 @@ async def test_trocar_alvo_de_coluna_de_OUTRO_quadro_e_404(db) -> None:
             )
 
 
-async def test_OPERATOR_nao_troca_alvo(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    alvo = await _alvo(db, quadro.id, ColumnSemantic.DONE)
-    assert alvo is not None
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).trocar_alvo(
-                board_id=quadro.id, column_id=alvo.id
-            )
-
-
 async def test_LOTE_troca_o_alvo_E_APAGA_a_antiga_num_gesto_so(db) -> None:
-    """⚠️⚠️ ESTE E O TESTE QUE JUSTIFICA A FATIA 12 INTEIRA.
+    """Quem cria "Ideias" (`OPEN`) e quer ficar so com ela apaga o `Backlog`,
+    que era o alvo e e protegido por `_assert_ponte_sobrevive`.
 
-    Ate aqui, quem criava "Ideias" (`OPEN`) e queria ficar so com ela NAO
-    conseguia apagar o `Backlog`: ele era o alvo, e `_assert_ponte_sobrevive`
-    (degrau 2 da ADR 0042) o protege. O proprio `board_service` registrava isso
-    como consequencia aceita, dizendo que trocar o alvo "e operacao propria, e
-    ela nao existe". A saida era apagar o quadro e recomecar.
-
-    ⚠️ E O QUE FAZ FUNCIONAR E A ORDEM DAS ETAPAS: o alvo roda ANTES de apagar.
+    ⚠️ O QUE FAZ FUNCIONAR E A ORDEM DAS ETAPAS: o alvo roda ANTES de apagar.
     Invertendo, a trava ainda veria o `Backlog` como alvo e recusaria o lote
     inteiro -- e este teste falha com `ValidationError`, apontando a etapa
     errada.
@@ -554,7 +540,6 @@ async def test_LOTE_troca_o_alvo_E_APAGA_a_antiga_num_gesto_so(db) -> None:
 
 
 async def test_LOTE_sem_alvos_nao_mexe_em_alvo_nenhum(db) -> None:
-    """A lista vazia e o caso de 100% dos lotes ate a fatia 12."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
     antes = await _alvo(db, quadro.id, ColumnSemantic.OPEN)
@@ -577,21 +562,10 @@ async def test_LOTE_sem_alvos_nao_mexe_em_alvo_nenhum(db) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Spec 039, F9 -- a cor escolhida e a cobranca de prazo.
+# A cor escolhida e a cobranca de prazo.
 #
-# ⚠️⚠️ O QUE ESTES TESTES REALMENTE FECHAM: o `notify_deadline` era um campo
-# LIDO pelo `DeadlineNotifyService`, EXPOSTO na resposta da API, e SEM NENHUM
-# ESCRITOR. Tres lugares do codigo prometiam por escrito que dava para criar
-# uma coluna "Aguardando cliente" que nao cobra prazo; nao dava -- a coluna
-# nascia cobrando, e so dava para consertar por SQL no Adminer. A partir daqui
-# as tres promessas viraram verdade.
-#
-# ⚠️ E A COR ENTRA SEM REABRIR O CORTE DE 11/08. A decisao da Camila em 22/08
-# foi "os 8 tokens agora, roda RGB depois": a pessoa escolhe entre os mesmos
-# tokens que a rotacao ja usava. Nenhum hex entra no `String(60)`, e a recusa e
-# por LISTA -- por isso `test_cor_fora_da_paleta_e_recusada` manda um hex
-# valido de propósito: e o formato que a proxima fatia vai aceitar, e ate la
-# tem de ser 422 e nao 200.
+# A cor e escolhida entre os mesmos tokens que a rotacao usa: nenhum hex entra
+# no `String(60)`, e a recusa e por LISTA.
 # ---------------------------------------------------------------------------
 
 
@@ -616,37 +590,9 @@ async def test_coluna_nova_aceita_cor_da_paleta(db) -> None:
     assert _por_nome(colunas, "Aguardando cliente").color == escolhida
 
 
-async def test_sem_cor_a_rotacao_continua_decidindo(db) -> None:
-    """⚠️ O CLIENTE VELHO NAO PODE MUDAR DE COMPORTAMENTO.
-
-    `color=None` e "nao escolhi", e nao "sem cor". Se o default virasse uma cor
-    concreta, todo quadro criado por uma versao antiga do front passaria a
-    receber a MESMA cor em todas as colunas novas -- sem erro, sem aviso.
-    """
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    quantas_antes = len(await _colunas(db, quadro.id))
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        colunas, _ = await BoardService(db).aplicar_lote(
-            board_id=quadro.id,
-            criar=[LoteCriar(tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN)],
-        )
-
-    assert (
-        _por_nome(colunas, "Ideias").color
-        == CORES_DE_COLUNA[quantas_antes % len(CORES_DE_COLUNA)]
-    )
-
-
 async def test_cor_fora_da_paleta_e_recusada(db) -> None:
-    """⚠️ HEX VALIDO, E MESMO ASSIM 422 -- e isso e a fatia, nao um detalhe.
-
-    `#7C3AED` e exatamente o formato que a ADR 0040 (item 4) previu para o dia
-    da roda RGB. Ele e recusado AGORA porque hex nao inverte no tema escuro, e
-    aceita-lo exigiria tambem derivar a cor do texto por luminancia no front
-    (`lib/coluna.ts::corEhHex`, sem leitor ate hoje). Duas coisas, e a segunda e
-    a cara. Quando a roda entrar, este teste muda de lado de propósito.
+    """⚠️ HEX VALIDO, E MESMO ASSIM 422: hex nao inverte no tema escuro, e
+    aceita-lo exigiria derivar a cor do texto por luminancia no front.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -672,8 +618,7 @@ async def test_cor_fora_da_paleta_e_recusada(db) -> None:
 
 
 async def test_coluna_nova_pode_nascer_sem_cobrar_prazo(db) -> None:
-    """⚠️ ESTE E O "AGUARDANDO CLIENTE" QUE A ADR 0030 PROMETEU e o codigo nao
-    entregava. Ate 22/08 `criar_coluna` cravava `True` e nao havia parametro."""
+    """O "Aguardando cliente": coluna que nao cobra prazo."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
 
@@ -709,8 +654,6 @@ async def test_por_omissao_a_coluna_nova_cobra_prazo(db) -> None:
 
 
 async def test_coluna_que_ja_existe_pode_parar_de_cobrar_prazo(db) -> None:
-    """⚠️ O CASO DAS 8 COLUNAS DE PRODUCAO. Elas nasceram sem escritor, e ate
-    aqui so davam para consertar por SQL no Adminer (§7.3, item 2)."""
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
     backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
@@ -757,8 +700,7 @@ async def test_coluna_terminal_ACEITA_a_flag_sem_reclamar(db) -> None:
     """⚠️ RECUSAR AQUI SERIA TRANSFORMAR REGRA DE TELA EM 422.
 
     Em coluna terminal o `avisa_prazo()` ignora a flag -- guardar o valor e
-    inofensivo. Quem esconde a caixa e a TELA (§7.3, item 3: "mostrar um
-    controle inerte seria mentira de interface"). Este teste existe para que
+    inofensivo. Quem esconde a caixa e a TELA. Este teste existe para que
     ninguem "conserte" o backend adicionando uma recusa que faria um cliente
     honesto tomar 422 por mandar um valor sem efeito.
     """
@@ -773,17 +715,3 @@ async def test_coluna_terminal_ACEITA_a_flag_sem_reclamar(db) -> None:
         )
 
     assert _por_nome(colunas, "Concluído").notify_deadline is False
-
-
-async def test_operator_nao_muda_o_aviso_de_prazo(db) -> None:
-    """A etapa nova nao pode ser a porta dos fundos da autorizacao."""
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).aplicar_lote(
-                board_id=quadro.id,
-                avisos=[LoteAviso(id=backlog.id, notify_deadline=False)],
-            )

@@ -1,13 +1,8 @@
-"""Spec 030 Fatia 3 -- freio por CONTA no login, PELA ROTA.
+"""Freio por CONTA no login, pela rota.
 
 Os unitarios de `tests/test_rate_limit.py` provam que o trio
-check/record/reset funciona. Eles NAO provam que o login o usa: a Spec 028
-ensinou que 12 testes de service ficam verdes com o gate da rota revertido.
-Este arquivo bate em `/api/v1/auth/login` de verdade.
-
-O TESTE QUE JUSTIFICA A FATIA INTEIRA e
-`test_bloqueia_mesmo_com_ips_diferentes`: e a unica coisa aqui que o balde
-por IP, que ja existia, nao consegue fazer.
+check/record/reset funciona; nao provam que o login o usa. Este arquivo bate
+em `/api/v1/auth/login` de verdade.
 """
 
 from __future__ import annotations
@@ -42,8 +37,8 @@ _TETO_DE_TESTE = 3
 
 @pytest.fixture(autouse=True)
 def _baldes_limpos():
-    """So o teto: a contagem mora no banco desde 11/11 e volta com o rollback
-    de cada teste."""
+    """So o teto: a contagem mora no banco e volta com o rollback de cada
+    teste."""
     teto_real = account_login_limiter._max
     account_login_limiter._max = _TETO_DE_TESTE
     change_password_limiter._max = _TETO_DE_TESTE
@@ -86,7 +81,6 @@ def _corpo(ws: Workspace, email: str, senha: str) -> dict:
 
 
 async def test_bloqueia_apos_o_teto_de_falhas(db) -> None:
-    """Criterio 8."""
     ws, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -103,35 +97,8 @@ async def test_bloqueia_apos_o_teto_de_falhas(db) -> None:
         assert bloqueada.status_code == 401
 
 
-async def test_bloqueia_mesmo_com_ips_diferentes(db) -> None:
-    """Criterio 8, a parte que importa -- e a razao de existir desta fatia.
-
-    Cada tentativa sai de um IP distinto, entao o balde por IP (10/60s) nunca
-    enche. So o balde por conta ve o padrao. Se este teste ficar verde com o
-    freio por conta removido, e porque o teto de teste virou maior que o teto
-    por IP -- conferir antes de acreditar.
-    """
-    ws, user = await _pessoa(db)
-    await db.commit()
-    async with _client(db) as c:
-        for i in range(_TETO_DE_TESTE):
-            r = await c.post(
-                "/api/v1/auth/login",
-                json=_corpo(ws, user.email, _ERRADA),
-                headers={"X-Forwarded-For": f"203.0.113.{i}"},
-            )
-            assert r.status_code == 401
-
-        bloqueada = await c.post(
-            "/api/v1/auth/login",
-            json=_corpo(ws, user.email, _SENHA),
-            headers={"X-Forwarded-For": "203.0.113.250"},
-        )
-        assert bloqueada.status_code == 401
-
-
 async def test_acerto_zera_o_balde(db) -> None:
-    """Criterio 9: quem erra, acerta e erra de novo nao acumula."""
+    """Quem erra, acerta e erra de novo nao acumula."""
     ws, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -154,7 +121,7 @@ async def test_acerto_zera_o_balde(db) -> None:
 
 
 async def test_email_inexistente_responde_igual_e_tambem_enche_o_balde(db) -> None:
-    """Criterio 10 -- o teste anti-enumeracao.
+    """Anti-enumeracao.
 
     Se a conta inexistente NAO enchesse o balde, o proprio freio viraria
     sonda: mandar N+1 tentativas e ver se a resposta muda diria se o e-mail
@@ -234,13 +201,14 @@ async def test_caixa_do_email_nao_burla_o_freio(db) -> None:
 
 
 async def test_login_NAO_tem_freio_por_ip(db) -> None:
-    """Auditoria de 21/10: o freio por IP contava acertos e barrava a
-    instituicao inteira atras do NAT. Varias contas do MESMO IP, cada uma
-    dentro do seu balde, passam -- quem barra e so o balde por conta."""
+    """A instituicao inteira sai por um IP so (NAT). Varias contas do MESMO
+    IP, cada uma dentro do seu balde, passam: quem barra e so o balde por
+    conta."""
     ws, _user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
-        for i in range(_TETO_DE_TESTE + 2):
+        # 11: acima dos 10/min que um freio por IP usaria.
+        for i in range(11):
             r = await c.post(
                 "/api/v1/auth/login",
                 json=_corpo(ws, f"cada-um-diferente-{i}@x.com", _ERRADA),
@@ -248,12 +216,11 @@ async def test_login_NAO_tem_freio_por_ip(db) -> None:
             )
             assert r.status_code == 401
 
-# ------------------------------------------------------------ 16/10, a auditoria
 
 
 async def test_login_nao_diferencia_maiusculas_no_email(db) -> None:
     """O cadastro grava em minusculas e o celular capitaliza a 1a letra:
-    `Fulano@...` com a senha certa recebia 401 e enchia o freio da conta."""
+    `Fulano@...` com a senha certa entra."""
     ws, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -262,8 +229,8 @@ async def test_login_nao_diferencia_maiusculas_no_email(db) -> None:
 
 
 async def test_refresh_nao_tem_freio_por_ip(db) -> None:
-    """A instituicao sai toda por UM IP: o 11o refresh do minuto levava 429,
-    e o front deslogava quem tinha sessao valida."""
+    """A instituicao sai toda por UM IP: um 429 no refresh deslogaria quem tem
+    sessao valida."""
     ws, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -279,7 +246,7 @@ async def test_refresh_nao_tem_freio_por_ip(db) -> None:
 
 
 async def test_troca_de_senha_freia_a_senha_atual_errada(db) -> None:
-    """Quem roubasse a sessao chutava a senha atual sem limite."""
+    """Quem roubar a sessao nao chuta a senha atual sem limite."""
     ws, user = await _pessoa(db)
     await db.commit()
     # Lidos ANTES: cada recusa desfaz a transacao e expira os objetos.

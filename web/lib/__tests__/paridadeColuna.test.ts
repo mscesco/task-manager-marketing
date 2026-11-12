@@ -1,30 +1,13 @@
 /**
- * PARIDADE — as regras por COLUNA respondem igual às regras por STATUS.
+ * Paridade: as regras por COLUNA respondem igual às regras por STATUS nas 8
+ * colunas padrão. Sai junto com `deadlineTone` por status quando a última
+ * chamada (em `components/TaskDetail.tsx`) migrar para `deadlineTonePorColuna`.
  *
- * ⚠️ ESTE ARQUIVO EXISTE PARA MORRER. Ele autoriza uma coisa que normalmente
- * seria defeito: DUAS implementações da mesma regra convivendo no repositório
- * (`lib/status.ts`, por status; `lib/coluna.ts`, por coluna). A convivência é
- * necessária porque trocar as assinaturas de uma vez deixaria o `tsc` vermelho
- * entre a fatia 4a e a 4c — entrega parcial que quebra o build.
+ * Não prova nada sobre coluna criada por gente: ali as regras por status não
+ * servem de referência.
  *
- * **Quando a fatia 4c migrar o último call-site e apagar as funções por status,
- * ESTE ARQUIVO É APAGADO JUNTO.** Se você está lendo isto depois da 4c, a
- * migração ficou pela metade.
- *
- * O QUE ELE PROVA: que traduzir a taxonomia de status para
- * `semantic`/`notify_deadline` NÃO MUDOU O COMPORTAMENTO — nas 8 colunas
- * padrão, que é o único mundo que existe em produção hoje (10/08/2026: um
- * quadro, 802 tarefas).
- *
- * O QUE ELE **NÃO** PROVA: nada sobre coluna criada por gente. Aquele é
- * justamente o mundo em que as regras por status estão erradas — não há com o
- * que comparar. Os casos de coluna nova estão em `coluna.test.ts`.
- *
- * ⚠️ RELÓGIO FAKE OBRIGATÓRIO (Spec 027, D7): `deadlineDays` e
- * `diasParadoPorColuna` chamam `new Date()`. Sem fixar o relógio, este arquivo passaria hoje e
- * quebraria amanhã. Meio-dia LOCAL de propósito (construtor com componentes,
- * não string ISO): string ISO com Z seria interpretada em UTC e a virada de
- * dia dependeria do fuso da máquina. Mesmo padrão do `status.test.ts`.
+ * Relógio fake: `deadlineDays` e `diasParadoPorColuna` chamam `new Date()`.
+ * Meio-dia LOCAL de propósito, para a virada de dia não depender do fuso.
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -52,16 +35,12 @@ afterEach(() => {
 });
 
 /**
- * As 8 colunas que todo quadro recebe ao nascer, copiadas de
- * `backend/app/modules/tasks/domain/board_defaults.py` (lido em 10/08/2026).
+ * As 8 colunas que todo quadro recebe ao nascer, copiadas à mão de
+ * `backend/app/modules/tasks/domain/board_defaults.py`: nenhum portão liga as
+ * duas, e se divergirem este arquivo prova paridade com um mundo que não existe.
  *
- * ⚠️ ESTA TABELA É O TESTE. Se ela divergir do backend, este arquivo passa a
- * provar paridade com um mundo que não existe. Ao mexer em `COLUNAS_PADRAO`
- * lá, mexa aqui — não há portão que ligue os dois.
- *
- * ⚠️ REPARE NO BLOCKED: semântica `IN_PROGRESS` com `notify_deadline: false`.
- * É a única coluna cuja semântica sozinha daria a resposta errada, e é a razão
- * de `pararEhNoticia` cruzar os dois campos (ADR 0040, item 3).
+ * Bloqueado tem semântica `IN_PROGRESS` com `notify_deadline: false`: a única
+ * coluna em que a semântica sozinha daria a resposta errada.
  */
 const PADRAO: ReadonlyArray<{ status: string; coluna: Coluna }> = [
   {
@@ -120,7 +99,7 @@ function c(
 // ---------------------------------------------------------------------------
 
 describe("deadlineTone — paridade caso a caso", () => {
-  // ⚠️ Três prazos, não um. Um prazo só provaria a paridade em UM ramo da
+  // Três prazos, não um. Um prazo só provaria a paridade em UM ramo da
   // função; o silenciamento por coluna terminal só aparece com prazo vencido,
   // e o `null` "sem alerta" só aparece com prazo distante.
   for (const { status, coluna } of PADRAO) {
@@ -154,9 +133,7 @@ describe("deadlineTone — paridade caso a caso", () => {
 
 describe("o filtro padrão de /minhas-tarefas", () => {
   it("esconde só Concluído, como o padrão por status escondia", () => {
-    // ⚠️ O padrão por status (`statusPadraoMinhasTarefas`, que saiu na limpeza
-    // de código morto) escondia só COMPLETED. A lista fica escrita aqui para o
-    // comportamento não mudar calado. Compara CONJUNTOS de `id` de coluna.
+    // Compara CONJUNTOS de `id` de coluna.
     const esperado = PADRAO.filter((p) => p.status !== "COMPLETED").map(
       (p) => p.coluna.id
     );
@@ -165,11 +142,9 @@ describe("o filtro padrão de /minhas-tarefas", () => {
     expect(obtido.sort()).toEqual(esperado.sort());
   });
 
-  it("⚠️ Cancelado CONTINUA aparecendo (ADR 0040, item 5)", () => {
-    // Não é descuido: `CANCELLED` também é semântica terminal, e esconder as
-    // duas seria o comportamento "coerente". Mas hoje a coluna Cancelado
-    // aparece, e mudar isso é decisão de produto disfarçada de refatoração.
-    // Este teste é o que faz alguém parar e abrir uma ADR antes de mudar.
+  it("Cancelado CONTINUA aparecendo", () => {
+    // `CANCELLED` também é terminal, mas esconder as duas é decisão de
+    // produto, não refatoração.
     const ligadas = colunasPadraoMinhasTarefas(PADRAO.map((p) => p.coluna));
     expect(ligadas).toContain("col-cancel");
     expect(ligadas).not.toContain("col-done");
@@ -179,10 +154,8 @@ describe("o filtro padrão de /minhas-tarefas", () => {
 // ---------------------------------------------------------------------------
 
 describe("controle — a paridade não passa por vacuidade", () => {
-  // ⚠️ SEM ESTE BLOCO, TUDO ACIMA PODERIA SER VERDE POR AUSÊNCIA DE SINAL.
-  // Se as duas implementações devolvessem `null` para todos os 8 casos, os
-  // testes de paridade passariam sem provar nada. Estes três afirmam que há
-  // sinal de verdade em cada função.
+  // Se as duas implementações devolvessem `null` sempre, a paridade passaria
+  // sem provar nada. Estes afirmam que há sinal de verdade.
   it("alguma coluna padrão realmente alerta prazo vencido", () => {
     const alertam = PADRAO.filter(
       (p) => deadlineTonePorColuna(p.coluna, ONTEM, false) === "overdue"
@@ -201,8 +174,7 @@ describe("controle — a paridade não passa por vacuidade", () => {
   });
 
   it("o selo de parada sai só nas três colunas de trabalho ativo", () => {
-    // ⚠️ ESTE É O CASO QUE A TRADUÇÃO INGÊNUA ERRARIA. `semantic ===
-    // "IN_PROGRESS"` sozinho incluiria BLOCKED, que a D6 excluiu de propósito.
+    // `semantic === "IN_PROGRESS"` sozinho incluiria o Bloqueado.
     const marcam = PADRAO.filter(
       (p) => diasParadoPorColuna(p.coluna, PARADA_HA_MUITO, false) !== null
     );

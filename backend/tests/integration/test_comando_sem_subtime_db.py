@@ -1,18 +1,11 @@
-"""Spec 045, fatia D (§4.4) -- comando na raiz nao acumula vinculo de subtime.
-
-Levantada pela Camila em 02/09, sobre o proprio cadastro:
-
-    *"estou no projeto como operadora do crm que e subtime de marketing e
-    manager do marketing (...) isso nao pode acontecer, e meio que para
-    herdar a mesma permissao"*
+"""Comando na raiz nao acumula vinculo de subtime.
 
 MANAGER na raiz JA significa gerente de todos os subtimes dela. O vinculo de
 subtime nao acrescenta alcance nenhum, e afirma no organograma algo falso --
 que a pessoa "esta em" um braco especifico.
 
-⚠️ A REGRA SO E ACEITAVEL PORQUE A SPEC 034 EXISTE: gestor e admin aparecem
-nos seletores de subtime SEM vinculo la. Sem isso, esta trava tiraria gente
-dos seletores e seria revogada em uma semana.
+⚠️ A REGRA SO E ACEITAVEL PORQUE gestor e admin aparecem nos seletores de
+subtime SEM vinculo la. Sem isso, esta trava tiraria gente dos seletores.
 
 ⚠️⚠️ AS PORTAS CHEGAM AO MESMO ESTADO POR CAMINHOS DIFERENTES, e a segunda
 e a que ninguem lembra:
@@ -21,20 +14,11 @@ e a que ninguem lembra:
     change_member_role  -- PROMOVE na raiz quem ja tem subtime  (NAO obvio:
                            a operacao nao menciona subtime nenhum)
 
-(Havia uma terceira, `move_member_subteam`, que saiu com a rota em 17/09/2026.)
+Os casos que a regra NAO barra (OPERATOR na raiz, sem vinculo na raiz, dois
+subtimes) e o "comando em OUTRA arvore" estao em
+`tests/test_comando_sem_subtime.py`, com a arvore montada em memoria.
 
-⚠️⚠️ ESTE ARQUIVO NAO PROVA A PARTE MAIS FACIL DE ERRAR DA REGRA, e isso e
-deliberado: "comando **nesta** arvore" versus "comando em qualquer lugar" so
-se distingue com DUAS raizes, e o indice parcial da migration `0004` so deixa
-existir uma por workspace ate a Spec 046. Esse guardiao esta em
-`tests/test_comando_sem_subtime.py`, com a arvore montada em memoria. Se
-voce esta aqui procurando o teste da segunda arvore, e la.
-
-⚠️ E O CADASTRO VELHO CONTINUA LA. Trava de escrita nao conserta linha que ja
-existe -- mesma limitacao da Spec 044 §4.1-bis. A varredura de 02/09 achou um
-registro; ele saiu a mao antes desta fatia subir.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+⚠️ Trava de escrita nao conserta linha que ja existe no banco.
 """
 
 from __future__ import annotations
@@ -83,7 +67,7 @@ def _como_admin(ws, admin, marketing, seo, social):
 # As portas
 # ------------------------------------------------------------------
 async def test_manager_da_raiz_nao_entra_em_subtime_dela(db) -> None:
-    """⭐ Porta 2 (`assign_to_team`) -- o caso exato que a Camila descreveu."""
+    """Porta 1 (`assign_to_team`)."""
     ws, marketing, seo, social, admin, alvo = await _mundo(db)
     await f.add_member(
         db, workspace_id=ws, user_id=alvo, team_id=marketing, role="MANAGER"
@@ -95,21 +79,21 @@ async def test_manager_da_raiz_nao_entra_em_subtime_dela(db) -> None:
                 user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
             )
 
-    # A mensagem EXPLICA, e nao so barra (requisito da §4.4): quem tenta isso
+    # A mensagem EXPLICA, e nao so barra: quem tenta isso
     # esta resolvendo um problema real ("ela precisa ver isso"), e a resposta
     # util e que ela ja ve.
     assert "alcancam todos os subtimes" in str(exc.value)
 
 
 async def test_promover_na_raiz_quem_ja_tem_subtime_e_recusado(db) -> None:
-    """⭐⭐ Porta 3 (`change_member_role`) -- o caminho que ninguem lembra.
+    """⭐⭐ Porta 2 (`change_member_role`) -- o caminho que ninguem lembra.
 
     Ninguem adiciona ninguem a subtime nenhum aqui. O vinculo de subtime ja
     existe, e e a PROMOCAO na raiz que cria o acumulo -- numa operacao que
     nao menciona subtime em lugar algum.
 
-    Sabotagem: tirar a chamada desta porta deixa os outros dois testes verdes
-    e abre um caminho completo para o estado proibido.
+    Tirar a chamada desta porta deixa o outro teste verde e abre um caminho
+    completo para o estado proibido.
     """
     ws, marketing, seo, social, admin, alvo = await _mundo(db)
     await f.add_member(
@@ -124,60 +108,3 @@ async def test_promover_na_raiz_quem_ja_tem_subtime_e_recusado(db) -> None:
             await MemberService(db).change_member_role(
                 user_id=alvo, team_id=marketing, new_role=UserTeamRole.MANAGER
             )
-
-
-# ------------------------------------------------------------------
-# O que a regra NAO barra -- e cada um destes seria um bug de produto
-# ------------------------------------------------------------------
-async def test_operator_da_raiz_entra_em_subtime_normalmente(db) -> None:
-    """OPERATOR nao e comando: nao alcanca subtime nenhum por autoridade.
-
-    ⚠️ Este e o cadastro NORMAL do produto -- alguem do geral que tambem
-    trabalha num braco. Barra-lo esvaziaria os subtimes.
-
-    ⚠️⚠️ O PAPEL NO SUBTIME E `OPERATOR`, E ISSO NAO E DETALHE. A primeira
-    versao deste teste usava SUPERVISOR e falhou -- por causa da REGRA IRMA,
-    nao desta: `OPERATOR@raiz + SUPERVISOR@sub` e exatamente a inversao que a
-    Spec 044 fatia 5 mata ("o papel na raiz nao pode ser menor"). O teste
-    passaria a medir as duas travas somadas e denunciaria a errada.
-    """
-    ws, marketing, seo, social, admin, alvo = await _mundo(db)
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=marketing, role="OPERATOR"
-    )
-
-    with _como_admin(ws, admin, marketing, seo, social):
-        vinculo = await MemberService(db).assign_to_team(
-            user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
-        )
-
-    assert vinculo.role == UserTeamRole.OPERATOR
-
-
-async def test_sem_vinculo_na_raiz_o_subtime_passa(db) -> None:
-    """⚠️ O cadastro mais comum de todos: supervisor de subtime que nunca foi
-    cadastrado na raiz. Tratar ausencia como comando barraria todo mundo."""
-    ws, marketing, seo, social, admin, alvo = await _mundo(db)
-
-    with _como_admin(ws, admin, marketing, seo, social):
-        vinculo = await MemberService(db).assign_to_team(
-            user_id=alvo, team_id=seo, role=UserTeamRole.SUPERVISOR
-        )
-
-    assert vinculo.team_id == seo
-
-
-async def test_dois_subtimes_sem_vinculo_na_raiz_continua_passando(db) -> None:
-    """A Spec 044 fatia 3 derrubou a trava de um subtime por pessoa -- esta
-    regra nao pode reintroduzi-la pela porta dos fundos."""
-    ws, marketing, seo, social, admin, alvo = await _mundo(db)
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=seo, role="OPERATOR"
-    )
-
-    with _como_admin(ws, admin, marketing, seo, social):
-        vinculo = await MemberService(db).assign_to_team(
-            user_id=alvo, team_id=social, role=UserTeamRole.OPERATOR
-        )
-
-    assert vinculo.team_id == social

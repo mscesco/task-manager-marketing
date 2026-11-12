@@ -1,10 +1,9 @@
-"""Spec 014 -- cadastro de membro escolhendo time (principal OU subtime) + cargo.
+"""Cadastro de membro escolhendo time (principal OU subtime) + cargo.
 
-Regra nova:
 - team_id e role AMBOS obrigatorios (sem membro orfao).
 - time pode ser o PRINCIPAL (raiz) ou um SUBTIME -- escolha explicita.
-- ADMIN nao e papel de time (Spec 045 + migration 0031): o ator aqui e ADMIN
-  DE ORGANIZACAO, sem vinculo, e o cadastro so cria vinculo de time.
+- ADMIN nao e papel de time: o ator aqui e ADMIN DE ORGANIZACAO, sem vinculo,
+  e o cadastro so cria vinculo de time.
 
 Cobre: bind no principal, bind no subtime (regressao) e team_id inexistente
 (404).

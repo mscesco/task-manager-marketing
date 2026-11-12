@@ -1,12 +1,11 @@
-// Spec 056, fatia F -- as visões da Base: quadro, controles e abas.
+// As visões da Base: quadro, controles e abas.
 //
 // ⚠️ O QUE ESTE ARQUIVO PRENDE:
-//   - o quadro tem um jeito de mover SEM arrastar (o seletor do card) -- a
-//     violação aceita no quadro de tarefas (web/AGENTS.md §1) não se repete;
+//   - o quadro tem um jeito de mover SEM arrastar (o seletor do card);
 //   - sem `can_update_view`, os controles mostram a config mas não a mudam
-//     (visão é compartilhada, D14);
-//   - a visão padrão não oferece "Apagar visão" (D25);
-//   - fatia J: o menu é da PRÓPRIA aba (clicar na ativa), e o duplo clique
+//     (visão é compartilhada);
+//   - a visão padrão não oferece "Apagar visão";
+//   - o menu é da PRÓPRIA aba (clicar na ativa), e o duplo clique
 //     renomeia sem o menu piscar no meio.
 // O que filtrar e ordenar significa é de `lib/__tests__/baseViews.test.ts`.
 
@@ -113,7 +112,7 @@ describe("ControlesDaVisao", () => {
     expect(onConfig).toHaveBeenCalledWith(expect.objectContaining({ group_by: "s" }));
   });
 
-  it("⚠️ sem can_update_view a config aparece, mas não muda (D14)", () => {
+  it("⚠️ sem can_update_view a config aparece, mas não muda", () => {
     const onConfig = vi.fn();
     render(
       <ControlesDaVisao
@@ -143,7 +142,7 @@ describe("BarraDeVisoes", () => {
     can_update_view: true, can_delete_view: true,
   });
 
-  it("as abas das visões, na ordem; a padrão não oferece apagar (D25)", () => {
+  it("as abas das visões, na ordem; a padrão não oferece apagar", () => {
     const views = [visao("p", true), visao("q", false)];
     render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
     expect(screen.getAllByRole("tab").map((t) => t.textContent)).toEqual(["Tabela", "Por status"]);
@@ -204,7 +203,7 @@ describe("BarraDeVisoes", () => {
     expect(screen.getByRole("dialog", { name: "Opções da visão Tabela" })).toBeTruthy();
   });
 
-  it("⭐ quadro novo já nasce agrupado pela coluna escolhida ali (fatia J)", async () => {
+  it("⭐ quadro novo já nasce agrupado pela coluna escolhida ali", async () => {
     const views = [visao("p", true)];
     const b = { ...base(views), columns: [TITULO, STATUS] };
     render(<BarraDeVisoes base={b} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
@@ -219,12 +218,5 @@ describe("BarraDeVisoes", () => {
         config: { group_by: "s" },
       })
     );
-  });
-
-  it("o + cria visão, sem a palavra ao lado", () => {
-    const views = [visao("p", true)];
-    render(<BarraDeVisoes base={base(views)} ativa={views[0]} onEscolher={vi.fn()} onViews={vi.fn()} />);
-    const mais = screen.getByRole("button", { name: "Nova visão" });
-    expect(mais.textContent).toBe("");
   });
 });

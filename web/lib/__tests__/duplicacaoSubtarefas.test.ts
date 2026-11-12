@@ -1,13 +1,8 @@
 /**
- * Passo 2 da duplicação (ADR 0031).
- *
- * O que estes testes travam, em ordem de importância:
- *
- *   1. NENHUMA subtarefa sai daqui sem responsável. É a regra inteira da ADR
- *      0031, e a única forma de o passo 2 não ser teatro.
- *   2. O passo 2 NÃO aparece no caso comum. Se aparecer sempre, vira pedágio
- *      e a duplicação de um clique que a Spec 033 entregou morre.
- *   3. O payload nunca leva lista vazia — o backend recusa, e recusa certo.
+ * Passo 2 da duplicação:
+ *   1. nenhuma subtarefa sai daqui sem responsável;
+ *   2. o passo 2 não aparece no caso comum (senão vira pedágio num clique);
+ *   3. o payload nunca leva lista vazia: o backend recusa.
  */
 
 import { describe, it, expect } from "vitest";
@@ -60,7 +55,7 @@ describe("linhasDasSubtarefas", () => {
     expect(textoDaPendencia(l)).toContain("Ninguém responde");
   });
 
-  it("ARQUIVADA não entra (D10) -- ela nem é copiada", () => {
+  it("ARQUIVADA não entra: ela nem é copiada", () => {
     const linhas = linhasDasSubtarefas(
       [filha("s1", "Viva", [ANA]), filha("s2", "Velha", [], true)],
       PODEM
@@ -80,7 +75,7 @@ describe("linhasDasSubtarefas", () => {
 });
 
 describe("haPendencias -- o passo 2 só aparece quando há assunto", () => {
-  it("todas resolvidas -> NÃO aparece (o clique único da Spec 033 sobrevive)", () => {
+  it("todas resolvidas -> NÃO aparece", () => {
     const linhas = linhasDasSubtarefas(
       [filha("s1", "A", [ANA]), filha("s2", "B", [BIA])],
       PODEM
@@ -97,9 +92,8 @@ describe("haPendencias -- o passo 2 só aparece quando há assunto", () => {
   });
 
   it("CONTINUA aparecendo depois de resolvida -- a linha não some do olho", () => {
-    // ⚠️ Regressão real, achada em 05/08 por teste de re-render: escondendo o
-    // bloco quando não falta mais nada, a linha sumia no instante em que a
-    // pessoa escolhia o responsável.
+    // Esconder o bloco quando não falta nada faria a linha sumir no instante
+    // em que a pessoa escolhe o responsável.
     const linhas = linhasDasSubtarefas([filha("s1", "A", [INATIVO])], PODEM);
     expect(haPendencias(linhas)).toBe(true);
     expect(motivoNaoDuplicar(linhas, { s1: [BIA] }, new Set())).toBeNull();

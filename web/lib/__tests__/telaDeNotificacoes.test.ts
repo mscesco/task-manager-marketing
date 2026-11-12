@@ -1,11 +1,3 @@
-// lib/__tests__/telaDeNotificacoes.test.ts -- Spec 053, fatia F
-//
-// SABOTAGENS (medidas):
-//   A. Em `agruparPorDia`, trocar `diaNoWorkspace(...)` por `.slice(0, 10)` do
-//      ISO cru. Deve cair "⚠️ aviso das 23h de Brasilia fica no dia de Brasilia".
-//   B. Em `filtroDaApi`, esquecer o `project_id`. Deve cair "o filtro da API
-//      traduz tipo e alvo".
-
 import { describe, expect, it } from "vitest";
 
 import type { AppNotification } from "@/lib/api";
@@ -67,7 +59,7 @@ describe("filtroDaApi e temFiltro", () => {
       types: ["TASK_DUE_CHANGED", "TASK_DUE_SOON", "TASK_OVERDUE"],
       task_id: null,
       project_id: "p-1",
-      // Spec 054: fora da aba "Silenciadas", a lista as esconde.
+      // Fora da aba "Silenciadas", a lista as esconde.
       muted: false,
     });
   });
@@ -94,7 +86,7 @@ describe("filtroDeMarcar", () => {
 
   it("⚠️ na aba Silenciadas o muted vai mesmo SEM outro filtro", () => {
     // Um objeto vazio aqui faria o botao da aba marcar as notificacoes das
-    // OUTRAS abas e deixar intactas as que estavam na tela (D14).
+    // OUTRAS abas e deixar intactas as que estavam na tela.
     expect(filtroDeMarcar({ ...ESTADO_INICIAL, aba: "silenciadas" })).toEqual({
       types: [],
       task_id: null,

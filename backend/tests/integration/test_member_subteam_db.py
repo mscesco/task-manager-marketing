@@ -1,24 +1,11 @@
-"""Entrega 13, Fatia 2 -- GET /members expoe os SUBTIMES de cada membro.
+"""`list_members` expoe os SUBTIMES de cada membro (`subteam_ids`).
 
-Regra: subtime = time com parent_team_id != NULL. O time PRINCIPAL (raiz)
-NAO rotula -- senao quem esta na raiz (ex.: managers do seed) viria com o
-id do Marketing geral e o filtro de subtime no quadro perderia o sentido.
+Regra: subtime = time com parent_team_id != NULL. O time raiz NAO rotula --
+senao quem esta na raiz viria com o id dela e o filtro de subtime no quadro
+perderia o sentido.
 
-⚠️⚠️ ATE 31/08 ESTE ARQUIVO DIZIA "cada membro tem 0 ou 1", pelo invariante
-da ADR 0008. A Spec 044 (fatia 1) pluraliza a listagem ANTES de a trava sair
-(fatia 3), e a razao esta na docstring de `list_all_with_subteams`: com dois
-subtimes o LEFT JOIN antigo devolvia DUAS LINHAS por membro e a pessoa
-aparecia duplicada nas seis telas que consomem esta rota.
-
-⚠️ E ESTE ARQUIVO ERA O UNICO LUGAR ONDE O INVARIANTE APARECIA EM `tests/`,
-como DOCSTRING -- nunca como assercao (ADR 0039). Ou seja: o defeito acima
-nao teria acendido nada. O teste `test_dois_subtimes_*` abaixo existe
-exatamente para que a fatia 3 nao possa ser escrita sem que alguem veja isto.
-
-Cobre: raiz+subtime, DOIS subtimes, so-subtime, so-raiz (vazio),
-sem-vinculo (vazio) e isolamento entre workspaces.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+Cobre: raiz+subtime, DOIS subtimes (sem duplicar o membro), so-subtime,
+so-raiz (vazio), sem-vinculo (vazio) e isolamento entre workspaces.
 """
 
 from __future__ import annotations
@@ -82,27 +69,13 @@ async def test_member_traz_subtimes_ignorando_raiz(db) -> None:
 
 
 async def test_dois_subtimes_vem_juntos_e_o_membro_nao_duplica(db) -> None:
-    """⚠️ O TESTE QUE NUNCA EXISTIU, e o motivo desta fatia vir antes da 3.
-
-    O caso e a redatora que o negocio precisa em SEO E em Midias Sociais --
-    o caso concreto que abriu a ADR 0039 em 10/08 e que segue bloqueado.
-
-    ⚠️ OS VINCULOS SAO ESCRITOS PELA FACTORY, DE PROPOSITO -- e assim ficam.
-    Quando este teste nasceu, `MemberService._assert_one_subteam` recusaria o
-    segundo vinculo com 422, entao a factory era a UNICA porta. A trava saiu
-    na fatia 3 e a porta do servico abriu; a versao pelo servico mora em
-    `test_member_assign_db.py`. Este arquivo continua entrando pela factory
-    porque o assunto dele e a CONSULTA, e nao o caminho de escrita.
-
-    ⚠️ E a fatia 3 desmentiu a premissa desta nota: a spec dizia que nenhum
-    teste afirmava o 422 da trava. Afirmava -- em `test_member_assign_db.py`,
-    por comportamento. O grep de 31/08 procurou a prosa "um subtime por
-    usuario" e nao achou a assercao.
-
-    O que ele prende, e que a versao antiga da consulta REPROVARIA:
+    """Um membro em dois subtimes:
       1. os dois subtimes vem, nao um deles;
-      2. **o membro aparece UMA vez** -- o LEFT JOIN antigo devolvia uma linha
-         por subtime, e `list_members` montava um objeto por linha.
+      2. o membro aparece UMA vez -- um LEFT JOIN por subtime devolveria uma
+         linha por vinculo, e `list_members` monta um objeto por linha.
+
+    Os vinculos vem da factory: o assunto aqui e a consulta, e nao o caminho
+    de escrita (esse esta em `test_member_assign_db`).
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")

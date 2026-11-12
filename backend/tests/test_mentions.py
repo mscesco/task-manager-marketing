@@ -1,8 +1,5 @@
-"""Testes puros de extract_mentions (Spec 019, B1) -- sem DB.
-
-Parsing de @[Nome](uuid): extrai ids, dedup, ignora texto comum e uuid
-invalido. Rodam em qualquer lugar (nao exigem TEST_DATABASE_URL).
-"""
+"""`extract_mentions`, puro: parsing de @[Nome](uuid) extrai ids, sem
+repetir, e ignora texto comum e uuid invalido."""
 
 from __future__ import annotations
 
@@ -13,7 +10,7 @@ from app.modules.tasks.domain.comment import extract_mentions
 
 def test_extrai_uma_mencao() -> None:
     uid = uuid.uuid4()
-    assert extract_mentions(f"oi @[Camila]({uid}) tudo bem?") == [uid]
+    assert extract_mentions(f"oi @[Ana]({uid}) tudo bem?") == [uid]
 
 
 def test_extrai_varias_em_ordem() -> None:
@@ -42,4 +39,4 @@ def test_sem_mencao_retorna_vazio() -> None:
 
 def test_nome_com_espacos_e_acentos() -> None:
     uid = uuid.uuid4()
-    assert extract_mentions(f"@[Camila Cesco Ferreira]({uid})!") == [uid]
+    assert extract_mentions(f"@[Ana Maria Souza]({uid})!") == [uid]

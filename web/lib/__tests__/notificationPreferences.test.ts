@@ -1,17 +1,7 @@
-// Spec 054, fatia D -- a regra do cartao de preferencias (`lib/`).
-//
-// O que se prende aqui:
-//   - sao 25 interruptores + 3 linhas travadas: os 24 da spec (§5) + a resposta
-//     ao seu comentario (auditoria 11/11);
-//   - ⚠️ prazo NAO tem coluna de seguidor -- o aviso nunca chega por seguir, e
-//     um toggle ali seria um interruptor que nao silencia nada;
-//   - ⚠️ celula AUSENTE conta como LIGADO (a ausencia de mute significa ligado
-//     no servidor -- D11);
-//   - o rotulo acessivel carrega a linha E a coluna;
-//   - o resumo nao diz "0".
-//
-// SABOTAGEM (medida): em `isEnabled`, trocar o `?? true` por `?? false`. Deve
-// cair "celula ausente conta como ligada".
+// A regra do cartao de preferencias de notificacao.
+//   - prazo NAO tem coluna de seguidor: o aviso nunca chega por seguir, e um
+//     toggle ali seria um interruptor que nao silencia nada;
+//   - celula AUSENTE conta como LIGADO: no servidor, ausencia de mute = ligado.
 
 import { describe, expect, it } from "vitest";
 

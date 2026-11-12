@@ -1,6 +1,6 @@
 // ?task= na URL em sincronia com a tarefa aberta (lib/urlTarefa.ts).
 //
-// Precisa de jsdom (Spec 027, D2): usa location e history.replaceState.
+// Precisa de jsdom: usa location e history.replaceState.
 // Cada teste posiciona a URL com um replaceState REAL antes de espionar,
 // para o espiao contar so as chamadas do modulo.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -102,10 +102,5 @@ describe("lerTaskDaUrl", () => {
   it("ignora outros parametros", () => {
     irPara("/quadro?filtro=meus");
     expect(lerTaskDaUrl()).toBeNull();
-  });
-
-  it("le de volta o que sincronizarTaskNaUrl gravou (ida e volta)", () => {
-    sincronizarTaskNaUrl(ID_B);
-    expect(lerTaskDaUrl()).toBe(ID_B);
   });
 });

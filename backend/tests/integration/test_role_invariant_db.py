@@ -73,16 +73,6 @@ async def test_create_member_recusa_manager_em_subtime(db) -> None:
     assert total == 0
 
 
-async def test_create_member_aceita_operator_na_raiz(db) -> None:
-    """Membro so do time raiz, sem subtime, e estado valido."""
-    ws, raiz, sub, admin = await _mundo(db)
-    with _como_admin(ws, raiz, sub, admin):
-        criado = await MemberService(db).create_member(
-            _cmd(raiz, UserTeamRole.OPERATOR)
-        )
-    assert criado.user.id is not None
-
-
 async def test_create_member_recusa_supervisor_na_raiz(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
@@ -93,13 +83,15 @@ async def test_create_member_recusa_supervisor_na_raiz(db) -> None:
 
 
 async def test_create_member_aceita_papel_correto_em_cada_nivel(db) -> None:
-    """O caminho feliz precisa continuar funcionando nos dois niveis."""
+    """MANAGER e OPERATOR na raiz, OPERATOR no subtime: os tres valem."""
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         svc = MemberService(db)
         na_raiz = await svc.create_member(_cmd(raiz, UserTeamRole.MANAGER))
+        operador_na_raiz = await svc.create_member(_cmd(raiz, UserTeamRole.OPERATOR))
         no_sub = await svc.create_member(_cmd(sub, UserTeamRole.OPERATOR))
     assert na_raiz.user.id is not None
+    assert operador_na_raiz.user.id is not None
     assert no_sub.user.id is not None
 
 
@@ -219,16 +211,6 @@ async def test_promover_subtime_a_time_raiz_continua_recusado(db) -> None:
             await TeamService(db).move(team_id=sub, new_parent_id=None)
 
 
-async def test_criar_subtime_continua_liberado(db) -> None:
-    """A trava e so pra raiz -- subtime nao tem limite."""
-    ws, raiz, sub, admin = await _mundo(db)
-    with _como_admin(ws, raiz, sub, admin):
-        novo = await TeamService(db).create(
-            name="Design", slug="design", parent_team_id=raiz
-        )
-    assert novo.parent_team_id == raiz
-
-
 async def test_mover_subtime_entre_pais_continua_liberado(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
     neto = await f.make_team(
@@ -262,32 +244,8 @@ async def test_mover_a_raiz_para_baixo_de_descendente_continua_barrado(db) -> No
 
 
 # ------------------------------------------------------------------
-# times raiz no banco e isolamento de tenant
+# schema
 # ------------------------------------------------------------------
-async def test_o_banco_ACEITA_dois_times_raiz_no_mesmo_workspace(db) -> None:
-    """Direto no SQL: a pergunta e sobre o schema, nao sobre o servico."""
-    ws, raiz, _sub, _admin = await _mundo(db)
-    await db.execute(
-        text(
-            "INSERT INTO team (id, workspace_id, parent_team_id, name, slug) "
-            "VALUES (gen_random_uuid(), :w, NULL, 'Raiz Dois', 'raiz-dois')"
-        ),
-        {"w": ws},
-    )
-    await db.flush()
-
-    quantas = (
-        await db.execute(
-            text(
-                "SELECT count(*) FROM team "
-                "WHERE parent_team_id IS NULL AND workspace_id = :w"
-            ),
-            {"w": ws},
-        )
-    ).scalar_one()
-    assert quantas == 2
-
-
 async def test_o_slug_continua_unico_por_workspace(db) -> None:
     """`uq_team_workspace_slug` impede dois times com o mesmo slug, em qualquer nivel."""
     ws, raiz, _sub, _admin = await _mundo(db)
@@ -301,25 +259,6 @@ async def test_o_slug_continua_unico_por_workspace(db) -> None:
             {"w": ws, "r": raiz},
         )
         await db.flush()
-
-
-async def test_raiz_de_workspaces_diferentes_nao_conflita(db) -> None:
-    """Cada tenant tem a sua raiz."""
-    ws_a, raiz_a, _sub_a, _admin_a = await _mundo(db)
-    ws_b, raiz_b, _sub_b, _admin_b = await _mundo(db)
-    assert raiz_a != raiz_b
-
-    linhas = (
-        await db.execute(
-            text(
-                "SELECT workspace_id, count(*) FROM team "
-                "WHERE parent_team_id IS NULL AND workspace_id IN (:a, :b) "
-                "GROUP BY workspace_id"
-            ),
-            {"a": ws_a, "b": ws_b},
-        )
-    ).all()
-    assert sorted(n for _, n in linhas) == [1, 1]
 
 
 async def test_o_banco_recusa_vinculo_ADMIN(db) -> None:

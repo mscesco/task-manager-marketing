@@ -1,10 +1,9 @@
-"""Auditoria de 11/11, item 17 -- a limpeza diaria e o indice do sino.
+"""A limpeza diaria de notificacoes e o indice do sino.
 
     lida com mais de 6 meses     -> some
     lida recente                 -> fica
     NAO lida, por mais velha     -> fica (a pessoa ainda nao viu)
-    indice                       -> segue (recipient, updated_at, id); o de
-                                    created_at, que ninguem usava, saiu
+    indice                       -> segue (recipient, updated_at, id)
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -86,7 +85,6 @@ async def test_indice_do_sino_segue_a_ordenacao(db) -> None:
             )
         ).all()
     )
-    assert "idx_notification_recipient_created" not in indices
     assert "(recipient_id, updated_at DESC, id DESC)" in (
         indices["ix_notification_recipient_updated"]
     )

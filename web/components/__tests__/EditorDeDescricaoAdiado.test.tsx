@@ -1,4 +1,4 @@
-// Spec 052, revisão de 16/09 -- o editor que não baixa NÃO derruba a página.
+// O editor que não baixa NÃO derruba a página.
 //
 // ⚠️ O CASO: aba aberta desde antes de um deploy pede o pedaço de código com o
 // nome antigo; o `import()` rejeita. Sem fronteira de erro, a rejeição subia até

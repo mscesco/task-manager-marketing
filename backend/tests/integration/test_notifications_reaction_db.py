@@ -1,6 +1,6 @@
-"""Spec 050, fatia B -- TASK_COMMENT_REACTED: reagiram ao seu comentario.
+"""TASK_COMMENT_REACTED: reagiram ao seu comentario.
 
-O que este arquivo prova, na ordem das decisoes dela (15/09):
+O que este arquivo prova:
 
     1. reagir ao comentario de alguem notifica o AUTOR, com o emoji no payload
     2. reagir ao PROPRIO comentario nao notifica
@@ -99,14 +99,14 @@ async def test_reagir_notifica_o_autor(db) -> None:
 
 
 async def test_reagir_ao_proprio_comentario_nao_notifica(db) -> None:
-    """Decisao dela: *"não notifica se reagir ao proprio comentario"*."""
+    """Reagir ao proprio comentario nao notifica."""
     m = await _mundo(db)
     await _reagir(db, m, "autora", "🎉")
     assert await _avisos(db, m["autora"]) == []
 
 
 async def test_trocar_o_emoji_nao_notifica(db) -> None:
-    """Decisao dela (pergunta 3): trocar nao notifica de novo."""
+    """Trocar o emoji nao notifica de novo."""
     m = await _mundo(db)
     await _reagir(db, m, "ana", "👍")
     await _reagir(db, m, "ana", "❤️")  # troca

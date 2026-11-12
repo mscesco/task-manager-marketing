@@ -1,5 +1,4 @@
-// Spec 052, fatia C -- as regras da formatação: endereço e resumo.
-// ⚠️ Os testes da barra que escrevia asteriscos saíram com ela, na fatia E.
+// As regras da formatação: endereço e resumo.
 import { describe, expect, it } from "vitest";
 import { enderecoSeguro, semMarcacao } from "@/lib/markdown";
 
@@ -42,7 +41,7 @@ describe("semMarcacao", () => {
     expect(semMarcacao(t)).toBe(t);
   });
 
-  it("⚠️ o escape que o editor da fatia E escreve some do resumo -- sem virar marcação", () => {
+  it("⚠️ o escape que o editor escreve some do resumo -- sem virar marcação", () => {
     expect(semMarcacao("\\[Design\\] Arte")).toBe("[Design] Arte");
     expect(semMarcacao("2 \\* 3 e 4 \\* 5")).toBe("2 * 3 e 4 * 5");
     expect(semMarcacao("arquivo\\_final\\_v2")).toBe("arquivo_final_v2");

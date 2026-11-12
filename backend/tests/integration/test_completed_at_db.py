@@ -1,10 +1,9 @@
-"""Regressao: serializacao de completed_at no PATCH/POST de status.
+"""Serializacao de completed_at no PATCH/POST de status.
 
-O bug (E9-escrita): task.completed_at = func.now() era uma expressao SQL
-nao resolvida; ao serializar TaskResponse (Pydantic) o SQLAlchemy async
-tentava buscar o valor tarde -> MissingGreenlet -> 500. Corrigido usando
-datetime.now(timezone.utc), um valor concreto. Estes testes batem o
-endpoint real (unico caminho onde o erro aparece).
+⚠️ `completed_at` precisa ser um valor concreto, e nao `func.now()`: uma
+expressao SQL nao resolvida faz o SQLAlchemy async buscar o valor tarde, ao
+serializar a resposta -> MissingGreenlet -> 500. Estes testes batem o
+endpoint real, unico caminho onde o erro aparece.
 """
 
 from __future__ import annotations
@@ -93,7 +92,7 @@ async def test_post_task_ja_completed_201_e_completed_at_setado(db) -> None:
                 "title": "ja concluida",
                 "team_id": str(a),
                 "status": "COMPLETED",
-                # ADR 0031: responsavel obrigatorio tambem no POST HTTP.
+                # Responsavel obrigatorio tambem no POST HTTP.
                 "assignee_ids": [str(manager)],
             },
         )

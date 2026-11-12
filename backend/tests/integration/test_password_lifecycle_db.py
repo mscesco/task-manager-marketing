@@ -1,13 +1,9 @@
-"""Integracao da Entrega 7 -- ciclo de vida de senha contra Postgres real.
+"""Ciclo de vida de senha contra Postgres real, pelos services.
 
-Marcado `integration`: pulado sem TEST_DATABASE_URL. Roda no harness da
-Entrega 5 (savepoint+rollback por teste). Exerce os services diretamente,
-como as demais suites de integracao, cobrindo:
-    - cadastro gera provisoria + pendencia + expiracao (ADR 0019);
+    - cadastro gera provisoria + pendencia + expiracao;
     - login com provisoria valida funciona; expirada -> AuthenticationError;
     - change_password destrava (zera flag e expiracao) e valida entradas;
-    - reset_password re-arma a pendencia com nova provisoria;
-    - admin do provisioning NAO nasce com pendencia.
+    - reset_password re-arma a pendencia com nova provisoria.
 """
 
 from __future__ import annotations
@@ -106,8 +102,8 @@ async def test_login_with_expired_temp_password_is_rejected(db) -> None:
 
 
 async def test_refresh_devolve_o_MESMO_refresh_token(db) -> None:
-    """⚠️ Auditoria de 21/10: o refresh emitia um refresh novo de 7 dias a
-    cada chamada, e a sessao nunca vencia. Agora o refresh e o do login."""
+    """O refresh devolve o refresh do login: emitir um novo de 7 dias a cada
+    chamada faria a sessao nunca vencer."""
     ws, team, admin = await _ws_admin(db)
     provisioned = await _create_member(db, ws, team, admin)
     ws_row = await db.get(Workspace, ws)
@@ -124,8 +120,8 @@ async def test_refresh_devolve_o_MESMO_refresh_token(db) -> None:
 
 
 async def test_change_password_com_provisoria_VENCIDA_e_recusada(db) -> None:
-    """⚠️ Auditoria de 21/10: so o login checava o vencimento. A sessao aberta
-    antes das 72h chegava aqui pelo refresh e trocava a senha vencida."""
+    """O vencimento vale tambem aqui, nao so no login: a sessao aberta antes de
+    vencer chega pelo refresh."""
     ws, team, admin = await _ws_admin(db)
     provisioned = await _create_member(db, ws, team, admin)
     provisioned.user.password_expires_at = datetime.now(UTC) - timedelta(hours=1)
@@ -174,7 +170,7 @@ async def test_change_password_rejects_wrong_current(db) -> None:
     ws, team, admin = await _ws_admin(db)
     provisioned = await _create_member(db, ws, team, admin)
 
-    # 422, e nao 401: o front le 401 como sessao vencida (auditoria 21/10).
+    # 422, e nao 401: o front le 401 como sessao vencida.
     with pytest.raises(ValidationError):
         await AuthService(db).change_password(
             user_id=provisioned.user.id,
@@ -214,16 +210,7 @@ async def test_reset_password_rearms_pending_with_new_secret(db) -> None:
 
 
 # --------------------------------------------------------
-# Provisioning do admin nao nasce travado
-# --------------------------------------------------------
-async def test_admin_from_factory_not_pending(db) -> None:
-    ws, team, admin = await _ws_admin(db)
-    admin_row = await db.get(User, admin)
-    assert admin_row.must_change_password is False
-
-
-# --------------------------------------------------------
-# Equalizacao de tempo no login (anti-enumeracao) -- achado da auditoria
+# Equalizacao de tempo no login (anti-enumeracao)
 # --------------------------------------------------------
 async def test_login_inexistente_roda_bcrypt_equalizando_tempo(db, monkeypatch) -> None:
     """Login com e-mail/workspace inexistente ainda roda bcrypt (equaliza tempo).

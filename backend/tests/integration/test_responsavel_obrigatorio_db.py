@@ -1,20 +1,12 @@
-"""Toda tarefa nasce com responsavel (ADR 0031, fatia 3).
+"""Toda tarefa nasce com responsavel, por qualquer cliente (nao so o modal).
 
-A regra vivia SO no modal (`criacaoTarefa.motivoNaoCria`): valia pra quem
-usava a tela e nao valia pro n8n, pro Swagger nem pra duplicacao. Aqui ela
-passa a valer pra todo cliente.
-
-O que estes testes defendem, em ordem:
-
-  1. Criar sem responsavel e 422 -- em qualquer caminho.
-  2. Remover o ULTIMO responsavel e 422. Travar so a criacao nao fecha nada:
-     e a mesma porta, do outro lado.
-  3. A regra NAO retroage. As 37 tarefas vivas sem responsavel medidas em
-     05/08 continuam editaveis -- validar estado inteiro num PATCH parcial e a
-     forma exata do defeito de 04/08 (editar o titulo devolvendo 422 por causa
-     de um campo que nem foi tocado).
-  4. A duplicacao continua funcionando, agora resolvendo os responsaveis das
-     filhas ANTES do create.
+  1. Criar sem responsavel e 422, em qualquer caminho.
+  2. Remover o ULTIMO responsavel e 422: e a mesma porta, do outro lado.
+  3. A regra nao retroage: tarefa antiga sem responsavel continua editavel.
+     Validar o estado inteiro num PATCH parcial devolveria 422 por um campo
+     que nem foi tocado.
+  4. A duplicacao continua funcionando, resolvendo os responsaveis das filhas
+     antes do create.
 """
 
 from __future__ import annotations
@@ -69,8 +61,7 @@ async def test_criar_sem_responsavel_e_recusado(db) -> None:
 
 
 async def test_criar_SUBTAREFA_sem_responsavel_tambem_e_recusado(db) -> None:
-    """44 das 50 tarefas ativas sem responsavel eram SUBTAREFAS (29/07). Se a
-    trava valesse so pra raiz, ela nao pegaria o caso que criou o passivo."""
+    """A trava vale para subtarefa tambem, nao so para tarefa de topo."""
     ws, team, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         pai = await TaskService(db).create(
@@ -140,12 +131,8 @@ async def test_remover_o_PENULTIMO_continua_funcionando(db) -> None:
 
 
 async def test_a_regra_NAO_retroage_ao_editar_tarefa_antiga(db) -> None:
-    """⚠️ O teste que impede a regra de vazar pro PATCH.
-
-    Monta o passivo a mao (como as 37 de producao) e edita o TITULO. Se isso
-    devolver 422, ninguem consegue mais mexer nas tarefas antigas -- que e o
-    defeito de 04/08 repetido, agora em escala maior.
-    """
+    """A regra nao vaza pro PATCH: tarefa sem responsavel (montada a mao)
+    tem o TITULO editado sem 422."""
     ws, team, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         t = await TaskService(db).create(
@@ -156,8 +143,7 @@ async def test_a_regra_NAO_retroage_ao_editar_tarefa_antiga(db) -> None:
                 assignee_ids=[ana],
             )
         )
-    # Passivo montado por SQL: a tarefa perde o responsavel sem passar pelos
-    # guards, exatamente como as linhas que ja existem em producao.
+    # Por SQL: a tarefa perde o responsavel sem passar pelos guards.
     await db.execute(
         text("DELETE FROM task_assignment WHERE task_id = :t"), {"t": t.id}
     )
@@ -171,6 +157,8 @@ async def test_a_regra_NAO_retroage_ao_editar_tarefa_antiga(db) -> None:
 
 
 async def test_duplicar_continua_funcionando_com_a_trava(db) -> None:
+    """O responsavel da copia (admin) difere do da filha (ana): a filha copiada
+    mantem o dela, em vez de herdar o aplicado."""
     ws, team, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)

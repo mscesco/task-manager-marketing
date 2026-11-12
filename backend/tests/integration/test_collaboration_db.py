@@ -98,11 +98,8 @@ async def test_remove_assignee_history_e_404(db) -> None:
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a, project_id=proj)
     with acting_as(**mgr_ctx):
         svc = CollaborationService(db)
-        # ⚠️ AJUSTADO EM 05/08 (ADR 0031). Antes o teste designava UMA pessoa e
-        # a removia, ficando com zero -- que e exatamente o estado que a ADR
-        # fecha. Agora ha DOIS responsaveis: remover um continua funcionando
-        # (e e o que este teste mede), remover o ultimo e outro teste, em
-        # test_responsavel_obrigatorio_db.py.
+        # ⚠️ DOIS responsaveis: tarefa nao fica sem nenhum. Remover o ultimo e
+        # outro teste, em test_responsavel_obrigatorio_db.py.
         await svc.add_assignee(task_id=task.id, user_id=manager)
         await svc.add_assignee(task_id=task.id, user_id=alvo)
         await svc.remove_assignee(task_id=task.id, user_id=alvo)
@@ -160,11 +157,8 @@ async def test_assignment_nao_concede_edicao(db) -> None:
 
 
 async def test_watcher_self_sem_permissao_grava_history(db) -> None:
-    """Seguir a si mesmo exige so ver (ADR 0011) -- e GRAVA historico.
-
-    ⚠️ Ate a Spec 053 este teste afirmava ZERO linhas de historico (ADR 0012).
-    A D13 da 053 revogou essa parte: entrar e sair como seguidor e gravado,
-    sempre, com `by_self` e `reason`.
+    """Seguir a si mesmo exige so ver -- e GRAVA historico, com `by_self` e
+    `reason`.
     """
     ws, r, a, b, manager, proj, forest, mgr_ctx = await _world(db)
     op = await f.make_user(db, workspace_id=ws)
@@ -198,53 +192,3 @@ async def test_watcher_self_sem_permissao_grava_history(db) -> None:
         "by_self": True,
         "reason": "manual",
     }
-
-
-async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
-    """ADR 0011: inscrever TERCEIRO exige `task.assign` + escopo de EDICAO.
-
-    ⚠️ ESTE TESTE FOI RECONSTRUIDO NA SPEC 037 (F5), e a reconstrucao registra
-    uma perda de cobertura que nao da para desfazer.
-
-    A versao anterior usava um ator SEM VINCULO NENHUM (`acting_as` com roles
-    vazios) que enxergava a task por ter criado (o ramo `created_by` da ADR
-    0013). Ela afirmava a metade da PERMISSAO da regra: ve, mas nao tem
-    `task.assign` -> 403.
-
-    ⚠️ (Spec 053, B: a metade VOLTOU a ter caminho -- a permissao passou a ser
-    perguntada no time da tarefa, e este mesmo cenario hoje e barrado por
-    ela, e nao pela edicao. Ver `test_seguidores_053b_db.py`. O paragrafo
-    abaixo fica como registro de 037.)
-
-    ⚠️ ESSA METADE FICOU SEM CAMINHO. Depois da E1, enxergar exige vinculo de
-    time, e os QUATRO papeis carregam `task.assign`
-    (`permissions.py:65, 78, 86, 100`). Nao existe mais alguem que enxergue uma
-    task e nao tenha a permissao -- o `require_permission` daquele ramo nao e
-    alcancavel pela lente. NAO gaste sessao tentando construir o cenario: ele
-    exigiria um papel novo sem `task.assign`, que e decisao de produto.
-
-    O que continua alcancavel e a metade do ESCOPO DE EDICAO, e este teste
-    passa a afirma-la pelo unico caminho que existe: task dentro de PROJETO
-    COMUM. `task_visible` olha `project.team_id`; `task_editable` olha
-    `task.team_id`. Projeto no time A (na lente), task pinada no time B (fora)
-    -> ve pelo projeto, nao edita pela task.
-    """
-    ws, r, a, b, manager, proj, forest, mgr_ctx = await _world(db)
-    op_a = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=op_a, team_id=a, role="OPERATOR")
-    outro = await f.make_user(db, workspace_id=ws)
-    # projeto comum do time A (proj), task pinada no time B.
-    task_b = await f.make_task(
-        db, workspace_id=ws, created_by=manager, team_id=b, project_id=proj
-    )
-
-    with acting_as(
-        workspace_id=ws, user_id=op_a, memberships=(mship(a, "OPERATOR"),),
-        team_tree=forest,
-    ):
-        svc = CollaborationService(db)
-        # ENXERGA (pelo time do projeto) -- e isto e o que separa 403 de 404.
-        await svc.list_watchers(task_id=task_b.id)
-        # ...mas inscrever TERCEIRO exige editar, e o time B nao e dela.
-        with pytest.raises(AuthorizationError):
-            await svc.add_watcher(task_id=task_b.id, user_id=outro)

@@ -1,22 +1,8 @@
 /**
- * Spec 036, fatia 5b-6 -- o seletor de quadro da tela do time.
- *
- * ⚠️ O QUE ESTE ARQUIVO PRENDE E A DISTINCAO ENTRE LENTE E QUADRO. Elas
- * convivem no mesmo menu porque, para quem usa, sao dois lugares onde a tarefa
- * pode estar. Mas a lente nao existe como registro (ADR 0034): nao tem
- * `board_id`, nao se renomeia, nao se apaga. Um seletor que as trate igual
- * oferece "renomear" numa coisa que nao existe -- e o backend responde 404 a
- * uma requisicao que a tela nunca deveria ter deixado sair.
- *
- * ⚠️ ISTO NAO E SEGURANCA. O backend trava de verdade. Aqui so evitamos
- * oferecer botao que o servidor vai recusar.
- *
- * SABOTAGENS (medidas):
- *   M. `alcanceDeQuadro`: inverter a ordem -- `subteam` antes de `root`.
- *   N. `podeGerirQuadrosDe`: `subtime` devolve `true` sem conferir a lista.
- *   O. `opcoesDoSeletor`: tirar o filtro `q.team_id === teamId`.
- *   P. `opcoesDoSeletor`: tirar o `!q.is_default`.
- *   Q. `OpcaoDeQuadro` da lente com `podeRenomear: podeGerir`.
+ * O seletor de quadro da tela do time. O que este arquivo prende é a
+ * distinção entre LENTE e QUADRO: a lente não existe como registro (sem
+ * `board_id`), então não se renomeia nem se apaga. Não é segurança (o backend
+ * trava); aqui só se evita oferecer botão que o servidor vai recusar.
  */
 
 import { describe, expect, it } from "vitest";
@@ -25,7 +11,6 @@ import type { Quadro } from "@/lib/api";
 import {
   DESCRICAO_DA_LENTE,
   alcanceDeQuadro,
-  nomeConfere,
   nomeDeQuadroValido,
   opcaoSelecionada,
   opcoesDoSeletor,
@@ -33,7 +18,6 @@ import {
   podeApagarQuadros,
   podeGerirQuadrosDe,
   resolverQuadroPedido,
-  TEXTO_DA_QUEDA,
   urlDoQuadro,
 } from "@/lib/seletorDeQuadro";
 
@@ -63,21 +47,9 @@ describe("alcanceDeQuadro", () => {
     expect(alcanceDeQuadro(null).tipo).toBe("nenhum");
   });
 
-  it("board.manage.root -> amplo", () => {
-    const a = alcanceDeQuadro({
-      permissions: ["board.update.root", "board.update"],
-      teams: [],
-    });
-    expect(a.tipo).toBe("amplo");
-  });
-
-  it("⚠️ root GANHA de subteam quando o ator tem os dois", () => {
-    // ⚠️ E ADMIN E MANAGER TEM OS DOIS. O mapa de permissoes do backend e
-    // uniao de papeis, e `board.manage.subteam` entra em SUPERVISOR, MANAGER e
-    // ADMIN -- se entrasse so no supervisor, o supervisor criaria quadro e o
-    // ADMIN nao. Aqui a consequencia e outra: com a ordem invertida, um ADMIN
-    // sem subtime nenhum cairia em `subtime: []` e perderia o botao em TODO
-    // time. E ele e quem administra os subtimes de que nao e supervisor.
+  it("⚠️ root -> amplo, e GANHA de subteam quando o ator tem os dois", () => {
+    // ADMIN e MANAGER têm os dois. Com a ordem invertida, um ADMIN sem subtime
+    // cairia em `subtime: []` e perderia o botão em todo time.
     const a = alcanceDeQuadro({
       permissions: ["board.update", "board.update.root"],
       teams: [],
@@ -103,7 +75,7 @@ describe("alcanceDeQuadro", () => {
   });
 });
 
-describe("podeApagar (Spec 049, fatia D)", () => {
+describe("podeApagar", () => {
   it("⚠️ renomear e apagar vêm de verbos diferentes: o GESTOR renomeia e não apaga", () => {
     const avulsos = opcoesDoSeletor(QUADROS, SEO, true, false).filter(
       (o) => o.id !== null,
@@ -139,10 +111,8 @@ describe("podeGerirQuadrosDe", () => {
   });
 
   it("⚠️ supervisor SO no proprio subtime", () => {
-    // ⚠️ A CELULA QUE O MAPA DE PERMISSAO SOZINHO RESPONDE ERRADO, e a mesma
-    // que o backend guarda em `_assert_pode_gerir`. Sem a conferencia da
-    // lista, a tela ofereceria "novo quadro" no time alheio e a pessoa levaria
-    // 403 depois de digitar o nome.
+    // O mapa de permissão sozinho responde errado aqui: sem conferir a lista,
+    // a tela ofereceria "novo quadro" no time alheio (403 depois de digitar).
     const a = { tipo: "subtime", subtimes: [SEO] } as const;
     expect(podeGerirQuadrosDe(a, SEO)).toBe(true);
     expect(podeGerirQuadrosDe(a, CRM)).toBe(false);
@@ -161,32 +131,27 @@ describe("opcoesDoSeletor", () => {
   });
 
   it("⚠️ a lente NUNCA tem afordancia de renomear -- nem para quem pode tudo", () => {
-    // ADR 0034 item 2: ausente, e nao desabilitada. Nao ha o que renomear --
-    // a lente nao existe como registro no banco.
+    // Ausente, e não desabilitada: a lente não existe como registro.
     const [lente] = opcoesDoSeletor(QUADROS, SEO, true, true);
     expect(lente.podeRenomear).toBe(false);
   });
 
   it("⚠️ so os quadros DAQUELE time entram", () => {
-    // ⚠️ `GET /boards` devolve tudo que a pessoa ALCANCA -- para um ADMIN,
-    // isso inclui os quadros de todos os subtimes. Sem o filtro, o seletor do
-    // SEO listaria "Automações" (do CRM), e criar tarefa ali a mandaria para
-    // um quadro que ninguem do SEO ve.
+    // `GET /boards` devolve tudo que a pessoa alcança; para um ADMIN, os
+    // quadros de todos os subtimes.
     const nomes = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.nome);
     expect(nomes).not.toContain("Automações");
   });
 
   it("⚠️ o quadro PADRAO nao entra -- a lente ja o representa", () => {
-    // Lista-lo poria a mesma coisa duas vezes no menu, uma delas com botao de
-    // renomear que a outra nao tem.
+    // Listá-lo poria a mesma coisa duas vezes no menu.
     const nomes = opcoesDoSeletor(QUADROS, RAIZ, true, true).map((o) => o.nome);
     expect(nomes).not.toContain("Quadro geral");
     expect(nomes).toEqual(["Lente do time"]);
   });
 
   it("⚠️ ordena por NOME, e nao pela ordem que a API devolveu", () => {
-    // `GET /boards` nao promete ordem. Sem isto o menu se reordena sozinho
-    // entre dois carregamentos, e o item que a pessoa ia clicar muda de lugar.
+    // `GET /boards` não promete ordem.
     const nomes = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.nome);
     expect(nomes).toEqual([
       "Lente do time",
@@ -196,8 +161,7 @@ describe("opcoesDoSeletor", () => {
   });
 
   it("sem permissao, os avulsos aparecem mas sem renomear", () => {
-    // ⚠️ VER continua valendo: quem alcanca o quadro pela lente alcanca o
-    // conteudo dele. O que some e a afordancia de EDITAR.
+    // Quem alcança o quadro pela lente alcança o conteúdo; some só o editar.
     const opcoes = opcoesDoSeletor(QUADROS, SEO, false, false);
     expect(opcoes).toHaveLength(3);
     expect(opcoes.every((o) => !o.podeRenomear)).toBe(true);
@@ -220,9 +184,7 @@ describe("opcaoSelecionada", () => {
   });
 
   it("⚠️ id que nao existe mais cai na LENTE, sem erro", () => {
-    // O quadro pode ter sido apagado por outra pessoa, ou o id pode vir de um
-    // link velho. Mostrar erro para quem so abriu a tela seria pior que
-    // mostrar o lugar padrao dela.
+    // Quadro apagado por outra pessoa, ou link velho.
     expect(opcaoSelecionada(OPCOES, "b-que-sumiu").id).toBeNull();
   });
 });
@@ -244,8 +206,6 @@ describe("nomeDeQuadroValido", () => {
   });
 
   it("⚠️ so espaco NAO e nome", () => {
-    // Sem o `trim` antes da conferencia, "   " passaria e o backend devolveria
-    // 422 -- erro depois de digitar, para uma regra que a tela ja conhecia.
     expect(nomeDeQuadroValido("   ")).toBeNull();
   });
 
@@ -254,61 +214,18 @@ describe("nomeDeQuadroValido", () => {
   });
 
   it("⚠️ 255 passa, 256 nao -- e o teto e o do QUADRO", () => {
-    // ⚠️ Coluna tem outro teto (120). Reaproveitar esta funcao para coluna
-    // deixaria passar um nome que o Postgres recusa com
-    // `StringDataRightTruncation`, que sai como 500.
+    // Coluna tem outro teto (120): reaproveitar esta função para coluna
+    // deixaria passar nome que o Postgres recusa com 500.
     expect(nomeDeQuadroValido("x".repeat(255))).toHaveLength(255);
     expect(nomeDeQuadroValido("x".repeat(256))).toBeNull();
   });
 });
 
-describe("nomeConfere -- a trava de apagar quadro", () => {
-  // ⚠️ É A ÚNICA COISA ENTRE UM CLIQUE E APAGAR AS TAREFAS DE OUTRAS PESSOAS.
-  // Apagar quadro não pergunta o destino delas, e não há desfazer na tela.
-  it("nome exato confere", () => {
-    expect(nomeConfere("Campanhas", "Campanhas")).toBe(true);
-  });
-
-  it("⚠️ vazio NUNCA confere", () => {
-    // Sem esta linha, abrir o diálogo e clicar em confirmar sem digitar nada
-    // apagaria o quadro.
-    expect(nomeConfere("", "Campanhas")).toBe(false);
-    expect(nomeConfere("   ", "Campanhas")).toBe(false);
-  });
-
-  it("⚠️ maiúscula IMPORTA", () => {
-    // A confirmação existe para obrigar a pessoa a LER o nome do quadro que
-    // está prestes a apagar. Aceitar "campanhas" afrouxa justamente o passo
-    // que faz ela olhar — e é a mesma regra do nome único da fatia 9.
-    expect(nomeConfere("campanhas", "Campanhas")).toBe(false);
-  });
-
-  it("espaço nas pontas não atrapalha", () => {
-    // O backend grava com `strip()`; um espaço colado não pode virar recusa
-    // que a pessoa não consegue ver na tela.
-    expect(nomeConfere("  Campanhas  ", "Campanhas")).toBe(true);
-  });
-
-  it("nome parecido não confere", () => {
-    expect(nomeConfere("Campanha", "Campanhas")).toBe(false);
-    expect(nomeConfere("Campanhas 2", "Campanhas")).toBe(false);
-  });
-});
-
 describe("opcoesDoSeletor -- afordância de apagar", () => {
   it("⚠️ a LENTE nunca oferece apagar, nem para quem gere", () => {
-    // Não há registro para apagar, e botão que não funciona é botão em que
-    // alguém clica (ADR 0034 item 2).
     const opcoes = opcoesDoSeletor(QUADROS, SEO, true, true);
     expect(opcoes[0].id).toBeNull();
     expect(opcoes[0].podeApagar).toBe(false);
-  });
-
-  it("⚠️ o QUADRO GERAL não aparece na lista, então não há o que apagar", () => {
-    // Ele é onde nasce toda tarefa de topo; o backend recusa com
-    // `quadro_padrao_nao_apagavel`, e a tela nem chega a oferecer.
-    const ids = opcoesDoSeletor(QUADROS, SEO, true, true).map((o) => o.id);
-    expect(ids).not.toContain("b-geral");
   });
 
   it("sem permissão, quadro avulso não oferece apagar", () => {
@@ -317,11 +234,8 @@ describe("opcoesDoSeletor -- afordância de apagar", () => {
   });
 });
 
-describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => {
-  // ⚠️ ATE A FATIA 7 A QUEDA MUDA ERA A DECISAO CERTA: link velho ou id na mao
-  // nao merecem erro na cara de quem só abriu a tela. A fatia 7 criou um caso novo -- uma pessoa
-  // apaga o quadro que a outra tem aberto -- e em 18/08 ele deixou de ser
-  // hipotético: existe quadro avulso em produção, e um já foi apagado.
+describe("resolverQuadroPedido: a queda avisa", () => {
+  // Caso típico: uma pessoa apaga o quadro que a outra tem aberto.
   const QUADROS = [
     { id: "b-geral", name: "Quadro geral", team_id: "raiz", is_default: true, colunas: [] },
     { id: "b-pauta", name: "Pauta", team_id: SEO, is_default: false, colunas: [] },
@@ -343,10 +257,8 @@ describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => 
   });
 
   it("⚠️ lista AINDA NÃO CHEGOU: devolve o pedido e NÃO avisa", () => {
-    // ⚠️ É A LINHA MAIS IMPORTANTE DA FUNÇÃO. `null` é "carregando", e avisar
-    // aqui poria "este quadro não está aqui" na tela de TODO carregamento, por
-    // um instante, antes de o quadro aparecer normalmente. O aviso piscaria
-    // para quem não tem problema nenhum.
+    // `null` é "carregando": avisar aqui faria o aviso piscar em todo
+    // carregamento.
     expect(resolverQuadroPedido("b-pauta", null, SEO)).toEqual({
       id: "b-pauta",
       motivo: null,
@@ -363,8 +275,7 @@ describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => 
   });
 
   it("⚠️ quadro de OUTRO time tem mensagem própria", () => {
-    // Tem conserto: a pessoa está na página errada, e não diante de algo que
-    // sumiu. Acontece com link colado entre páginas de times diferentes.
+    // Tem conserto: a pessoa está na página errada (link colado de outro time).
     expect(resolverQuadroPedido("b-crm", QUADROS, SEO)).toEqual({
       id: null,
       motivo: "outro-time",
@@ -372,26 +283,15 @@ describe("resolverQuadroPedido -- a queda deixou de ser muda (fatia 11)", () => 
   });
 
   it("⚠️ pedir o Quadro geral não é erro -- é pedir onde a pessoa já está", () => {
-    // Ele nunca entra no seletor (`opcoesDoSeletor` filtra `!q.is_default`)
-    // porque quem o representa nesta tela é a LENTE.
+    // Nesta tela quem o representa é a LENTE.
     expect(resolverQuadroPedido("b-geral", QUADROS, SEO)).toEqual({
       id: null,
       motivo: "e-o-quadro-geral",
     });
   });
-
-  it("todo motivo tem texto, e nenhum texto sobra", () => {
-    // ⚠️ Motivo sem texto seria `undefined` na tela -- a caixa apareceria
-    // vazia, que é pior que não aparecer.
-    const motivos = ["fora-de-alcance", "outro-time", "e-o-quadro-geral"];
-    expect(Object.keys(TEXTO_DA_QUEDA).sort()).toEqual([...motivos].sort());
-    for (const m of motivos) {
-      expect(TEXTO_DA_QUEDA[m as keyof typeof TEXTO_DA_QUEDA].length).toBeGreaterThan(10);
-    }
-  });
 });
 
-describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
+describe("opcoesDoSeletorDaRaiz: a tela do Quadro geral", () => {
   const RAIZ = "raiz";
   const QUADROS = [
     { id: "b-geral", name: "Quadro geral", team_id: RAIZ, is_default: true, colunas: [] },
@@ -400,26 +300,19 @@ describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
   ];
 
   it("⚠️ o QUADRO GERAL É A PRIMEIRA OPÇÃO, pelo nome dele", () => {
-    // ⚠️ NÃO É O `opcoesDoSeletor` COM OUTRO `teamId`. Lá o primeiro item é a
-    // LENTE, e o geral fica FORA (`!q.is_default`) porque ela já o representa.
-    // Na raiz não há lente: o que a lente espelha É o geral, e na tela dele a
-    // coisa é ela mesma.
+    // Na raiz não há lente: o que a lente espelha é o próprio geral.
     const o = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true);
     expect(o[0].nome).toBe("Quadro geral");
-    // ⚠️ E com id de VERDADE -- `null` é a lente, e reaproveitá-lo aqui faria
-    // a tela do geral se comportar como espelho de si mesma.
+    // Com id de verdade: `null` é a lente.
     expect(o[0].id).toBe("b-geral");
   });
 
   it("⚠️ o Quadro geral NUNCA pode ser apagado, nem para quem gere", () => {
-    // `quadro_padrao_nao_apagavel` no backend; ADR 0034 item 2 na tela --
-    // ausente, e não desabilitado.
+    // O backend recusa com `quadro_padrao_nao_apagavel`.
     expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true)[0].podeApagar).toBe(false);
   });
 
-  it("mas PODE ser renomeado -- e até a 5c isso não tinha tela", () => {
-    // `board_service.py` diz "O QUADRO GERAL PODE SER RENOMEADO", e o seletor
-    // do subtime nunca o listou.
+  it("mas PODE ser renomeado", () => {
     expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true)[0].podeRenomear).toBe(true);
     expect(opcoesDoSeletorDaRaiz(QUADROS, RAIZ, false, false)[0].podeRenomear).toBe(false);
   });
@@ -430,15 +323,12 @@ describe("opcoesDoSeletorDaRaiz -- a tela do Quadro geral (fatia 5c)", () => {
   });
 
   it("⚠️ quadro de OUTRO time não entra", () => {
-    // Sem este filtro, a tela do geral listaria o quadro de um subtime, e
-    // criar tarefa ali a mandaria para um lugar que ninguém da raiz vê.
     const nomes = opcoesDoSeletorDaRaiz(QUADROS, RAIZ, true, true).map((x) => x.nome);
     expect(nomes).not.toContain("Pauta");
   });
 
   it("sem o geral na lista, não inventa uma opção", () => {
-    // ⚠️ Acontece se o `listBoards` falhar e cair em `[]`. Melhor uma lista
-    // curta que uma opção que não existe.
+    // Acontece se o `listBoards` falhar e cair em `[]`.
     const o = opcoesDoSeletorDaRaiz([QUADROS[1]], RAIZ, true, true);
     expect(o.map((x) => x.nome)).toEqual(["Campanhas 2027"]);
   });

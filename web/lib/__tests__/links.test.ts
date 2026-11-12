@@ -1,4 +1,4 @@
-// Spec 052, fatia B -- as regras do editor de links.
+// As regras do editor de links.
 import { describe, expect, it } from "vitest";
 import {
   completarEndereco,
@@ -128,8 +128,7 @@ describe("linksParaEnviar -- o que vai ao servidor ao salvar", () => {
   const salvos = [{ id: "1", title: "A", url: "https://a.com" }];
 
   it("⚠️⚠️ lista salva DESCONHECIDA (carregando ou falhou): não envia nada", () => {
-    // Revisão de 16/09: o painel do projeto aberto antes dos links chegarem
-    // mandava `[]` e apagava os links.
+    // Salvar antes de os links chegarem mandaria `[]` e apagaria os links.
     expect(linksParaEnviar(null, [])).toBeNull();
     expect(linksParaEnviar(null, [linha("Novo", "https://n.com")])).toBeNull();
   });

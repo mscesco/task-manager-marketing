@@ -1,27 +1,18 @@
-"""Spec 054, fatia B -- a emissao grava POR QUE o aviso chegou (`roles`).
+"""A emissao grava POR QUE o aviso chegou (`roles`).
 
-O papel e o que a tela de preferencias (fatia C) usa para silenciar: desligar
-"comentario / como seguidor" tem de achar exatamente os avisos que chegaram
-PORQUE a pessoa segue. Se a emissao nao gravar, ou gravar o papel errado, o
-toggle vira sorteio -- e como o silencio vale na LEITURA, o erro so apareceria
-meses depois, num aviso que nao suma quando ela desliga.
+A tela de preferencias silencia por papel: desligar "comentario / como
+seguidor" tem de achar exatamente os avisos que chegaram porque a pessoa segue.
+Como o silencio vale na LEITURA, papel errado so apareceria num aviso que nao
+some quando ela desliga.
 
-O QUE ESTE ARQUIVO PRENDE:
   - cada destinatario leva OS SEUS papeis (seguidor, responsavel, criador), e
-    quem tem dois leva os dois (D12);
-  - ⚠️ NA JUNCAO OS PAPEIS SE UNEM (§6.2): a pessoa pode deixar de seguir e
-    virar responsavel entre o primeiro aviso e o segundo; perder o papel antigo
-    faria o aviso juntado -- que conta as DUAS mudancas -- ser silenciado por um
-    toggle que nao cobre tudo o que ele diz;
-  - tipo PESSOAL (mencao) nasce sem papel, e sem papel nunca e silenciado (D13);
-  - ⚠️ PRAZO nao ganha `watcher` NUNCA (a tela nao tem esse toggle para ele):
+    quem tem dois leva os dois;
+  - ⚠️ na juncao os papeis se UNEM: a pessoa pode deixar de seguir e virar
+    responsavel entre o primeiro aviso e o segundo, e o aviso juntado conta as
+    duas mudancas;
+  - tipo PESSOAL (mencao) nasce sem papel, e sem papel nunca e silenciado;
+  - ⚠️ PRAZO nunca ganha `watcher` (a tela nao tem esse toggle para ele):
     responsavel quando ha responsavel ativo, criador na reserva.
-
-SABOTAGENS (medidas):
-  A. Em `NotificationRepository.atualizar`, gravar `roles=list(roles)` em vez da
-     uniao com `row.roles`. Deve cair `test_a_juncao_une_os_papeis`.
-  B. Em `DeadlineNotifyService._recipients`, devolver `"watcher"` no lugar de
-     `"assignee"`. Deve cair `test_prazo_grava_responsavel_e_nunca_seguidor`.
 """
 
 from __future__ import annotations
@@ -37,7 +28,7 @@ from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
 from tests.integration import factories as f
-from tests.integration.test_avisos_de_mudanca_053c_db import _cliente, _setup
+from tests.integration.test_avisos_de_mudanca_db import _cliente, _setup
 
 pytestmark = pytest.mark.integration
 
@@ -87,7 +78,7 @@ async def test_mover_de_coluna_grava_o_papel_de_cada_um(db) -> None:
 async def test_quem_tem_dois_papeis_leva_os_dois(db) -> None:
     """`resp` tambem passa a seguir: um aviso so, com os dois papeis.
 
-    Nao e detalhe: com a preferencia lida por papel (D4), silenciar exige que
+    Nao e detalhe: com a preferencia lida por papel, silenciar exige que
     TODOS os papeis do aviso estejam desligados. Gravar so um deles faria o
     aviso desaparecer para quem desligou apenas aquele.
     """
@@ -108,7 +99,7 @@ async def test_quem_tem_dois_papeis_leva_os_dois(db) -> None:
 
 
 async def test_a_juncao_une_os_papeis(db) -> None:
-    """⚠️ O GUARDIAO DA UNIAO (§6.2).
+    """⚠️ A juncao une os papeis.
 
     `op` segue quando o primeiro aviso sai, deixa de seguir, vira responsavel, e
     ai vem a segunda mudanca -- que JUNTA no mesmo aviso ("Backlog para
@@ -161,7 +152,7 @@ async def test_comentario_grava_o_papel(db) -> None:
 
 
 async def test_mencao_nasce_sem_papel(db) -> None:
-    """Mencao e PESSOAL (D13): chega porque escreveram o nome da pessoa, nao
+    """Mencao e PESSOAL: chega porque escreveram o nome da pessoa, nao
     porque ela segue. Vazio, e vazio nunca e silenciado por toggle de papel --
     e por isso que a tela trava essa linha.
 
@@ -203,8 +194,8 @@ async def test_prazo_grava_responsavel_e_nunca_seguidor(db) -> None:
     `assignee` -- nunca `watcher`, mesmo que a pessoa tambem siga a tarefa.
 
     A tela de preferencias nao tem coluna de seguidor para os avisos de prazo
-    (§5): com `watcher` no conjunto, um aviso de prazo ficaria impossivel de
-    silenciar, porque o silencio exige TODO papel desligado (D4).
+   : com `watcher` no conjunto, um aviso de prazo ficaria impossivel de
+    silenciar, porque o silencio exige TODO papel desligado.
     """
     ws, team, criador, tarefa = await _mundo_de_prazo(db)
     resp = await f.make_user(db, workspace_id=ws)
@@ -218,12 +209,12 @@ async def test_prazo_grava_responsavel_e_nunca_seguidor(db) -> None:
     assert (await DeadlineNotifyService(db).run(now=NOW))["due_soon_count"] == 1
 
     assert await _papeis(db, resp, "TASK_DUE_SOON", task_id=tarefa.id) == [["assignee"]]
-    # o criador nao recebe quando ha responsavel ativo (Spec 023)
+    # o criador nao recebe quando ha responsavel ativo
     assert await _papeis(db, criador, "TASK_DUE_SOON", task_id=tarefa.id) == []
 
 
 async def test_prazo_sem_responsavel_grava_criador(db) -> None:
-    """A reserva da Spec 023: sem responsavel ativo, o aviso vai para quem
+    """A reserva: sem responsavel ativo, o aviso vai para quem
     criou -- e o papel e `creator`, o toggle que a tela oferece."""
     ws, team, criador, tarefa = await _mundo_de_prazo(db)
     await db.flush()

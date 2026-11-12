@@ -1,13 +1,11 @@
-"""Auditoria de 21/10 -- o bcrypt do login nao trava o servidor.
+"""O bcrypt do login roda fora do event loop.
 
-Conferir a senha leva ~250 ms de CPU. Chamado direto na rota async, ele
-congelava o worker inteiro: com o freio por IP fora (PR #118), um script
-anonimo com e-mails variados parava a API para todo mundo. Agora roda em
-`asyncio.to_thread`, e o loop segue atendendo enquanto a senha e conferida.
+Conferir a senha leva ~250 ms de CPU. Chamado direto na rota async, congela o
+worker inteiro: um script anonimo com e-mails variados para a API para todo
+mundo. Por isso `verify_password` vai por `asyncio.to_thread`.
 """
 
 import asyncio
-import time
 import uuid
 
 import pytest
@@ -30,7 +28,7 @@ class _SemWorkspace:
 
 
 class _FreioLivre:
-    """O freio por conta conta no banco desde 11/11; aqui nao ha banco."""
+    """O freio por conta conta no banco; aqui nao ha banco."""
 
     async def check(self, _session, _key) -> RateLimitDecision:
         return RateLimitDecision(allowed=True, retry_after=0.0)
@@ -40,31 +38,26 @@ class _FreioLivre:
 
 
 async def test_login_confere_a_senha_SEM_parar_o_loop(monkeypatch) -> None:
-    def bcrypt_lento(*_args) -> bool:
-        time.sleep(0.3)
+    """Sem relogio: o falso pergunta se ha um event loop rodando na thread dele.
+    Dentro de `to_thread` nao ha; chamado direto na coroutine, ha."""
+    chamadas: list[bool] = []
+
+    def bcrypt_falso(*_args) -> bool:
+        try:
+            asyncio.get_running_loop()
+            chamadas.append(True)
+        except RuntimeError:
+            chamadas.append(False)
         return False
 
-    monkeypatch.setattr(auth_service, "verify_password", bcrypt_lento)
+    monkeypatch.setattr(auth_service, "verify_password", bcrypt_falso)
     monkeypatch.setattr(auth_service, "account_login_limiter", _FreioLivre())
 
-    batidas = 0
+    with pytest.raises(AuthenticationError):
+        await AuthService(_SemWorkspace()).login(  # type: ignore[arg-type]
+            email=f"{uuid.uuid4()}@exemplo.com",
+            password="qualquer",
+            workspace_slug="nao-existe",
+        )
 
-    async def relogio() -> None:
-        nonlocal batidas
-        while True:
-            await asyncio.sleep(0.01)
-            batidas += 1
-
-    tarefa = asyncio.create_task(relogio())
-    try:
-        with pytest.raises(AuthenticationError):
-            await AuthService(_SemWorkspace()).login(  # type: ignore[arg-type]
-                email=f"{uuid.uuid4()}@exemplo.com",
-                password="qualquer",
-                workspace_slug="nao-existe",
-            )
-    finally:
-        tarefa.cancel()
-
-    # Bloqueando, o relogio nao bate nenhuma vez durante os 300 ms.
-    assert batidas >= 10
+    assert chamadas == [False], "verify_password rodou dentro do event loop"

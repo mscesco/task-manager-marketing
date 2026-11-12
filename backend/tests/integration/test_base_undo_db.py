@@ -1,11 +1,9 @@
-"""Spec 056, fatia C -- o diario de acoes e o desfazer/refazer (D12, D13, D27).
+"""O diario de acoes da Base e o desfazer/refazer.
 
 Um teste por TIPO de acao, sempre ida e volta (desfazer, refazer), e um por
 CONFLITO: outra pessoa mexeu depois, e o desfazer recusa sem apagar o trabalho
 dela. Mais as regras da pilha: e por pessoa e por base, vale 1 dia, acao nova
 apaga o refazer, e desfazer exige o verbo da acao original.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -135,7 +133,7 @@ async def test_opcao_apagada_volta(db) -> None:
 
 
 async def test_troca_de_tipo_devolve_tipo_opcoes_e_valores(db) -> None:
-    """⭐ D18 + D27: o tipo, as opcoes e o valor de cada linha voltam."""
+    """⭐ O tipo, as opcoes e o valor de cada linha voltam."""
     m = await _mundo(db)
     with _como(m, "ana"):
         await BaseService(db).update_column(
@@ -168,11 +166,11 @@ async def test_visao_apagada_volta_com_o_mesmo_id(db) -> None:
     assert visao is not None and visao.name == "Por status"
 
 
-# ------------------------------------------------------------ conflito (D12)
+# ------------------------------------------------------------ conflito
 
 
 async def test_conflito_na_celula_nao_apaga_o_trabalho_do_outro(db) -> None:
-    """⭐ D12: a Ana troca, o Bruno troca de novo, o Ctrl+Z da Ana e recusado."""
+    """⭐ A Ana troca, o Bruno troca de novo, o Ctrl+Z da Ana e recusado."""
     m = await _mundo(db)
     with _como(m, "ana"):
         await RowService(db).update_cells(
@@ -251,14 +249,13 @@ async def test_passou_de_um_dia_nao_desfaz(db) -> None:
 
 
 async def test_desfazer_exige_o_verbo_da_acao(db) -> None:
-    """§9.4: quem perdeu o verbo nao desfaz -- e a entrada fica para quando
+    """Quem perdeu o verbo nao desfaz -- e a entrada fica para quando
     o verbo voltar."""
     m = await _mundo(db)
     with _como(m, "ana"):
         await BaseService(db).delete_column(m["base"], m["coluna"])
     # A Ana agora so le. ⚠️ Nenhum PAPEL da isso hoje (todos tem o conteudo
-    # inteiro) -- e exatamente o "desligar um verbo" que a spec prepara (§5.9),
-    # montado a mao: `base.read` sem `base_column.delete`.
+    # inteiro) -- e o "desligar um verbo", montado a mao: `base.read` sem `base_column.delete`.
     so_le = ActorPermissions(
         unscoped=frozenset(), by_team={"base.read": frozenset({m["mkt"]})}
     )

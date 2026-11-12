@@ -1,61 +1,18 @@
-"""Spec 048 -- a lente de time na listagem de projetos, e o recorte por time.
+"""A lente de time na listagem de projetos, e o recorte por `?team_id=`.
 
-⚠️⚠️ O QUE ABRIU ISTO: a Camila reportou na tela, com captura, o seletor de
-projeto do modal de criar tarefa oferecendo *"projetos de outro time raiz"* --
-e, junto, projetos "Pessoal" de gente que nao e do time dela.
+Pela rota: o `?team_id=` e contrato de rota, e o 404 do `GET /projects/{id}`
+e forma de resposta HTTP.
 
-DUAS COISAS DIFERENTES, e so uma delas era da sessao anterior:
-    - o "Pessoal" era o banco dela uma migration atras (a `0024` apaga as
-      linhas; o filtro de privacidade ja tinha saido do codigo). Nao e assunto
-      deste arquivo;
-    - o projeto de outro time raiz NUNCA foi filtrado. `GET /projects` escopava
-      por `workspace_id` e mais nada.
-
-⚠️ E NAO E FEATURE NOVA: a ADR 0007 decidiu isto no dia em que
-`project.team_id` nasceu -- *"a visibilidade de um projeto passa a depender de
-project.team_id estar na lente de time do usuario"*. Foi implementado para as
-TASKS (`_lente_de_time`, que casa por `Project.team_id`) e esquecido na
-listagem dos PROJETOS. O vazamento era de METADADO: dava para ler o titulo de
-um projeto de outro time raiz, nunca as tarefas dele.
-
-POR QUE PELA ROTA, E NAO PELO SERVICO:
-    Mesmo precedente do `test_task_team_alcance_http_db`: o `?team_id=` e
-    contrato de rota, e o 404 do `GET /projects/{id}` e forma de resposta HTTP.
-    Chamar o service direto provaria o predicado e nao a promessa.
-
-O MUNDO (montado em `_setup`):
-    DUAS raizes no mesmo workspace -- e as duas raizes sao o ponto, porque com
-    uma so nenhum destes testes distingue nada:
-      Marketing (raiz) + subtime SEO
-      Comercial (raiz)
+O mundo tem DUAS raizes no mesmo workspace (com uma so nada se distingue):
+    Marketing (raiz) + subtime SEO
+    Comercial (raiz)
     - `sup` : SUPERVISOR do SEO       -> lente = {SEO, Marketing}
     - `adm` : ADMIN de organizacao    -> lente = None (ve tudo)
     Projetos: um no Marketing, um no SEO, um no Comercial.
 
-⚠️ O ADMIN E O CASO QUE PROVA QUE SAO DOIS RECORTES. Para ele a lente e `None`
-e portanto ela NAO resolve o que a Camila reportou -- ela administra a
-organizacao e alcanca o Comercial de verdade. O que tira o projeto do Comercial
-da tela dela e o `?team_id=`, que responde "estou olhando qual time?" em vez de
-"posso ver?". Um recorte sem o outro deixaria metade do defeito de pe.
-
-SABOTAGENS (executadas de fato, resultado colado):
-    1. `if visible is not None` -> `if False` no `list_page`:
-       cai `test_supervisor_nao_ve_projeto_de_outra_raiz`. ✓
-    2. Neutralizar o `alvo &= set(visible)`:
-       ⚠️ **NADA CAIU** -- 8 passed. Foi assim que descobri que aquela linha era
-       codigo morto (o AND dos predicados ja dava a intersecao vazia). Ela
-       saiu, e o comentario que afirmava a protecao saiu com ela. Esta e a
-       razao de rodar a sabotagem em vez de descreve-la.
-    3. `{team_id} | descendants(...)` -> `{team_id}`:
-       cai `test_recorte_pela_raiz_traz_o_projeto_do_subtime`. ✓
-    4. `if visible is not None and ...` -> `if False and ...` no `get`:
-       cai `test_projeto_de_outra_raiz_responde_404_no_get`. ✓
-
-O QUE ESTES TESTES NAO PROVAM:
-    - nada sobre as telas. Nesta fatia so o modal de criar tarefa passa
-      `team_id`; as cinco telas do `?time=` sao a fatia C;
-    - nada sobre ordenacao ou paginacao;
-    - nada sobre projeto pessoal, que nao existe mais.
+Sao dois recortes: a lente responde "posso ver?"; o `?team_id=` responde
+"estou olhando qual time?". Para o ADMIN a lente e `None`, e so o `?team_id=`
+tira o Comercial quando ele olha o Marketing.
 """
 
 from __future__ import annotations
@@ -174,15 +131,12 @@ async def _titulos(cli, query: str = "") -> set[str]:
     return {p["title"] for p in r.json()["items"]}
 
 
-# ------------------------------------------------- 1. a lente (ADR 0007)
+# ------------------------------------------------- 1. a lente
 
 
 async def test_supervisor_nao_ve_projeto_de_outra_raiz(db) -> None:
-    """O furo que a ADR 0007 prometeu fechar e ninguem fechou.
-
-    A lente da supervisora de SEO e {SEO, Marketing}. O Comercial e outra
-    raiz: o projeto dele nao e dela para ver, nem pelo titulo.
-    """
+    """A lente da supervisora de SEO e {SEO, Marketing}: o projeto do Comercial
+    (outra raiz) nao e dela para ver, nem pelo titulo."""
     m = await _setup(db)
     async with _client(db, m["ctx_sup"]) as cli:
         titulos = await _titulos(cli)
@@ -194,12 +148,8 @@ async def test_supervisor_nao_ve_projeto_de_outra_raiz(db) -> None:
 
 
 async def test_admin_de_organizacao_ve_as_duas_raizes(db) -> None:
-    """A lente `None` do admin de organizacao continua sendo `None`.
-
-    ⚠️ ISTO NAO E O DEFEITO SOBREVIVENDO: ela administra a organizacao e
-    alcanca o Comercial de verdade. Por isso a lente sozinha nao resolve o que
-    foi reportado, e o `?team_id=` existe.
-    """
+    """A lente `None` do admin de organizacao continua sendo `None`: ele
+    alcanca o Comercial de verdade."""
     m = await _setup(db)
     async with _client(db, m["ctx_adm"]) as cli:
         titulos = await _titulos(cli)
@@ -211,29 +161,13 @@ async def test_admin_de_organizacao_ve_as_duas_raizes(db) -> None:
 
 
 async def test_recorte_pela_raiz_traz_o_projeto_do_subtime(db) -> None:
-    """`?team_id=<raiz>` casa a raiz E os descendentes dela.
-
-    ⚠️ IGUALDADE PURA ESCONDERIA O PROJETO DO SUBTIME de toda tela que recorta
-    por raiz -- e projeto de subtime pertence ao contexto da raiz dele.
-    """
+    """`?team_id=<raiz>` casa a raiz E os descendentes, e tira a outra raiz
+    mesmo para o admin. Igualdade pura esconderia o projeto do subtime."""
     m = await _setup(db)
     async with _client(db, m["ctx_adm"]) as cli:
         titulos = await _titulos(cli, f"?team_id={m['marketing']}")
 
     assert titulos == {"Campanha Q3", "Palavras-chave"}
-
-
-async def test_recorte_tira_a_outra_raiz_ate_para_o_admin(db) -> None:
-    """O defeito da tela, na forma em que ela o viu.
-
-    Olhando o Marketing, o projeto do Comercial nao pode estar no seletor --
-    mesmo para quem administra a organizacao e poderia ve-lo.
-    """
-    m = await _setup(db)
-    async with _client(db, m["ctx_adm"]) as cli:
-        titulos = await _titulos(cli, f"?team_id={m['marketing']}")
-
-    assert "Metas" not in titulos
 
 
 async def test_recorte_pelo_subtime_traz_so_o_dele(db) -> None:
@@ -246,20 +180,8 @@ async def test_recorte_pelo_subtime_traz_so_o_dele(db) -> None:
 
 
 async def test_team_id_nao_alarga_a_lente(db) -> None:
-    """⚠️ O PARAMETRO ESTREITA, NUNCA ALARGA.
-
-    A supervisora de SEO pede explicitamente o Comercial e recebe vazio.
-
-    ⚠️⚠️ E QUEM GARANTE ISSO E O `AND`, nao uma checagem. Eu tinha escrito um
-    `alvo &= set(visible)` no service com um comentario dizendo que sem ele
-    este pedido furaria a lente. Sabotei a linha: este teste continuou VERDE.
-    Os dois predicados entram na mesma lista e o repo os combina com AND --
-    a intersecao vazia sai de graca. A linha era codigo morto e saiu.
-
-    O teste FICA, porque a promessa e do contrato da rota e nao da
-    implementacao: se um dia o `team_id` passar a ser aplicado ANTES da lente,
-    ou a substitui-la, e aqui que aparece.
-    """
+    """O parametro estreita, nunca alarga: a supervisora de SEO pede o
+    Comercial e recebe vazio. Quem garante e o AND entre lente e recorte."""
     m = await _setup(db)
     async with _client(db, m["ctx_sup"]) as cli:
         titulos = await _titulos(cli, f"?team_id={m['comercial']}")

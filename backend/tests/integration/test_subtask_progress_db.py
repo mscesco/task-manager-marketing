@@ -1,19 +1,11 @@
-"""Agregacao de subtarefa contra Postgres real (Spec 042, A1).
+"""Agregacao de subtarefa contra Postgres real.
 
-⚠️ ESTE ARQUIVO E A METADE QUE FALTAVA. O `tests/test_subtask_progress.py`
-prova a REGRA; aqui se prova que a QUERY devolve o mesmo numero. E a mesma
-dupla pure-domain + SQL de `archival.py` e `board_semantics.py`, e o motivo de
-existir e literal: sem o par, a query faz uma coisa, o unitario prova outra, e
-os dois ficam verdes.
+`tests/test_subtask_progress.py` prova a REGRA; aqui se prova que a QUERY
+devolve o mesmo numero. O cenario e montado para que cada uma das quatro
+regras mude o resultado se for quebrada.
 
-O cenario e montado para que CADA uma das quatro regras mude o resultado se for
-quebrada -- teste que passaria de qualquer jeito nao prova nada, e este projeto
-ja teve dois casos assim (`test_deadline_notify_coluna_db.py`, primeira versao).
-
-⚠️ `status=` VAI NA FACTORY, nao atribuido depois: a factory resolve a COLUNA a
-partir do status no momento da criacao, e desde a Spec 042 e a coluna que
-decide a contagem. Atribuir `t.status` depois deixaria a tarefa na coluna do
-status antigo e o teste mediria outra coisa.
+⚠️ `status=` vai na factory, nao atribuido depois: a factory resolve a COLUNA a
+partir do status na criacao, e e a coluna que decide a contagem.
 """
 
 from __future__ import annotations

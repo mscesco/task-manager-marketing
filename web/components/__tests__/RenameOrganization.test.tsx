@@ -1,13 +1,10 @@
-// Revisão de títulos (21/09) -- renomear a organização, AO LADO do `<h1>`.
+// Renomear a organização, AO LADO do `<h1>`.
 //
 // O que se prende aqui:
 //   - ⚠️ o `<h1>` se chama só pelo nome -- o lápis não empresta o rótulo dele;
 //   - ⚠️ o campo e os botões de renomear ficam FORA do `<h1>`;
-//   - ✓ e ✕ têm nome (eram só ícone, sem nome nenhum);
+//   - ✓ e ✕ têm nome;
 //   - Enter salva, Esc desiste, vazio não salva, erro 403 vira frase.
-//
-// SABOTAGEM (medida): em `PageHeader`, desenhar `{titleAddon}` DENTRO do
-// `<PageTitle>`. Deve cair "⚠️ o h1 se chama só pelo nome da organização".
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";

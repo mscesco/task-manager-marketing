@@ -1,4 +1,4 @@
-// Spec 056, fatia G -- o hook do canal ao vivo, com o canal SIMULADO.
+// O hook do canal ao vivo, com o canal SIMULADO.
 //
 // ⚠️ O QUE ESTE ARQUIVO PRENDE: aviso de OUTRA pessoa recarrega (uma vez, por
 // mais avisos que cheguem juntos); o ECO da própria ação não; o canal que vence
@@ -6,7 +6,7 @@
 // do `backend/tests/integration/test_base_ao_vivo_db.py`.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, renderHook, waitFor } from "@testing-library/react";
+import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 
 import { useAoVivo } from "@/components/bases/useAoVivo";
 
@@ -19,7 +19,13 @@ const api = await import("@/lib/api");
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
+
+/** Relógio falso só no `setTimeout`: o canal (promessas) segue andando. */
+const relogioFalso = () => vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+/** Passa o tempo e deixa o canal ler o que estava na fila. */
+const passar = (ms: number) => act(() => vi.advanceTimersByTimeAsync(ms));
 
 /** Um canal que entrega `pedacos` e então fica aberto (não termina). */
 function canal(pedacos: string[], termina = false): Response {
@@ -41,11 +47,11 @@ describe("useAoVivo", () => {
     vi.mocked(api.abrirCanalDaBase).mockResolvedValue(
       canal(["event: ready\ndata: {}\n\n", aviso("bruno"), aviso("bia")])
     );
+    relogioFalso();
     const aoMudar = vi.fn();
     const { result } = renderHook(() => useAoVivo("b1", "ana", aoMudar));
-    await waitFor(() => expect(result.current).toBe(true));
-    await waitFor(() => expect(aoMudar).toHaveBeenCalledTimes(1));
-    await new Promise((r) => setTimeout(r, 400));
+    await passar(1000);
+    expect(result.current).toBe(true);
     expect(aoMudar).toHaveBeenCalledTimes(1);
   });
 
@@ -53,10 +59,11 @@ describe("useAoVivo", () => {
     vi.mocked(api.abrirCanalDaBase).mockResolvedValue(
       canal(["event: ready\ndata: {}\n\n", aviso("ana")])
     );
+    relogioFalso();
     const aoMudar = vi.fn();
     const { result } = renderHook(() => useAoVivo("b1", "ana", aoMudar));
-    await waitFor(() => expect(result.current).toBe(true));
-    await new Promise((r) => setTimeout(r, 400));
+    await passar(1000);
+    expect(result.current).toBe(true);
     expect(aoMudar).not.toHaveBeenCalled();
   });
 

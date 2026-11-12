@@ -1,24 +1,17 @@
-"""Spec 053, fatia C -- os avisos do que acontece numa tarefa, e a juncao.
+"""Os avisos do que acontece numa tarefa, e a juncao.
 
 Pelo HTTP, de proposito: os avisos saem das ROTAS (`task_notices.py`), e nao do
 servico. Um teste de servico nao veria uma rota que esqueceu de chamar.
 
 O QUE ESTE ARQUIVO PRENDE:
   - mover de coluna, mudar o prazo, editar a descricao, arquivar, desarquivar e
-    excluir avisam seguidores + responsaveis + criador, menos o autor (D14, D15);
-  - ⚠️⚠️ APAGAR COLUNA NO LOTE NAO AVISA NINGUEM (D16) -- o `TaskService.update`
+    excluir avisam seguidores + responsaveis + criador, menos o autor;
+  - ⚠️⚠️ APAGAR COLUNA NO LOTE NAO AVISA NINGUEM -- o `TaskService.update`
     roda em laco ali, e emitir de dentro dele mandaria um aviso por tarefa;
-  - a JUNCAO (D18): ir e voltar some, A->B->C vira "A para C", tres descricoes
+  - a JUNCAO: ir e voltar some, A->B->C vira "A para C", tres descricoes
     viram uma, arquivar+desarquivar se anulam, "Reativar" vira um aviso so;
     aviso LIDO nunca e tocado; fora da janela nasce outro;
-  - comentario tambem avisa quem segue (D15).
-
-SABOTAGENS (medidas):
-  A. Mover a emissao para dentro do servico: em `TaskService.update`, no fim,
-     chamar `AvisosDaTarefa(...).depois_da_edicao(...)` com um retrato tirado
-     no comeco. Deve cair `test_apagar_coluna_no_lote_nao_avisa`.
-  B. Em `notification_emitter._combinar`, devolver sempre `juntado` (sem o
-     `None`). Deve cair `test_ir_e_voltar_de_coluna_nao_deixa_aviso`.
+  - comentario tambem avisa quem segue.
 """
 
 from __future__ import annotations
@@ -160,7 +153,7 @@ async def test_mover_de_coluna_avisa_a_audiencia_menos_o_autor(db) -> None:
 
 
 async def test_apagar_coluna_no_lote_nao_avisa(db) -> None:
-    """⚠️⚠️ O GUARDIAO DA D16. O lote move a tarefa pelo mesmo `update` do
+    """⚠️⚠️ O lote move a tarefa pelo mesmo `update` do
     PATCH -- uma chamada por tarefa. Nenhum aviso pode sair dali."""
     c = await _setup(db)
     andamento = c["colunas"]["Em Andamento"]
@@ -298,7 +291,7 @@ async def test_arquivar_de_novo_nao_avisa_outra_vez(db) -> None:
 
 
 async def test_reativar_vira_um_aviso_so(db) -> None:
-    """§6.5: "Reativar" e PATCH de coluna seguido de desarquivar."""
+    """"Reativar" e PATCH de coluna seguido de desarquivar."""
     c = await _setup(db)
     await db.execute(
         text("UPDATE task SET is_archived = true WHERE id=:t"), {"t": c["tarefa"].id}

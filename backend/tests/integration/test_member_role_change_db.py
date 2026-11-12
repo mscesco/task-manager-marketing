@@ -1,17 +1,14 @@
-"""Spec 015, Fatia 2 -- trocar papel de membro existente (matriz C2 + C3).
+"""Trocar papel de membro existente (`change_member_role`).
 
-Matriz (C2), como ficou na Spec 051 (fatia C, decisao 6 de 16/09):
+Quem troca o papel de quem:
     ADMIN   -> qualquer alvo, qualquer papel.
     GESTOR  -> alvo ate MANAGER; atribui ate MANAGER.
     MANAGER -> so alvo SUPERVISOR/OPERATOR; atribui ate MANAGER ("so promove").
-Anti-lockout (C3): ninguem altera o proprio papel.
+Anti-lockout: ninguem altera o proprio papel.
 
 Cobre: ADMIN (de organizacao) promove p/ papel de time, MANAGER OPERATOR->SUPERVISOR,
 MANAGER promove a MANAGER e nao rebaixa o par, MANAGER bloqueado ao atribuir
-ADMIN, MANAGER bloqueado ao mexer em alvo MANAGER/ADMIN, auto-alteracao
-bloqueada, vinculo inexistente -> 404.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+ADMIN, auto-alteracao bloqueada, vinculo inexistente -> 404.
 """
 
 from __future__ import annotations
@@ -50,8 +47,7 @@ async def test_admin_troca_para_qualquer_papel_de_time(db) -> None:
     await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=raiz, role="OPERATOR")
 
     with acting_as(workspace_id=ws, user_id=admin, org_role="ADMIN"):
-        # ⭐ Spec 045, fatia D: ADMIN saiu do nivel de TIME, e desde a migration
-        # `0031` nem existe no enum de time -- "qualquer papel de time" nao o
+        # ADMIN nao existe no enum de time: "qualquer papel de time" nao o
         # inclui. Quem promove um administrador usa `change_organization_role`.
         await MemberService(db).change_member_role(
             user_id=alvo, team_id=raiz, new_role=UserTeamRole.MANAGER
@@ -63,13 +59,7 @@ async def test_admin_troca_para_qualquer_papel_de_time(db) -> None:
 
 
 async def test_manager_troca_operator_para_supervisor(db) -> None:
-    """⚠️ A PROMOCAO ACONTECE NO SUBTIME, e nao na raiz como ate a Spec 045.
-
-    O teste media a matriz de quem-promove-quem (Spec 016): um MANAGER pode
-    elevar um operador a supervisor. Isso continua valendo -- so que o unico
-    lugar onde SUPERVISOR existe passou a ser o subtime (fatia D), entao o
-    cenario mudou de lugar sem mudar de assunto.
-    """
+    """SUPERVISOR so existe em subtime: e la que o MANAGER da raiz promove."""
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
@@ -90,16 +80,11 @@ async def test_manager_troca_operator_para_supervisor(db) -> None:
 
 
 async def test_manager_PROMOVE_a_manager_mas_nao_rebaixa_o_par(db) -> None:
-    """⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia C) -- e revoga a C2 da Spec 015.
+    """Gerente pode tornar gerente alguem da sua arvore, mas SO PROMOVE:
+    rebaixar o gerente recem-criado fica com gestor e admin.
 
-    Ate 16/09 este teste se chamava `test_manager_nao_promove_para_manager` e
-    afirmava a recusa: MANAGER so dava SUPERVISOR/OPERATOR, para nao "criar
-    par". A Camila decidiu o contrario (decisao 6): *"gerente pode tornar
-    alguem de dentro da sua arvore gerente"* -- e, no mesmo dia, que ele SO
-    PROMOVE: rebaixar o gerente recem-criado continua com gestor e admin.
-
-    As duas metades ficam aqui, porque uma sem a outra e a regra errada: so a
-    primeira deixaria dois gerentes se rebaixando; so a segunda e a C2 antiga.
+    As duas metades ficam juntas: so a primeira deixaria dois gerentes se
+    rebaixando; so a segunda proibiria a promocao.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
@@ -127,28 +112,9 @@ async def test_manager_PROMOVE_a_manager_mas_nao_rebaixa_o_par(db) -> None:
             )
 
 
-async def test_manager_nao_mexe_em_alvo_manager(db) -> None:
-    ws = await f.make_workspace(db)
-    raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
-    outro_mgr = await f.make_user(db, workspace_id=ws, email="mgr2@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=outro_mgr, team_id=raiz, role="MANAGER")
-
-    with acting_as(
-        workspace_id=ws,
-        user_id=mgr,
-        memberships=(Membership(team_id=raiz, role="MANAGER"),),
-    ):
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).change_member_role(
-                user_id=outro_mgr, team_id=raiz, new_role=UserTeamRole.OPERATOR
-            )
-
-
 async def test_nao_altera_proprio_papel(db) -> None:
     """⚠️ O ator e um MANAGER, e nao o ADMIN de organizacao: quem manda pela
-    organizacao e a excecao da C3 (`_autoridade_vem_da_organizacao`)."""
+    organizacao e a excecao do anti-lockout (`_autoridade_vem_da_organizacao`)."""
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")

@@ -1,6 +1,5 @@
 // lib/confirmarNome -- "digite o nome para confirmar", a regra única de excluir
-// quadro e excluir base (revisão de 07/10: eram duas cópias, e a da Base
-// aceitava nome vazio).
+// quadro e excluir base (os dois módulos reexportam esta).
 import { describe, expect, it } from "vitest";
 import { nomeConfere } from "@/lib/confirmarNome";
 import { nomeConfere as daBase } from "@/lib/baseTable";

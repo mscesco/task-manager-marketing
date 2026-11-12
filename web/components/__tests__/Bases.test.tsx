@@ -1,6 +1,6 @@
-// Spec 056, fatia E -- a lista de Bases e a tabela.
+// A lista de Bases e a tabela.
 //
-// ⚠️ O QUE ESTE ARQUIVO PRENDE É "OS BOTÕES VÊM DO SERVIDOR" (spec §5.6). Em
+// ⚠️ O QUE ESTE ARQUIVO PRENDE É "OS BOTÕES VÊM DO SERVIDOR". Em
 // todo teste o servidor é quem diz -- `can_create_base` por time, `can_restore`
 // por item da lixeira, `can_*` por base --, e a tela tem de obedecer mesmo
 // quando o "papel" sugeriria outra coisa. A regra pura (mover, interpretar,
@@ -211,7 +211,7 @@ describe("TabelaDaBase", () => {
     expect(grade).toBeTruthy();
   });
 
-  it("UM clique edita (fatia J), e Enter grava SÓ a célula, com o valor interpretado", async () => {
+  it("UM clique edita, e Enter grava SÓ a célula, com o valor interpretado", async () => {
     vi.mocked(api.updateBaseCells).mockResolvedValue([linha("r1", { "c-num": 1234.5 })]);
     render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
     const celula = screen.getByRole("gridcell", { name: "Alcance, linha 1" });
@@ -227,10 +227,8 @@ describe("TabelaDaBase", () => {
       ])
     );
     // ⚠️ Uma chamada só. MAS ESTA LINHA NÃO PROVA A TRAVA `confirmado` da
-    // tabela: o jsdom não dispara `blur` quando o campo sai da tela, e com a
-    // trava desligada este teste continuou verde (sabotagem de 07/10). O caso
-    // que ela protege -- o navegador mandando o blur depois do Enter -- fica no
-    // smoke da fatia, no olho.
+    // tabela: o jsdom não dispara `blur` quando o campo sai da tela. O caso que
+    // ela protege (o blur do navegador depois do Enter) só se confere no navegador.
     expect(api.updateBaseCells).toHaveBeenCalledTimes(1);
     expect(await screen.findByText("1234,5")).toBeTruthy();
   });
@@ -246,32 +244,18 @@ describe("TabelaDaBase", () => {
     expect(screen.getByText("Collab")).toBeTruthy();
   });
 
-  it("pessoa desativada aparece com o rótulo, e não some (D8)", () => {
+  it("pessoa desativada aparece com o rótulo, e não some", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-resp": ["ana", "bia"] })]} />);
     expect(screen.getByText("Ana")).toBeTruthy();
     expect(screen.getByText("Bia (inativo)")).toBeTruthy();
   });
 
-  it("pessoa vira cápsula colorida, como a seleção; a inativa fica cinza (fatia J)", () => {
+  it("pessoa vira cápsula colorida, como a seleção; a inativa fica cinza", () => {
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-resp": ["ana", "bia"] })]} />);
     const ana = screen.getByText("Ana").getAttribute("style") ?? "";
     const bia = screen.getByText("Bia (inativo)").getAttribute("style") ?? "";
     expect(ana).toMatch(/var\(--opt-(?!gray)/);
     expect(bia).toContain("var(--opt-gray)");
-  });
-
-  it("o contorno forte só existe editando: cancelada a edição, a célula ativa não fica marcada (fatia J)", () => {
-    render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
-    const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
-    fireEvent.click(celula);
-    // Redesign (fatia 4): o anel e INTERNO (sombra de 2px no accent), e nao
-    // mais `outline`. A regra da fatia J e a mesma: fixo so editando.
-    const ANEL = "shadow-[inset_0_0_0_2px_var(--accent)]";
-    expect(celula.className.split(" ")).toContain(ANEL);
-    fireEvent.keyDown(screen.getByLabelText("Editar Título"), { key: "Escape" });
-    // Sobra só o anel de foco (a variante `focus:`), e nenhum anel fixo.
-    expect(celula.className.split(" ")).not.toContain(ANEL);
-    expect(celula.className).toContain(`focus:${ANEL}`);
   });
 
   it("⚠️ clicar DENTRO do editor não recomeça a edição (o rascunho fica)", () => {
@@ -289,7 +273,7 @@ describe("TabelaDaBase", () => {
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 
-  it("link: várias cápsulas, e a célula antiga (texto solto) ainda aparece (fatia J)", () => {
+  it("link: várias cápsulas, e a célula antiga (texto solto) ainda aparece", () => {
     render(
       <Montada
         base={detalhe({ columns: [TITULO, LINK] })}
@@ -354,7 +338,7 @@ describe("TabelaDaBase", () => {
     expect(api.updateBaseCells).not.toHaveBeenCalled();
   });
 
-  it("a lixeira apaga a linha na hora, sem o Apagar/Cancelar (fatia J)", async () => {
+  it("a lixeira apaga a linha na hora, sem o Apagar/Cancelar", async () => {
     vi.mocked(api.deleteBaseRow).mockResolvedValue(linha("r1", {}));
     render(<Montada base={detalhe()} linhas={[linha("r1", { "c-titulo": "Collab" })]} />);
     fireEvent.click(screen.getByRole("button", { name: "Apagar a linha Collab" }));
@@ -389,7 +373,7 @@ describe("TabelaDaBase", () => {
     );
   });
 
-  it("duplo clique na borda: a coluna fica do tamanho do maior conteúdo (14/10)", async () => {
+  it("duplo clique na borda: a coluna fica do tamanho do maior conteúdo", async () => {
     vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...TITULO, width: 476 });
     // jsdom não tem canvas (e reclama no console): a medida cai na estimativa.
     const semCanvas = vi
@@ -410,7 +394,7 @@ describe("TabelaDaBase", () => {
     semCanvas.mockRestore();
   });
 
-  it("arrastar o cabeçalho leva a coluna para o lugar do alvo (14/10)", async () => {
+  it("arrastar o cabeçalho leva a coluna para o lugar do alvo", async () => {
     vi.mocked(api.updateBaseColumn).mockResolvedValue({ ...NUMERO, position: 3 });
     render(<Montada base={detalhe()} linhas={[]} />);
     const ths = screen.getAllByRole("columnheader");
@@ -471,19 +455,19 @@ describe("TabelaDaBase", () => {
     expect(screen.queryByRole("button", { name: /Nova linha/ })).toBeNull();
     expect(screen.queryByRole("button", { name: "Nova coluna" })).toBeNull();
     expect(screen.queryByRole("button", { name: /Apagar a linha/ })).toBeNull();
-    // Fatia I: sem nenhum cadeado, o cabeçalho é só o nome -- não vira botão.
+    // Sem nenhum cadeado, o cabeçalho é só o nome -- não vira botão.
     expect(screen.queryByRole("button", { name: /^Coluna / })).toBeNull();
 
     const celula = screen.getByRole("gridcell", { name: "Título, linha 1" });
     fireEvent.click(celula);
     fireEvent.keyDown(celula, { key: "Enter" });
     expect(screen.queryByLabelText("Editar Título")).toBeNull();
-    // Fatia J: sem editar coluna, não há alça de largura.
+    // Sem editar coluna, não há alça de largura.
     expect(screen.queryByRole("separator")).toBeNull();
   });
 });
 
-describe("copiar e colar (Spec 057)", () => {
+describe("copiar e colar", () => {
   it("colar várias células grava numa ida só", async () => {
     vi.mocked(api.updateBaseCells).mockResolvedValue([]);
     render(<Montada base={detalhe()} linhas={[linha("r1", {}), linha("r2", {})]} />);
@@ -514,7 +498,7 @@ describe("copiar e colar (Spec 057)", () => {
     vi.mocked(api.updateBaseCells).mockResolvedValue([]);
     vi.mocked(api.createBaseRows).mockResolvedValue([linha("r9", { "c-titulo": "Dois" })]);
     render(<Montada base={detalhe()} linhas={[linha("r1", {})]} />);
-    // um clique abre a edição (fatia J)
+    // um clique abre a edição
     fireEvent.click(screen.getByRole("gridcell", { name: "Título, linha 1" }));
     const campo = screen.getByRole("textbox");
     const dados = { getData: () => "Um\nDois" } as unknown as DataTransfer;

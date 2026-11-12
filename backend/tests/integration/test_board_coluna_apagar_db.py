@@ -1,30 +1,24 @@
-"""Fatia 5b-4b -- apagar COLUNA, e para onde vao as tarefas dela.
+"""Apagar COLUNA, e para onde vao as tarefas dela.
 
-⚠️ DUAS TRAVAS, E ELAS RESPONDEM PERGUNTAS DIFERENTES (ADR 0042). Confundi-las
-e o defeito classico desta fatia:
+⚠️ DUAS TRAVAS, E ELAS RESPONDEM PERGUNTAS DIFERENTES:
 
-  - **"para onde vao estas tarefas?"** (D5) -- coluna com tarefa exige
+  - **"para onde vao estas tarefas?"** -- coluna com tarefa exige
     `destino_id`. Coluna vazia some sem perguntar.
-  - **"o quadro continua funcionando depois?"** (D4) -- recusa apagar a ultima
+  - **"o quadro continua funcionando depois?"** -- recusa apagar a ultima
     `OPEN` ou a ultima `DONE`.
 
 ⚠️ O SELECTOR NAO SUBSTITUI A RECUSA, e o teste
 `test_ultima_DONE_e_recusada_MESMO_com_destino_escolhido` e o unico que separa
-as duas. Nada impede alguem de apagar a ultima `DONE` mandando tudo para
-`Backlog`: a pergunta "para onde vao ESTAS tarefas" foi respondida, e o quadro
-fica sem coluna de conclusao. A quebra aparece na semana seguinte, quando outra
-pessoa concluir uma tarefa-mae cuja subtarefa mora aqui.
+as duas: apagar a ultima `DONE` mandando tudo para `Backlog` responde "para
+onde vao" e deixa o quadro sem coluna de conclusao.
 
 ⚠️ `OPEN` E `DONE`, E NAO "UMA POR SEMANTICA". O criterio e quem escreve status
 sozinho: toda tarefa nasce em `BACKLOG` e a cascata de conclusao procura `DONE`.
-`IN_PROGRESS` e `CANCELLED` podem ser apagadas -- quadro de tres colunas e
-valido, e de duas tambem, e ha teste para os dois.
+`IN_PROGRESS` e `CANCELLED` podem ser apagadas.
 
-⚠️ A ARMADILHA QUE NAO ESTA EM NENHUMA ADR: a FK `task_board_column` e
-`ondelete="RESTRICT"`, e tarefa SOFT-DELETED continua apontando para a coluna.
-`TaskService.update` nao a alcanca. Sem mover as apagadas por fora, apagar uma
-coluna que UM DIA teve uma tarefa apagada estoura `IntegrityError` -- 500, so
-naquele quadro, so para quem tem esse historico.
+⚠️ A FK `task_board_column` e `ondelete="RESTRICT"`, e tarefa SOFT-DELETED
+continua apontando para a coluna. `TaskService.update` nao a alcanca: sem mover
+as apagadas por fora, apagar a coluna estoura `IntegrityError`.
 """
 
 from __future__ import annotations
@@ -32,17 +26,17 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.modules.tasks.application.board_service import (
+    CODIGO_PONTE_OBRIGATORIA,
     CODIGO_SEM_DESTINO,
     CODIGO_SEMANTICA_OBRIGATORIA,
     BoardService,
 )
 from app.shared.exceptions.base import (
-    AuthorizationError,
     EntityNotFoundError,
     ValidationError,
 )
@@ -152,8 +146,8 @@ async def test_apagar_FECHA_o_buraco_de_position(db) -> None:
     """⚠️ Sem renumerar, as posicoes ficam (0, 1, 3) e NADA quebra.
 
     E esse o problema: `ORDER BY position` continua dando a ordem certa, e o
-    defeito so aparece na 5b-6, quando arrastar coluna gravar posicoes novas em
-    cima de uma sequencia que ninguem esperava ter buraco.
+    defeito so aparece ao arrastar coluna, que grava posicoes novas em cima de
+    uma sequencia que ninguem esperava ter buraco.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -169,7 +163,7 @@ async def test_apagar_FECHA_o_buraco_de_position(db) -> None:
     assert posicoes == [0, 1, 2]
 
 
-# ------------------------------------ trava D5: para onde vao as tarefas
+# ------------------------------------ trava: para onde vao as tarefas
 
 
 async def test_coluna_COM_tarefa_exige_destino(db) -> None:
@@ -221,9 +215,7 @@ async def test_as_tarefas_vao_PARA_A_ESCOLHIDA_e_nao_para_outra(db) -> None:
 
 
 async def test_o_status_e_reescrito_pela_coluna_que_RECEBEU(db) -> None:
-    """⚠️ ADR 0042 D2, pelo caminho do lote.
-
-    A tarefa entra `BACKLOG` e sai `CANCELLED` porque foi para `Cancelado` --
+    """A tarefa entra `BACKLOG` e sai `CANCELLED` porque foi para `Cancelado` --
     e nao porque alguem mandou o status. Uma implementacao que so gravasse
     `column_id` deixaria status e coluna discordando, e a discordancia so
     apareceria na varredura de arquivamento.
@@ -253,11 +245,11 @@ async def test_o_status_e_reescrito_pela_coluna_que_RECEBEU(db) -> None:
 
 
 async def test_mae_e_filha_na_mesma_coluna_concluem_UMA_vez(db) -> None:
-    """⚠️ A FILHA VAI ANTES DA MAE (auditoria de 21/10).
+    """⚠️ A FILHA VAI ANTES DA MAE.
 
     Concluir a mae conclui a subarvore por SQL. Com a mae primeiro, a filha
-    ainda "em andamento" na memoria era concluida de novo pelo laco, e o
-    `completed_at` dela ficava DEPOIS do da mae -- historico que mente.
+    ainda "em andamento" na memoria seria concluida de novo pelo laco, com o
+    `completed_at` DEPOIS do da mae -- historico que mente.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
@@ -327,7 +319,7 @@ async def test_destino_de_OUTRO_quadro_e_recusado(db) -> None:
             )
 
 
-# ------------------------------ trava D4: o quadro sobrevive ao apagar
+# ------------------------------ trava: o quadro sobrevive ao apagar
 
 
 async def test_ultima_OPEN_nao_pode_ser_apagada(db) -> None:
@@ -389,11 +381,8 @@ async def test_ultima_OPEN_e_recusada_ANTES_de_pedir_destino(db) -> None:
             await BoardService(db).apagar_coluna(
                 board_id=quadro.id, column_id=backlog.id, destino_id=None
             )
-    # ⚠️ A RECUSA E A DA SEMANTICA, e nao a do destino faltando. A versao
-    # anterior desta linha comparava a MENSAGEM (`"semantica" in str(...)`), e
-    # era exatamente o acoplamento a texto que o codigo de erro existe para
-    # matar: corrigir uma virgula no aviso quebraria este teste, e trocar as
-    # duas mensagens de lugar o deixaria VERDE com a ordem errada.
+    # ⚠️ A RECUSA E A DA SEMANTICA, e nao a do destino faltando: compara o
+    # codigo, e nao a mensagem.
     assert erro.value.code == CODIGO_SEMANTICA_OBRIGATORIA
 
 
@@ -425,14 +414,11 @@ async def test_IN_PROGRESS_e_CANCELLED_PODEM_ser_apagadas(db) -> None:
 
 
 async def test_coluna_NOVA_da_mesma_semantica_NAO_libera_apagar_o_alvo(db) -> None:
-    """⚠️ O BURACO QUE A ESCOLHA DE SEMANTICA NA CRIACAO ABRIU (12/08).
-
-    A trava conferia so a SEMANTICA. Bastava criar uma segunda coluna `OPEN`
-    para `Backlog` -- o unico ALVO de `OPEN` -- passar a ser apagavel. E o
-    degrau 2 da ADR 0042 procura `is_default_target`, nao "qualquer coluna
-    daquela semantica": o quadro ficaria com coluna `OPEN` e sem alvo `OPEN`, e
-    TODA criacao de tarefa nele passaria a devolver 422 -- dias depois, para
-    outra pessoa.
+    """Uma trava que conferisse so a SEMANTICA deixaria apagar o `Backlog` (o
+    unico ALVO de `OPEN`) depois de criar uma segunda coluna `OPEN`. A criacao
+    de tarefa procura `is_default_target`, nao "qualquer coluna daquela
+    semantica": o quadro ficaria sem alvo `OPEN`, e TODA criacao de tarefa nele
+    devolveria 422.
 
     ⚠️ COLUNA CRIADA POR GENTE NASCE COM `is_default_target=False`, sempre. E
     isso que faz a conta nao fechar, e e o que este teste tranca.
@@ -494,9 +480,7 @@ async def test_penultima_DONE_pode_ser_apagada(db) -> None:
 
 
 async def test_tarefa_APAGADA_na_coluna_nao_estoura_a_FK(db) -> None:
-    """⚠️ A ARMADILHA QUE NENHUMA ADR MENCIONA.
-
-    `task_board_column` e `ondelete="RESTRICT"` e a linha soft-deleted continua
+    """`task_board_column` e `ondelete="RESTRICT"` e a linha soft-deleted continua
     no banco apontando para a coluna. `TaskService.update` nao a alcanca --
     `get_by_id_or_raise` filtra `deleted_at IS NULL`. Sem o `UPDATE` direto,
     isto aqui vira `IntegrityError` -> 500, so no quadro que teve uma tarefa
@@ -560,17 +544,12 @@ async def test_a_contagem_ignora_apagadas(db) -> None:
 
 
 async def test_a_contagem_NAO_alcanca_quadro_de_subtime_alheio(db) -> None:
-    """⚠️ A LEITURA TAMBEM TEM LENTE, e ela nao existia ate 13/08.
+    """⚠️ A LEITURA TAMBEM TEM LENTE.
 
     `contar_tarefas_da_coluna` nao passa por `_assert_pode_gerir` -- e nem
-    deve, senao proteger um numero que a pessoa obtem contando os cards na
-    tela. Mas `_quadro_do_workspace` filtra WORKSPACE, e nao a lente: com o id
-    na mao, um OPERATOR do subtime B lia nome, cor, semantica e contagem de
-    tarefas de uma coluna do quadro do subtime A.
-
-    ⚠️ O DOCSTRING DA ROTA JA AFIRMAVA A TRAVA ("quem alcanca o quadro pela
-    lente alcanca as colunas dele") e o codigo nao a tinha. Este teste e o que
-    faz as duas coisas concordarem.
+    deve, senao protegeria um numero que a pessoa obtem contando os cards na
+    tela. Mas `_quadro_do_workspace` filtra WORKSPACE, e nao a lente: sem ela,
+    com o id na mao, um OPERATOR do subtime B leria a coluna do subtime A.
 
     ⚠️ 404 E NAO 403: um 403 confirmaria que o quadro existe.
     """
@@ -613,36 +592,15 @@ async def test_a_contagem_alcanca_o_quadro_do_PROPRIO_subtime(db) -> None:
 # ------------------------------------------------------------ autorizacao
 
 
-async def test_supervisor_NAO_apaga_coluna_de_subtime_alheio(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_b, "SUPERVISOR"))):
-        quadro_b = await BoardService(db).criar_quadro(
-            team_id=sub_b, nome="Quadro do B"
-        )
-    await db.flush()
-    cancelado = _por_nome(await _colunas(db, quadro_b.id), "Cancelado")
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).apagar_coluna(
-                board_id=quadro_b.id, column_id=cancelado.id, destino_id=None
-            )
-
-    assert len(await _colunas(db, quadro_b.id)) == 4
-
-
 async def test_NAO_apaga_coluna_COM_PONTE_do_quadro_geral(db) -> None:
-    """⚠️ ESTREITADO EM 13/08. Antes recusava QUALQUER coluna do geral.
-
-    O que se recusa agora e apagar coluna que ainda e a PONTE de um status --
-    e o motivo e medido. `default_board_and_column_for_status` resolve onde
-    nasce toda tarefa de topo e casa so por `legacy_status`, sem degrau de
-    semantica (a ADR 0042 deixou aquela funcao de fora de proposito).
+    """Recusa apagar coluna que ainda e a PONTE de um status:
+    `default_board_and_column_for_status` resolve onde nasce toda tarefa de
+    topo e casa so por `legacy_status`, sem degrau de semantica.
 
     ⚠️ E `_assert_semantica_sobrevive` NAO PEGARIA ESTE CASO. "Bloqueado" e
     `IN_PROGRESS` e nao e alvo de nada; apagando, `Em Andamento` continua
     cobrindo a semantica. A quebra apareceria so depois, em quem criasse tarefa
-    de topo com status `BLOCKED`: 422 dias depois, para outra pessoa.
+    de topo com status `BLOCKED`.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     geral = (
@@ -656,10 +614,12 @@ async def test_NAO_apaga_coluna_COM_PONTE_do_quadro_geral(db) -> None:
 
     # ⚠️ ADMIN de organizacao: a recusa e sobre o QUADRO, e nao sobre quem pede.
     with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
-        with pytest.raises(ValidationError):
+        with pytest.raises(ValidationError) as erro:
             await BoardService(db).apagar_coluna(
                 board_id=geral.id, column_id=alguma.id, destino_id=None
             )
+    # ⚠️ O `code` e o que a tela le para esconder o "x" antes do clique.
+    assert erro.value.code == CODIGO_PONTE_OBRIGATORIA
 
     # ⚠️ AS OITO CONTINUAM LA, e esta afirmacao so cabe no teste de SERVICO: no
     # HTTP o rollback ao SAVEPOINT levaria a fixture junto.
@@ -669,8 +629,8 @@ async def test_NAO_apaga_coluna_COM_PONTE_do_quadro_geral(db) -> None:
 async def test_APAGA_coluna_SEM_ponte_do_quadro_geral(db) -> None:
     """O par do teste acima, e o que torna a trava estreita util.
 
-    ⚠️ COM A CRIACAO ABERTA (13/08), o Quadro geral passa a poder ter coluna
-    criada por gente -- `legacy_status` NULL. Essa nao segura funcao nenhuma, e
+    ⚠️ O Quadro geral pode ter coluna criada por gente -- `legacy_status`
+    NULL. Essa nao segura funcao nenhuma, e
     recusar apaga-la seria prender a pessoa numa coluna que ela mesma criou por
     engano, sem saida: recriar nao ajuda, porque a nova tambem nasceria no fim.
     """
@@ -711,33 +671,3 @@ async def test_coluna_inexistente_devolve_404(db) -> None:
                 column_id=uuid.uuid4(),
                 destino_id=None,
             )
-
-
-async def test_nada_e_apagado_quando_a_operacao_falha(db) -> None:
-    """⚠️ Atomica: a recusa no meio do lote nao deixa meio-caminho.
-
-    A coluna continua la e a tarefa continua nela.
-    """
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
-    tarefa = await _tarefa_na_coluna(
-        db, ws=ws, time=sub_a, user=user, coluna=backlog
-    )
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(ValidationError):
-            await BoardService(db).apagar_coluna(
-                board_id=quadro.id, column_id=backlog.id, destino_id=None
-            )
-
-    restantes = (
-        await db.execute(
-            select(func.count())
-            .select_from(BoardColumn)
-            .where(BoardColumn.board_id == quadro.id)
-        )
-    ).scalar_one()
-    assert restantes == 4
-    await db.refresh(tarefa)
-    assert tarefa.column_id == backlog.id

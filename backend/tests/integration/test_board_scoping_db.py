@@ -1,12 +1,11 @@
-"""F2 -- a coluna e procurada DENTRO do quadro da tarefa.
+"""A coluna e procurada DENTRO do quadro da tarefa.
 
-Contra Postgres real. Este e o primeiro arquivo do repositorio que monta DOIS
-quadros com colunas padrao e faz o produto operar sobre o segundo. Ate aqui
-todo teste vivia num mundo de um quadro so -- e era exatamente por isso que a
-consulta cravada no quadro do time raiz passava despercebida.
+Contra Postgres real, com DOIS quadros de colunas padrao e o produto operando
+sobre o segundo: num mundo de um quadro so, uma consulta cravada no quadro do
+time raiz passaria despercebida.
 
-Os dois defeitos que a F2 fecha falham de formas DIFERENTES, e por isso sao
-dois testes e nao um:
+Os dois defeitos falham de formas DIFERENTES, e por isso sao dois testes e nao
+um:
 
   - **edicao de status**: `board_id` fica, a coluna vinha do quadro geral, e o
     par `(coluna do geral, board interno)` nao existe -> a FK composta recusa.
@@ -41,8 +40,7 @@ async def _mundo(db):
 
     ⚠️ O quadro do subtime e criado A MAO pelo `BoardService`, e nao pela
     factory. `make_team` so cria quadro na RAIZ, porque e o que o produto faz
-    (ADR 0032) -- subtime nao ganha quadro por existir. Aqui o quadro do
-    subtime e o mundo do dia do quadro interno, montado antes de ele existir.
+    -- subtime nao ganha quadro por existir.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
@@ -87,13 +85,12 @@ async def _quadro_geral(db, ws):
 async def _mover_para_quadro(db, task, *, board_id, status: TaskStatus):
     """Coloca a tarefa no outro quadro, na coluna correspondente ao status.
 
-    Escrita direta porque mover tarefa entre quadros nao existe no produto (e
-    a D6 do memo de decisoes diz que nao vai existir). O que este helper monta
-    e o estado FINAL do quadro interno, nao um caminho de usuario.
+    Escrita direta: o helper monta o ESTADO, nao o caminho de usuario (mover
+    tarefa tem teste proprio).
 
     ⚠️ A COLUNA E RESOLVIDA ANTES DE QUALQUER ATRIBUICAO, e isso nao e estilo.
-    A primeira versao fazia `task.board_id = board_id` e so entao consultava a
-    coluna -- e essa consulta dispara AUTOFLUSH, que grava a tarefa com o
+    Fazer `task.board_id = board_id` e so entao consultar a coluna dispara
+    AUTOFLUSH, que grava a tarefa com o
     `board_id` novo e o `column_id` ainda do quadro geral. Par inexistente, FK
     composta recusa, `ForeignKeyViolationError` antes de o teste chegar a
     testar qualquer coisa. Os dois campos tem de virar na MESMA gravacao.
@@ -165,8 +162,8 @@ async def test_subtarefa_nasce_no_quadro_do_pai(db) -> None:
 
 # 3 -- tarefa de TOPO continua nascendo no quadro geral, mesmo existindo um
 #      segundo quadro no workspace. E a trava contra "consertar" o create
-#      passando a herdar quadro de qualquer lugar: sem pai, o quadro e o da
-#      raiz, e a ADR 0032 nao mudou.
+#      passando a herdar quadro de qualquer lugar: sem pai (e sem quadro
+#      pedido), o quadro e o da raiz.
 async def test_tarefa_de_topo_continua_nascendo_no_quadro_geral(db) -> None:
     ctx, ws, raiz, subtime, user, quadro2 = await _mundo(db)
     geral = await _quadro_geral(db, ws)

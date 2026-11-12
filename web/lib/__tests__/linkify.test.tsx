@@ -1,15 +1,11 @@
-// =====================================================
-// TESTE DE SEGURANCA (Spec 027, D8)
-// -----------------------------------------------------
-// Os casos de esquema (`javascript:`, `data:`, `file:`) NAO podem ser
-// removidos nem afrouxados sem spec propria.
+// Teste de segurança: os casos de esquema (`javascript:`, `data:`, `file:`)
+// não podem ser removidos nem afrouxados.
 //
 // Por que isto e seguranca e nao estetica: o React 18 NAO bloqueia
 // href="javascript:...", so emite um warning e renderiza. Comentario e
 // conteudo de usuario -> casar esquema livre seria XSS direto no app.
 // A defesa e a regex exigir literalmente http:// ou https://. Se alguem
 // "melhorar" essa regex um dia, e AQUI que o estrago aparece.
-// =====================================================
 import React from "react";
 import { describe, expect, it } from "vitest";
 

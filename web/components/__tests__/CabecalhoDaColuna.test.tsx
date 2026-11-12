@@ -1,6 +1,6 @@
-// Spec 056, fatia I -- o cabeçalho de coluna como o do Notion.
+// O cabeçalho de coluna como o do Notion.
 //
-// ⚠️ O QUE ESTE ARQUIVO PRENDE (o pedido dela, 07/10): o cabeçalho INTEIRO é o
+// ⚠️ O QUE ESTE ARQUIVO PRENDE: o cabeçalho INTEIRO é o
 // botão, sem "⋯"; o menu traz os itens do Notion que entraram; as setas "›"
 // abrem submenu; cada item obedece o SEU cadeado do servidor; e a coluna de
 // título não oferece o que não pode (inserir à esquerda, duplicar, ocultar,
@@ -121,7 +121,7 @@ describe("CabecalhoDaColuna", () => {
     );
   });
 
-  it("Spec 061: uma coluna de TEXTO vira a principal, e a página recarrega", async () => {
+  it("uma coluna de TEXTO vira a principal, e a página recarrega", async () => {
     vi.mocked(api.makeBaseColumnTitle).mockResolvedValue({ ...PAUTA, type: "title" });
     const p = montar(PAUTA);
     fireEvent.click(screen.getByRole("button", { name: "Coluna Pauta, Texto" }));

@@ -1,23 +1,6 @@
-"""Spec 045, fatia B -- o papel de ORGANIZACAO, sem time.
+"""O papel de organizacao, sem time: lido no login e usado pelo job de arquivamento.
 
-⚠️⚠️ O ESTADO QUE ESTA FATIA TORNA NORMAL E O QUE ANTES ERA IMPOSSIVEL: uma
-pessoa com autoridade total e **zero linhas em `user_team`**. Ate aqui, todo
-papel exigia um time, e um admin sem vinculo nenhum entraria no sistema com
-permissao VAZIA.
-
-O que este arquivo prova:
-
-    1. ADMIN de organizacao SEM time nenhum -> permissoes completas
-    2. ... e lente `None` (ve tudo)
-    3. GESTOR -> tudo do admin MENOS `workspace.manage`
-    4. quem nao tem papel de organizacao nao ganha nada
-    5. o job de arquivamento acha o admin pela fonte nova
-
-⚠️ A FONTE VELHA (vinculo ADMIN em `user_team`) SAIU EM 19/10/2026, com a
-migration `0031`: o valor nao existe mais no tipo do banco, e o teste que a
-afirmava saiu junto.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+Uma pessoa com autoridade total pode ter zero linhas em `user_team`.
 """
 
 from __future__ import annotations
@@ -25,11 +8,6 @@ from __future__ import annotations
 import pytest
 
 from app.db.models.enums import OrgRole
-from app.modules.auth.domain import team_scope
-from app.modules.auth.domain.permissions import (
-    ALL_PERMISSIONS,
-    permissions_for_org_role,
-)
 from app.modules.tasks.application.stale_archival_service import (
     StaleArchivalService,
 )
@@ -37,7 +15,6 @@ from app.modules.users.infrastructure.membership_repository import (
     MembershipRepository,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import node
 
 pytestmark = pytest.mark.integration
 
@@ -50,111 +27,6 @@ async def _com_org_role(db, *, workspace_id, user_id, papel):
     user.org_role = papel
     await db.flush()
     return user
-
-
-# ------------------------------------------------------------- o mapa novo
-
-
-def test_admin_de_organizacao_tem_o_cartao_completo():
-    """⭐ Ele recebe o vocabulario INTEIRO -- toda permissao que algum papel
-    concede.
-
-    ⚠️ Ate 19/10 a comparacao era com o ADMIN de time; ele saiu (migration
-    `0031`), e o que sobra da garantia e esta: nao ha verbo que algum papel
-    tenha e o ADMIN de organizacao nao.
-    """
-    assert permissions_for_org_role("ADMIN") == ALL_PERMISSIONS
-
-
-def test_gestor_opera_mas_nao_desfaz_a_organizacao():
-    gestor = permissions_for_org_role("GESTOR")
-    admin = permissions_for_org_role("ADMIN")
-
-    # ⚠️ Desde a Spec 049, fatia G, o GESTOR EDITA a organizacao (item 02) --
-    # o que ele nao faz e desfaze-la: apagar e mover time seguem do ADMIN.
-    assert "organization.update" in gestor
-    assert "subteam.delete" not in gestor
-    assert "subteam.create" in gestor
-    # A diferenca e EXATAMENTE o que era `workspace.manage` -- desde a Spec 049
-    # (fatia A), os cinco verbos em que ele foi cortado.
-    #
-    # ⚠️⚠️ E DESDE A FATIA C ESTE ASSERT E O GUARDIAO DO GESTOR. A lista dele
-    # deixou de ser "ADMIN menos cinco" e passou a ser escrita: um verbo novo no
-    # ADMIN nao chega mais ao GESTOR sozinho -- ele entra nesta diferenca, e
-    # este assert cai. Quem o fizer passar tem de DECIDIR: escrever o verbo na
-    # lista do GESTOR, ou acrescenta-lo aqui como mais uma coisa que so o ADMIN
-    # faz.
-    assert admin - gestor == frozenset(
-        {
-            # o que era `workspace.manage` (fatia A), MENOS o que a fatia G deu
-            # ao GESTOR (item 02): editar a organizacao e dar/tirar papel de
-            # organizacao -- com o teto no servico, e nao aqui.
-            "subteam.delete",
-            "team.move",
-            # ⭐ fatia D, item 01: "o admin apaga, o gestor nao" -- e SO os
-            # deletes que o Mapa de 10/09 marca. `task.delete` e
-            # `person.deactivate` ficam com o GESTOR: sao as duas excecoes dela.
-            "membership.delete",
-            "form.delete",
-            "project.delete",
-            "board.delete.root",
-            "board.delete",
-            "column.delete",
-        }
-    )
-    assert "task.delete" in gestor
-    assert "person.deactivate" in gestor
-    # 06/10/2026: quem desativa, reativa -- reativar desfaz, e nao e um delete.
-    assert "person.reactivate" in gestor
-    # ⚠️ Spec 056, fatia A: a TERCEIRA excecao dela -- o GESTOR exclui base
-    # (D3, *"na permissao de organizacao todos podem"*). Por isso `base.delete`
-    # nao esta na diferenca ADMIN - GESTOR acima.
-    assert "base.delete" in gestor
-    assert "base.restore" in gestor
-
-
-def test_sem_papel_de_organizacao_nao_ganha_nada():
-    assert permissions_for_org_role(None) == frozenset()
-    # ⚠️ Papel desconhecido devolve VAZIO, e nao estoura: conceder por engano
-    # e pior que conceder de menos.
-    assert permissions_for_org_role("DONO_DA_EMPRESA") == frozenset()
-
-
-# ------------------------------------------------------------- a lente
-
-
-def test_admin_de_organizacao_ve_tudo_sem_ter_time():
-    """⭐ O caso que esta fatia inventa: autoridade sem vinculo nenhum."""
-    raiz = __import__("uuid").uuid4()
-    arvore = (node(raiz),)
-
-    assert team_scope.is_admin("ADMIN") is True
-    assert team_scope.visible_team_ids((), arvore, org_role="ADMIN") is None
-    assert team_scope.editable_team_ids((), arvore, org_role="ADMIN") is None
-
-
-def test_gestor_ve_tudo_sem_ser_admin():
-    """GESTOR ve tudo -- e continua NAO sendo ADMIN.
-
-    ⚠️⚠️ ESTE TESTE AFIRMOU O CONTRARIO ATE 14/09, e o contrario nao era
-    decisao. Ele se chamava `test_gestor_nao_ve_tudo`, esperava a lente VAZIA,
-    e dizia que ver tudo "e decisao de produto e entra aqui de proposito". A
-    decisao JA EXISTIA, escrita antes deste arquivo: `045/decisoes.md`, tabela
-    da lente -- *"ADMIN / GESTOR | tudo"* -- e, na lista de premissas,
-    *"Premissa em vigor: gestor ve tudo."*
-
-    O que o teste protegia na pratica era um GESTOR que nao via tarefa
-    nenhuma: 404 em toda tarefa, 403 em todo formulario. Achado pela matriz da
-    Spec 049 (fatia 0) e consertado na fatia 0b.
-
-    ⚠️ AS DUAS AFIRMACOES FICAM SEPARADAS de proposito: `is_admin` continua
-    respondendo so por ADMIN (e a pergunta "quem DEFINE a organizacao"), e a
-    lente e decidida pelo papel de organizacao, em `visible_team_ids`.
-    """
-    raiz = __import__("uuid").uuid4()
-    assert team_scope.is_admin("GESTOR") is False
-    assert team_scope.visible_team_ids((), (node(raiz),), org_role="GESTOR") is None
-    assert team_scope.editable_team_ids((), (node(raiz),), org_role="GESTOR") is None
 
 
 # ------------------------------------------------------------- ponta a ponta
@@ -173,22 +45,17 @@ async def test_membership_carrega_o_papel_de_organizacao(db) -> None:
 
     assert membership is not None
     assert membership.org_role == "ADMIN"
-    # ⚠️ E ELA NAO ESTA EM TIME NENHUM -- o estado novo.
+    # Sem time nenhum.
     assert membership.team_roles == ()
     assert membership.roles == frozenset()
     assert raiz is not None  # a raiz existe; ela so nao esta nela
 
 
 async def test_o_job_de_arquivamento_acha_o_admin_pela_fonte_nova(db) -> None:
-    """⚠️⚠️ O CONSUMIDOR MAIS PERIGOSO DA FATIA.
+    """O admin sem vinculo de time e achado pelo `org_role`.
 
-    O `stale_archival_service` procurava o admin SO em `user_team`. Com a
-    Camila virando ADMIN de organizacao sem vinculo de time, aquela consulta
-    voltaria VAZIA e o job pularia o workspace inteiro -- sem erro, sem log de
-    falha, sem tela. O arquivamento pararia e ninguem descobriria.
-
-    Sabotagem: remover o bloco da fonte nova em `_resolve_admin` faz este
-    teste devolver `None`.
+    Se o job procurasse so em `user_team`, pularia o workspace inteiro sem
+    erro nem log.
     """
     ws = await f.make_workspace(db)
     await f.make_team(db, workspace_id=ws, slug="marketing")

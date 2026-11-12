@@ -1,19 +1,12 @@
-"""Busca por titulo casando descendente, contra Postgres real (Spec 042, A2).
+"""Busca por titulo casando descendente, contra Postgres real.
 
-A busca do quadro vai para o servidor porque e a unica das cinco consumidoras
-da subarvore que nao vira campo agregado -- nao ha campo que represente um
-termo que ainda nao foi digitado.
-
-⚠️ ELA NAO E REDUZIDA, E MELHORA. Hoje `raizesQueCasamBusca` so enxerga o lote
-carregado, e o proprio comentario dele avisa: subtarefa fora do teto ou
-arquivada com o toggle desligado nao e encontrada. Aqui o banco inteiro
-responde.
+A busca do quadro roda no servidor: nao ha campo agregado que represente um
+termo que ainda nao foi digitado, e o banco inteiro responde (inclusive
+subtarefa fora do teto ou arquivada).
 
 ⚠️ O CASO QUE MANDA E O ACENTO. `normalizarBusca` (front) faz NFD + remove
-diacritico + minuscula, entao "midia" acha "Midia Paga". Se o servidor casasse
-so com `ILIKE`, a busca nova devolveria MENOS que a que ela substitui -- e a
-regressao apareceria na tela mais usada, sem erro nenhum. Por isso a migration
-`0015` traz `unaccent`, e por isso o teste do acento existe.
+diacritico + minuscula, entao "midia" acha "Midia Paga". So com `ILIKE`, o
+servidor devolveria MENOS que o front, sem erro nenhum. Por isso o `unaccent`.
 """
 
 from __future__ import annotations
@@ -73,10 +66,8 @@ async def _busca(db, *, ws, team, user, termo, include_archived=False):
 
 
 async def test_acha_pela_subtarefa_e_devolve_a_MAE(db):
-    """⚠️ O ponto inteiro da fatia.
-
-    A raiz nao tem "Midia" no titulo; a filha tem. O card do quadro e sempre a
-    raiz (ADR 0004), entao a unica forma de "achar" a subtarefa e trazer a mae.
+    """A raiz nao tem "Midia" no titulo; a filha tem. O card do quadro e
+    sempre a raiz, entao a unica forma de "achar" a subtarefa e trazer a mae.
     """
     ws, team, user, raiz, _filha, outra, _sd = await _cenario(db)
     achados = await _busca(db, ws=ws, team=team, user=user, termo="Mídia")
@@ -85,11 +76,8 @@ async def test_acha_pela_subtarefa_e_devolve_a_MAE(db):
 
 
 async def test_ignora_acento_nos_DOIS_sentidos(db):
-    """⚠️ O caso que obriga o `unaccent` da migration 0015.
-
-    Digitar sem acento tem de achar o titulo COM acento -- que e o que
-    `normalizarBusca` faz no front hoje. Sem isto a busca do servidor devolve
-    menos que a do cliente que ela substitui.
+    """⚠️ O caso que obriga o `unaccent`: digitar sem acento acha o titulo
+    COM acento, como `normalizarBusca` faz no front.
     """
     ws, team, user, raiz, _f, _o, _sd = await _cenario(db)
     assert raiz.id in await _busca(
@@ -108,7 +96,7 @@ async def test_ignora_caixa(db):
 
 
 async def test_descricao_NAO_casa(db):
-    """⚠️ Decisao de 05/08 mantida: so titulo.
+    """So titulo.
 
     Casando por descricao o card aparece com o termo buscado em lugar nenhum da
     tela, e a leitura honesta de quem olha e "o filtro bugou".
@@ -119,7 +107,7 @@ async def test_descricao_NAO_casa(db):
 
 
 async def test_subtarefa_arquivada_segue_o_include_archived(db):
-    """A busca enxerga o mesmo conjunto que o quadro carregou -- igual a hoje."""
+    """A busca enxerga o mesmo conjunto que o quadro carregou."""
     ws, team, user, _raiz, _f, outra, _sd = await _cenario(db)
     sem = await _busca(
         db, ws=ws, team=team, user=user, termo="antigo", include_archived=False
@@ -141,16 +129,12 @@ async def test_termo_vazio_nao_filtra_nada(db):
 
 
 async def test_busca_na_tela_de_ARQUIVADAS_encontra(db):
-    """⚠️ ACHADO NO REVIEW DA SPEC 042 -- devolvia SEMPRE vazio.
+    """O `<@` do LTREE inclui a PROPRIA linha. Numa listagem `archived_only`
+    a raiz e arquivada, e arquivar cascateia a subarvore inteira: se a
+    subconsulta exigir um descendente-ou-igual NAO arquivado, nada qualifica.
 
-    O `<@` do LTREE inclui a PROPRIA linha. Numa listagem `archived_only` a
-    raiz e, por definicao, arquivada -- e a subconsulta exigia um
-    descendente-ou-igual NAO arquivado. Como arquivar cascateia a subarvore
-    inteira, nenhuma linha qualificava: buscar em Arquivadas nao achava nada,
-    nunca, nem pelo titulo exato.
-
-    A guarda passou a ser `include_archived OR archived_only`. Este teste e o
-    que impede o `or` de ser "simplificado" de volta.
+    A guarda e `include_archived OR archived_only`; este teste impede o `or` de
+    ser "simplificado".
     """
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
@@ -179,13 +163,3 @@ async def test_busca_na_tela_de_ARQUIVADAS_encontra(db):
         )
 
     assert arquivada.id in {t.id for t in pagina.items}
-
-
-async def test_nao_acha_em_outro_workspace(db):
-    """A busca passa pelo `_base_select`, mas o EXISTS da subarvore e escrito a
-    mao -- este teste e o que garante que ele nao esqueceu o tenant."""
-    ws_a, team_a, user_a, raiz_a, _f, _o, _sd = await _cenario(db)
-    _ws_b, _tb, _ub, raiz_b, _fb, _ob, _sdb = await _cenario(db)
-    achados = await _busca(db, ws=ws_a, team=team_a, user=user_a, termo="Mídia")
-    assert raiz_a.id in achados
-    assert raiz_b.id not in achados

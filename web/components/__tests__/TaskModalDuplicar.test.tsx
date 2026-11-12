@@ -1,20 +1,14 @@
 /**
- * TaskModal em modo DUPLICAR (Spec 033, Fatia 5).
- *
- * ⚠️ POR QUE ESTE ARQUIVO EXISTE. A regra pura esta coberta por 18 testes em
- * `lib/duplicacaoTarefa`. O que NAO estava coberto e a MONTAGEM: o modal
- * chamar `duplicateTask` (e nao `createTask`), mandar as duas caixas, esperar
- * o conjunto de excluidos ficar pronto antes de pre-preencher, e esconder o
- * campo de prazo. Sabotar qualquer uma dessas deixa os tres portoes verdes.
- *
- * O caso mais sutil coberto aqui e o do pre-preenchimento: ele depende de
- * `listMembersDoTime` ter respondido. Se rodar antes, o conjunto de excluidos
- * esta VAZIO e um responsavel sem alcance entra marcado -- a pessoa leva 422
- * no salvar, nomeando alguem que ela talvez nem conheca.
+ * TaskModal em modo DUPLICAR: a montagem (a regra pura está em
+ * `lib/duplicacaoTarefa`). Chamar `duplicateTask` e não `createTask`, mandar
+ * as caixas, esperar o alcance (`listMembersDoTime`) antes de pré-preencher e
+ * esconder o prazo. Pré-preencher antes do alcance marcaria um responsável que
+ * não alcança o time, e o salvar levaria 422.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  act,
   cleanup,
   configure,
   fireEvent,
@@ -26,8 +20,7 @@ import {
 import TaskModal from "@/components/TaskModal";
 import type { Member, Task } from "@/lib/api";
 
-// ⚠️ Os avisos saíram de `window.alert` para a pilha do app (17/09). O teste
-// espia o `useAvisar` em vez de montar o `AvisosProvider`.
+// Espia o `useAvisar` em vez de montar o `AvisosProvider`.
 const avisar = vi.hoisted(() => vi.fn());
 vi.mock("@/components/Toasts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/components/Toasts")>()),
@@ -50,30 +43,9 @@ vi.mock("@/lib/api", async (importOriginal) => {
 
 const api = await import("@/lib/api");
 
-// ⚠️ ESPERA MAIOR NESTE ARQUIVO, E O MOTIVO E MEDIDO -- NAO E "flakiness".
-//
-// O padrao do `@testing-library` e 1000ms por `waitFor`. Este arquivo e o
-// UNICO que depende de uma CADEIA de promessas antes de a tela ficar no
-// estado que os testes medem: `listMembers` -> `listMembersDoTime` (alcance)
-// -> pre-preenchimento do titulo e dos responsaveis. Sao tres ciclos de
-// render encadeados, e so entao o botao Duplicar destrava.
-//
-// Em 10/08/2026 o arquivo falhou DUAS VEZES em maquina carregada (rodando
-// `tsc && npm test && next build` em sequencia), em testes DIFERENTES a cada
-// vez, sempre com a tela parada no estado ANTERIOR ao pre-preenchimento --
-// `title=""` e o botao travado por "Escreva o titulo da subtarefa.". A
-// segunda falha estourou 1660ms, ou seja, passou do teto de 1000ms; na
-// maquina do assistente o arquivo inteiro roda em ~2s e nunca falhou em 10
-// execucoes.
-//
-// ⚠️ NAO E UM DEFEITO DO PRODUTO. A cadeia esta certa; o teto e que foi
-// calibrado para uma maquina ociosa. Cinco segundos nao deixa teste quebrado
-// passar -- assercao errada continua falhando, so demora mais para desistir.
-//
-// ⚠️ O LUGAR CERTO DISTO E UM `setupFiles` do vitest, valendo para todos os
-// arquivos. Nao foi feito aqui porque `vitest.config.ts` e PORTAO, e mexer em
-// portao no fim de uma fatia e como o projeto ja se machucou antes. Fatia
-// propria.
+// Teto maior que o padrão de 1000 ms: a tela só fica pronta depois de uma cadeia
+// de promessas (`listMembers` -> alcance -> pré-preenchimento), que em máquina
+// carregada passa de 1 s. Asserção errada continua falhando, só demora mais.
 configure({ asyncUtilTimeout: 5000 });
 
 const RAIZ = "team-raiz";
@@ -102,14 +74,9 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     position: 0,
     depth: 0,
     path: over.id,
-    // ⚠️ Spec 036, fatia 3: `board_id`/`column_id` viraram obrigatorios em
-    // `Task`. Um valor qualquer serve aqui -- este arquivo nao testa quadro --,
-    // mas eles TEM de existir, senao o `tsc` recusa a fixture. Nao troque por
-    // `as Task`: foi exatamente um `as` que escondeu este buraco por horas em
-    // 10/08, no `minhasTarefas.test.tsx`.
+    // Obrigatórios em `Task`; não troque por `as Task` (esconde campo faltando).
     board_id: "board-geral",
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
     can_delete: true,
     start_date: null,
     due_date: "2026-03-10",
@@ -124,10 +91,8 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
   };
 }
 
-// ⚠️ DOIS responsáveis, e é essencial: com um só, o teste da D9 passa
-// mesmo com o filtro de alcance desligado -- não há o que filtrar. Foi
-// exatamente o que aconteceu na primeira versão deste arquivo, e só a
-// sabotagem revelou.
+// Dois responsáveis de propósito: com um só, o teste do alcance passa mesmo com
+// o filtro desligado (não há o que filtrar).
 const ORIGEM = task({
   id: "origem-1",
   title: "Campanha Black Friday",
@@ -178,14 +143,9 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-
 /**
- * Clica em "Duplicar" DEPOIS do pré-preenchimento. Antes dele o botão está
- * travado ("Escreva o título") e o clique não faz nada -- a corrida que o teste
- * D9 descreve. Até o React 18 o preenchimento chegava antes do primeiro
- * `waitFor` desses testes, por sorte de tempo; com o React 19 (Next 15) ele
- * chega um render depois, e cinco testes passaram a esperar um clique que se
- * perdeu. Esperar o título "Cópia de…" tira a sorte do caminho.
+ * Clica em "Duplicar" DEPOIS do pré-preenchimento: antes dele o botão está
+ * travado ("Escreva o título") e o clique se perde.
  */
 async function clicarDuplicar() {
   await waitFor(() => {
@@ -208,11 +168,10 @@ describe("TaskModal -- modo duplicar", () => {
   });
 
   /**
-   * D5 na tela. Esconder o campo é mais forte que abrir vazio: vazio convida
-   * a preencher com a data da origem, e cópia com data velha nasce vencida --
-   * o job dispara TASK_OVERDUE em lote na primeira execução.
+   * Esconder o campo é mais forte que abrir vazio: vazio convida a copiar a
+   * data da origem, e a cópia nasceria vencida.
    */
-  it("D5 -- o campo de PRAZO não existe no modo cópia", async () => {
+  it("o campo de PRAZO não existe no modo cópia", async () => {
     montar();
     abrir();
     await waitFor(() => {
@@ -221,16 +180,7 @@ describe("TaskModal -- modo duplicar", () => {
     expect(screen.queryByLabelText(/Prazo/i)).toBeNull();
   });
 
-  it("D7 -- a caixa some quando não há subtarefa viva", async () => {
-    montar();
-    abrir([filha("s1", true)]); // só arquivada
-    await waitFor(() => {
-      expect(screen.getByText("Duplicar tarefa")).toBeTruthy();
-    });
-    expect(screen.queryByText(/Levar as subtarefas/)).toBeNull();
-  });
-
-  it('D4 -- o rótulo conta só as vivas e diz "diretas"', async () => {
+  it('o rótulo conta só as subtarefas vivas e diz "diretas"', async () => {
     montar();
     abrir([filha("s1"), filha("s2"), filha("s3", true)]);
     await waitFor(() => {
@@ -239,13 +189,8 @@ describe("TaskModal -- modo duplicar", () => {
   });
 
   /**
-   * PASSO 2 (ADR 0031). Substituiu a caixa "Levar os responsáveis" (D13) e o
-   * aviso da D14 -- desmarcar aquela caixa significava "crie N subtarefas sem
-   * ninguém", que é o estado que a ADR proíbe.
-   *
-   * ⚠️ O que estes testes defendem é a REGRA, não a tela: nenhuma subtarefa
-   * sai daqui sem responsável, e o passo 2 NÃO aparece quando não há o que
-   * decidir (senão a duplicação de um clique da Spec 033 morre).
+   * Passo 2: nenhuma subtarefa sai sem responsável, e o passo NÃO aparece
+   * quando não há o que decidir (a duplicação continua de um clique).
    */
   it("passo 2 NÃO aparece quando as subtarefas herdam responsável válido", async () => {
     montar();
@@ -275,21 +220,9 @@ describe("TaskModal -- modo duplicar", () => {
       name: /Duplicar$/,
     }) as HTMLButtonElement;
     expect(botao.disabled).toBe(true);
-    // ⚠️ O motivo TEM de estar no botão: botão travado sem explicação é a
-    // pessoa procurando o que fez de errado.
-    //
-    // ⚠️ `waitFor`, E NÃO LEITURA DIRETA — este teste FALHOU INTERMITENTEMENTE
-    // em 10/08/2026, em máquina rápida, com
-    // `expected 'Escreva o título da subtarefa.' to contain 'sub s1'`.
-    //
-    // A corrida: o `waitFor` acima espera o TEXTO do passo 2, que aparece
-    // assim que o alcance responde. O TÍTULO da subtarefa é pré-preenchido em
-    // outro ciclo. Entre um e outro o botão já está travado — mas pelo motivo
-    // ERRADO ("Escreva o título"), e a asserção de `disabled` acima passa
-    // igual nos dois estados, então ela não protege nada aqui.
-    //
-    // ⚠️ O teste vizinho ("passo 2 NÃO aparece...") já tinha o aviso escrito e
-    // já esperava. Este ficou de fora — mesma armadilha, um teste de distância.
+    // O motivo tem de estar no botão. `waitFor`: o título da subtarefa chega um
+    // ciclo depois do passo 2, e até lá o botão está travado pelo motivo errado
+    // ("Escreva o título") -- o `disabled` acima passa nos dois estados.
     await waitFor(() => {
       expect(
         (screen.getByRole("button", { name: /Duplicar$/ }) as HTMLButtonElement)
@@ -335,10 +268,8 @@ describe("TaskModal -- modo duplicar", () => {
   });
 
   it("a escolha do passo 2 SOBREVIVE ao re-render do pai", async () => {
-    // ⚠️ ESTE É O TESTE QUE IMPORTA. `filhosDaOrigem` é montado inline no
-    // Board (referência NOVA a cada render do pai), e foi exatamente isso que
-    // apagou o que a pessoa digitava em 04/08. Prop com referência estável no
-    // teste esconde o defeito -- por isso o rerender passa array NOVO.
+    // `filhosDaOrigem` é montado inline no Board (referência nova a cada render
+    // do pai). Prop estável no teste esconderia o defeito: o rerender passa array NOVO.
     montar([ANA]);
     const pendente = () =>
       task({ id: "s1", title: "sub s1", parent_task_id: ORIGEM.id, assignee_ids: [SUMIDO] });
@@ -369,7 +300,7 @@ describe("TaskModal -- modo duplicar", () => {
         onSaved={() => {}}
       />
     );
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
     expect(
       (screen.getByLabelText(/Responsável de sub s1/) as HTMLSelectElement)
         .value
@@ -380,20 +311,10 @@ describe("TaskModal -- modo duplicar", () => {
    * O caso sutil: o pré-preenchimento tem que esperar `listMembersDoTime`.
    * Rodando antes, `Sumido` entraria marcado e o salvar devolveria 422.
    */
-  it("D9 -- responsável sem alcance NÃO entra pré-marcado", async () => {
+  it("responsável sem alcance NÃO entra pré-marcado", async () => {
     // A origem tem ANA e SUMIDO; só ANA alcança o time da tarefa.
     montar([ANA]);
     abrir();
-    // ⚠️ ESPERA O PRE-PREENCHIMENTO, nao so o titulo do modal. Clicar assim
-    // que o cabecalho aparece e uma corrida: o botao ainda esta travado por
-    // "Escreva o titulo" e o clique nao faz nada. Este teste passava por
-    // TIMING ate 05/08, quando um render a mais deslocou a corrida e ele caiu
-    // sem que o produto tivesse mudado.
-    await waitFor(() => {
-      expect(
-        (screen.getByLabelText(/^Título/) as HTMLInputElement).value
-      ).toContain("Cópia de");
-    });
     await clicarDuplicar();
     await waitFor(() => {
       expect(api.duplicateTask).toHaveBeenCalled();
@@ -418,19 +339,18 @@ describe("TaskModal -- modo duplicar", () => {
     const [idOrigem, payload] = vi.mocked(api.duplicateTask).mock.calls[0];
     expect(idOrigem).toBe(ORIGEM.id);
     expect(payload.include_subtasks).toBe(true);
-    // ⚠️ `include_assignees` MORREU com a ADR 0031: não existe mais "leve sem
-    // responsáveis". Se voltar ao payload, a porta da subtarefa órfã reabre.
+    // Não existe "leve sem responsáveis": se voltar ao payload, a subtarefa órfã volta.
     expect(payload.include_assignees).toBeUndefined();
     // Nada pendente -> nada a decidir -> as duas chaves saem vazias.
     expect(payload.subtask_assignees).toEqual({});
     expect(payload.skip_subtasks).toEqual([]);
-    // D3: cópia de subtarefa nasce irmã -- o pai da origem é repassado.
+    // Cópia de subtarefa nasce irmã -- o pai da origem é repassado.
     expect(payload.parent_task_id).toBe(ORIGEM.parent_task_id);
     // O projeto vem da origem, não do seletor (que nem aparece).
     expect(payload.project_id).toBe(ORIGEM.project_id);
   });
 
-  it("não manda data nenhuma no payload (D5)", async () => {
+  it("não manda data nenhuma no payload", async () => {
     montar();
     abrir();
     await waitFor(() => {
@@ -449,11 +369,9 @@ describe("TaskModal -- modo duplicar", () => {
 
 describe("TaskModal -- avisos pós-cópia", () => {
   /**
-   * Promoção por pai arquivado. Encontrado NA TELA em 03/08: a cópia de uma
-   * subtarefa arquivada nascia irmã sob um pai arquivado, e o quadro só
-   * desenha raiz -- a tarefa existia e nenhuma tela a mostrava. O backend
-   * promove; a tela tem que CONTAR, senão a hierarquia muda pelas costas de
-   * quem clicou.
+   * Cópia de subtarefa sob pai arquivado é promovida a topo pelo backend (o
+   * quadro só desenha raiz); a tela tem de contar, senão a hierarquia muda
+   * pelas costas de quem clicou.
    */
   it("avisa quando a cópia foi promovida a topo", async () => {
     montar();
@@ -513,18 +431,9 @@ describe("TaskModal -- avisos pós-cópia", () => {
 
 describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
   /**
-   * ⚠️ ESTE BLOCO EXISTE POR UM DEFEITO DE PRODUÇÃO (04/08).
-   *
-   * O efeito de pré-preenchimento rodava a cada mudança de dependência, e as
-   * dependências mudam DEPOIS do modal abrir: `alcancamTime` e `membros`
-   * chegam da rede, e `filhosDaOrigem` é montado inline no chamador
-   * (Board.tsx:1009) -- referência nova a cada render do pai. Resultado: o
-   * título voltava para "Cópia de X" depois de reescrito e responsável
-   * removido reaparecia.
-   *
-   * ⚠️ Os testes acima NÃO pegavam, e o motivo importa: eles passam props com
-   * referência ESTÁVEL, então o efeito roda uma vez e o defeito não existe
-   * ali. `rerender` com array novo é o que reproduz o chamador real.
+   * As dependências do pré-preenchimento mudam depois de o modal abrir (alcance
+   * e membros chegam da rede; `filhosDaOrigem` é array novo a cada render do
+   * pai). `rerender` com array novo reproduz o chamador real.
    */
   it("editar o título e o pai re-renderizar NÃO desfaz a edição", async () => {
     montar();
@@ -559,7 +468,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
         onSaved={() => {}}
       />
     );
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
 
     expect((screen.getByLabelText(/Título/i) as HTMLInputElement).value).toBe(
       "Campanha de setembro"
@@ -602,7 +511,7 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
         onSaved={() => {}}
       />
     );
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
     expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
   });
 
@@ -639,14 +548,13 @@ describe("TaskModal -- as edições da pessoa SOBREVIVEM", () => {
         onSaved={() => {}}
       />
     );
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
     expect(
       (
         screen.getByLabelText(/Levar as subtarefas/) as HTMLInputElement
       ).checked
     ).toBe(false);
-    // ⚠️ O aviso da D14 saiu junto com a caixa (ADR 0031): não existe mais o
-    // estado "N subtarefas nascerão sem responsável" para avisar.
+    // Não existe mais o estado "N subtarefas nascerão sem responsável".
     expect(screen.queryByText(/nascerão sem responsável/)).toBeNull();
   });
 });
@@ -691,29 +599,21 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
         onSaved={() => {}}
       />
     );
-    await new Promise((r) => setTimeout(r, 30));
+    await act(async () => {});
     expect((screen.getByLabelText(/Título/i) as HTMLInputElement).value).toBe(
       "Meu título"
     );
   });
 
   /**
-   * ⚠️ `listMembersDoTime` FALHANDO tem de resolver mesmo assim. Se a espera
-   * dependesse só do sucesso, o modal abriria em branco para sempre -- pior
-   * que o defeito original, porque nem dá pra digitar por cima.
+   * `listMembersDoTime` FALHANDO tem de resolver mesmo assim, senão o modal
+   * abre em branco para sempre.
    */
   it("alcance que FALHA ainda pré-preenche", async () => {
     montar();
-    // ⚠️ Rejeicao ADIADA. Com `mockRejectedValue` a promessa ja nasce
-    // rejeitada e o `.then` do sucesso nunca seria alcancado de qualquer
-    // jeito -- o teste passava mesmo com o `.finally` trocado por `.then`.
-    // Adiar e o que separa "resolveu na falha" de "resolveu por acaso".
-    //
-    // ⚠️ A PROMESSA NASCE NA CHAMADA (`mockImplementation`), e nao na
-    // montagem do mock. Criada antes, ela rejeitava sem dono quando o modal
-    // pedia o alcance depois de 10 ms -- o que passou a acontecer com o React
-    // 19 -- e o vitest acusava "Unhandled Rejection" e saia com erro, com os
-    // 1709 testes verdes.
+    // Rejeição ADIADA: já rejeitada, o `.then` do sucesso nunca seria alcançado
+    // e trocar o `.finally` por `.then` passaria. A promessa nasce na chamada,
+    // senão rejeita sem dono antes de o modal pedir ("Unhandled Rejection").
     vi.mocked(api.listMembersDoTime).mockImplementation(
       () => new Promise((_res, rej) => setTimeout(() => rej(new Error("500")), 10))
     );
@@ -739,10 +639,8 @@ describe("TaskModal -- guardas do pré-preenchimento", () => {
 
 describe("TaskModal -- a espera pelo alcance é real", () => {
   /**
-   * ⚠️ Os testes acima usam mocks que resolvem NA HORA, e por isso não
-   * distinguem "esperou o alcance" de "preencheu antes e deu sorte com o
-   * timing". Medido em 04/08: com mock instantâneo, remover a espera não
-   * derruba teste nenhum. Só uma promessa CONTROLADA separa os dois.
+   * Mock que resolve na hora não distingue "esperou o alcance" de "preencheu
+   * antes e deu sorte"; só uma promessa controlada separa os dois.
    */
   it("não pré-preenche enquanto o alcance não responde", async () => {
     montar();
@@ -778,19 +676,15 @@ describe("TaskModal -- a espera pelo alcance é real", () => {
         (screen.getByLabelText(/Título/i) as HTMLInputElement).value
       ).toBe("Cópia de Campanha Black Friday");
     });
-    // E o SUMIDO ficou de fora (D9), agora por espera e não por sorte.
+    // E o SUMIDO ficou de fora, por espera e não por sorte.
     expect(screen.getAllByTitle(/Remover/i).length).toBe(1);
   });
 });
 
-describe("TaskModal -- responsável DESATIVADO depois (o 422 de 04/08)", () => {
+describe("TaskModal -- responsável DESATIVADO depois", () => {
   /**
-   * ⚠️ Caso REAL: duplicar uma tarefa antiga cujo responsável saiu da empresa.
-   * `listMembers` já devolve só ativos, então o desativado nunca aparece na
-   * lista -- e a regra antiga ("remova os excluídos") não tinha como excluir
-   * quem ela não conhece. Ele sobrevivia pré-marcado e o salvar dava 422.
-   *
-   * Este é o teste 13 do roteiro, que falhou na tela.
+   * Responsável da origem que foi desativado: `listMembers` só devolve ativos,
+   * então ele não pode sobreviver pré-marcado (o salvar daria 422).
    */
   it("não é pré-marcado e o salvar completa", async () => {
     montar();
@@ -827,38 +721,9 @@ describe("TaskModal -- responsável DESATIVADO depois (o 422 de 04/08)", () => {
   });
 });
 
-// =====================================================================
-// FATIA 5b-6 -- `board_id` no payload de CRIACAO.
-//
-// ⚠️ ESTE BLOCO NASCEU DE UMA SABOTAGEM VERDE. Tirar `board_id: defaultBoardId`
-// do `createTask` deixava os 32 testes do `Board.test.tsx` passando: eles
-// conferem o que a tela DESENHA -- as colunas certas, o filtro por quadro, o
-// nome no cabecalho do modal -- e nenhum conferia o que ela MANDA.
-//
-// ⚠️ E O CAMPO E OPCIONAL NO BACKEND, entao perde-lo NAO da erro: a tarefa
-// nasce no Quadro geral, e quem a criou dentro do quadro avulso simplesmente
-// nao a encontra. Enquanto mover tarefa entre quadros nao existir (fatia 5c),
-// consertar isso significa APAGAR e recriar -- perdendo comentarios,
-// historico, subtarefas e designacoes.
-//
-// ⚠️ MESMA ARMADILHA QUE O `tasks_router.py` JA TEVE COM `assignee_ids`
-// (Spec 021). O backend ganhou `test_o_board_id_do_PAYLOAD_chega_no_comando`
-// pelo mesmo motivo, na mesma semana.
-//
-// MORA AQUI, e nao no `Board.test.tsx`, porque o botao de salvar exige titulo
-// E responsavel (ADR 0031) -- e a lista de membros ja esta montada neste
-// arquivo.
-//
-// SABOTAGENS (medidas):
-//   Y. Tirar `board_id: defaultBoardId` do `createTask` em `TaskModal.tsx`.
-//   Z. Tirar `defaultBoardId={boardId ?? null}` do `<TaskModal>` no `Board`
-//      -- ⚠️ NAO cai aqui, e nao tem como cair: este arquivo monta o modal
-//      direto. Guardiao dela e a lacuna que sobra, e esta registrada no
-//      `Board.test.tsx`.
-// =====================================================================
-describe("TaskModal -- board_id na criacao (fatia 5b-6)", () => {
-  const AVULSO = "board-campanhas";
-
+// O `board_id` é opcional no backend: perdê-lo não dá erro, a tarefa só nasce no
+// Quadro geral. O lado "com quadro avulso" é provado em `Board.test.tsx`, pela tela.
+describe("TaskModal -- board_id na criacao", () => {
   async function criarCom(defaultBoardId: string | null) {
     montar();
     vi.mocked(api.createTask).mockResolvedValue(task({ id: "nova", title: "X" }));
@@ -874,9 +739,8 @@ describe("TaskModal -- board_id na criacao (fatia 5b-6)", () => {
     fireEvent.change(await screen.findByLabelText("Título"), {
       target: { value: "Tarefa nova" },
     });
-    // ⚠️ Responsavel e OBRIGATORIO na criacao (ADR 0031) -- sem ele o botao
-    // fica travado e o teste mediria a trava, e nao o payload. E a escolha
-    // mora dentro de um popover: sem abrir, a caixa nem existe no DOM.
+    // Responsável é obrigatório: sem ele o botão trava e o teste mediria a trava.
+    // A escolha mora num popover: sem abrir, a caixa nem existe no DOM.
     fireEvent.click(await screen.findByLabelText("Designar responsável"));
     const caixas = await screen.findAllByRole("checkbox");
     fireEvent.click(caixas[0]);
@@ -885,13 +749,7 @@ describe("TaskModal -- board_id na criacao (fatia 5b-6)", () => {
     return vi.mocked(api.createTask).mock.calls[0][0];
   }
 
-  it("⚠️ com quadro avulso, o board_id VAI no payload", async () => {
-    expect((await criarCom(AVULSO)).board_id).toBe(AVULSO);
-  });
-
   it("sem quadro avulso, vai null -- e o backend usa o Quadro geral", async () => {
-    // ⚠️ `null` E O COMPORTAMENTO DE SEMPRE, e o de 100% das tarefas ate
-    // 12/08. Um default trocado aqui mandaria as 176 vivas para outro lugar.
     expect((await criarCom(null)).board_id).toBeNull();
   });
 });

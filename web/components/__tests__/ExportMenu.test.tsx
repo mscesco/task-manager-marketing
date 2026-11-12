@@ -1,4 +1,4 @@
-// Spec 058 (15/10) -- exportar o painel: PDF pela impressão, planilha pelo servidor.
+// Exportar o painel: PDF pela impressão, planilha pelo servidor.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import ExportMenu from "@/components/ExportMenu";

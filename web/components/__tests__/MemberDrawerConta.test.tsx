@@ -1,9 +1,9 @@
-// Spec 051, fatia E -- os botões da CONTA na gaveta do membro vêm do servidor.
+// Os botões da CONTA na gaveta do membro vêm do servidor.
 //
 // ⚠️ O CASO QUE ESTE ARQUIVO PRENDE: o gerente abre a gaveta de OUTRO gerente
 // da árvore dele. O alcance dele é "amplo" (ele move gente entre subtimes), e a
-// gaveta desenhava "Resetar senha" e "Desativar" por esse alcance -- mas desde o
-// conserto de 16/09 (#57) o servidor recusa as duas ações nessa conta. Os botões
+// gaveta desenhava "Resetar senha" e "Desativar" por esse alcance -- mas
+// o servidor recusa as duas ações nessa conta. Os botões
 // passaram a sair de `GET /members/{id}/account-actions`.
 //
 // ⚠️ POR ISSO O `scope` DE TODOS OS TESTES É "amplo": é o alcance que enganava
@@ -61,7 +61,7 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("MemberDrawer -- os botões da conta vêm do servidor (Spec 051, fatia E)", () => {
+describe("MemberDrawer -- os botões da conta vêm do servidor", () => {
   it("⚠️ servidor diz que não: sem Resetar senha e sem Desativar -- com alcance amplo", async () => {
     vi.mocked(api.memberAccountActions).mockResolvedValue({
       can_reset_password: false,
@@ -92,8 +92,7 @@ describe("MemberDrawer -- os botões da conta vêm do servidor (Spec 051, fatia 
     expect(screen.queryByText("Reativar")).toBeNull();
   });
 
-  // ⚠️ 06/10/2026 -- a conta da Juliana: desativada, e resetada quatro vezes
-  // com senhas que nunca funcionariam. A gaveta passa a oferecer SÓ a volta.
+  // Conta desativada: reset de senha não adianta; a gaveta oferece SÓ a volta.
   it("conta desativada: só Reativar, e o aviso de por que não há Resetar senha", async () => {
     vi.mocked(api.memberAccountActions).mockResolvedValue({
       can_reset_password: false,

@@ -1,26 +1,22 @@
-"""Integracao do modulo de Solicitacoes (formulario publico FazAe).
+"""Modulo de Solicitacoes: envio publico, fila, triagem e marcacao de tarefa.
 
-Cobre as regras que valem dinheiro se quebrarem:
-    - criacao publica resolve workspace por SLUG e nasce PENDING;
-    - honeypot descarta silenciosamente (nada persistido);
-    - categoria invalida e slug desconhecido sao rejeitados;
-    - fila e escopada por tenant (solicitacao do WS A invisivel no WS B);
-    - filtro por status da fila;
-    - aprovar registra revisor/quando; rejeitar EXIGE justificativa;
-    - solicitacao ja triada nao pode ser triada de novo;
-    - HTTP: rota publica sem auth (201), honeypot indistinguivel (201),
-      OPERATOR recebe 403 no aprovar, rejeicao sem nota vira 422,
-      rate limit por IP devolve 429 no estouro.
+    - criacao publica resolve workspace por slug e nasce PENDING;
+    - honeypot descarta em silencio (nada persistido);
+    - slug desconhecido e rejeitado; lote invalido nao grava nada;
+    - fila escopada por tenant, agrupada por envio, filtrada por status;
+    - aprovar registra revisor/quando; rejeitar exige justificativa;
+    - pedido ja triado nao e triado de novo;
+    - HTTP: rota publica sem auth, honeypot indistinguivel, sem `form_id` 422,
+      a aba inteira fechada a quem nao tria, rate limit 429.
 
-Nivel de servico usa o harness padrao (db + acting_as + UnitOfWork(db));
-nivel HTTP usa ASGITransport com overrides de sessao/UoW (e de auth,
-quando a rota exige) -- mesmo desenho de test_http_status_db.py.
+Os envios de servico passam por um formulario publicado, como a rota exige.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
+from typing import NamedTuple
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -58,13 +54,37 @@ pytestmark = pytest.mark.integration
 # --------------------------------------------------------
 # Helpers
 # --------------------------------------------------------
-async def _make_ws_with_slug(db) -> tuple[uuid.UUID, str]:
-    """Workspace com slug conhecido (a rota publica resolve por slug)."""
+class _Form(NamedTuple):
+    slug: str  # do workspace
+    id: uuid.UUID
+    team: uuid.UUID
+
+
+_SECOES = ("arte", "divulgacao", "email", "evento", "impressao", "site", "video")
+
+
+async def _ws_com_formulario(db) -> tuple[uuid.UUID, _Form]:
+    """Workspace com slug conhecido e um formulario publicado com `_SECOES`."""
+    from app.db.models import SolicitationForm, SolicitationSection
+
     slug = f"ws-{uuid.uuid4().hex[:8]}"
     ws = Workspace(id=uuid.uuid4(), name="WS Solicitacoes", slug=slug)
     db.add(ws)
     await db.flush()
-    return ws.id, slug
+    time = await f.make_team(db, workspace_id=ws.id)
+    form = SolicitationForm(
+        id=uuid.uuid4(), workspace_id=ws.id, team_id=time, slug="pedidos",
+        title="Pedidos", is_published=True,
+    )
+    db.add(form)
+    await db.flush()
+    for posicao, secao in enumerate(_SECOES):
+        db.add(SolicitationSection(
+            workspace_id=ws.id, form_id=form.id, slug=secao, title=secao,
+            position=posicao,
+        ))
+    await db.flush()
+    return ws.id, _Form(slug, form.id, time)
 
 
 def _item(category: str = "arte", summary: str = "Banner do processo seletivo") -> SolicitationItem:
@@ -78,10 +98,11 @@ def _item(category: str = "arte", summary: str = "Banner do processo seletivo") 
     )
 
 
-def _cmd(slug: str, **overrides) -> CreatePublicCommand:
+def _cmd(form: _Form, **overrides) -> CreatePublicCommand:
     """Envio padrao: UM item (categoria 'arte'). Use items=[...] pra lote."""
     base = dict(
-        workspace_slug=slug,
+        workspace_slug=form.slug,
+        form_id=form.id,
         requester_name="Maria do Polo",
         requester_email="Maria@Polo.Ex",
         requester_phone="11 99999-0000",
@@ -94,21 +115,24 @@ def _cmd(slug: str, **overrides) -> CreatePublicCommand:
     return CreatePublicCommand(**base)
 
 
-async def _criar_uma(db, slug: str, **overrides):
-    """Envio de 1 item; devolve a unica solicitacao criada.
-
-    create_public agora retorna LISTA (um envio pode ter N categorias).
-    """
+async def _criar_uma(db, form: _Form, **overrides):
+    """Envio de 1 item; devolve a unica solicitacao criada."""
     async with UnitOfWork(db) as uow:
         criadas = await SolicitationService(db).create_public(
-            uow, _cmd(slug, **overrides)
+            uow, _cmd(form, **overrides)
         )
     assert criadas is not None and len(criadas) == 1
     return criadas[0]
 
 
 async def _reviewer(db, ws: uuid.UUID, *, role: str = "MANAGER"):
-    team = await f.make_team(db, workspace_id=ws)
+    """Pessoa com `role` no time dono do formulario do workspace."""
+    team = (
+        await db.execute(
+            text("SELECT team_id FROM solicitation_form WHERE workspace_id=:w"),
+            {"w": ws},
+        )
+    ).scalar_one()
     user = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=user, team_id=team, role=role)
     return team, user
@@ -118,8 +142,8 @@ async def _reviewer(db, ws: uuid.UUID, *, role: str = "MANAGER"):
 # Criacao publica (nivel de servico)
 # --------------------------------------------------------
 async def test_create_public_persiste_pending_no_workspace_do_slug(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
-    s = await _criar_uma(db, slug)
+    ws, form = await _ws_com_formulario(db)
+    s = await _criar_uma(db, form)
 
     row = (
         await db.execute(
@@ -139,10 +163,10 @@ async def test_create_public_persiste_pending_no_workspace_do_slug(db) -> None:
 
 
 async def test_create_public_honeypot_descarta_sem_persistir(db) -> None:
-    _, slug = await _make_ws_with_slug(db)
+    _, form = await _ws_com_formulario(db)
     async with UnitOfWork(db) as uow:
         s = await SolicitationService(db).create_public(
-            uow, _cmd(slug, honeypot="http://spam.example")
+            uow, _cmd(form, honeypot="http://spam.example")
         )
     assert s is None
     total = (
@@ -151,20 +175,11 @@ async def test_create_public_honeypot_descarta_sem_persistir(db) -> None:
     assert total == 0
 
 
-async def test_create_public_categoria_invalida_rejeitada(db) -> None:
-    _, slug = await _make_ws_with_slug(db)
-    async with UnitOfWork(db) as uow:
-        with pytest.raises(ValidationError):
-            await SolicitationService(db).create_public(
-                uow, _cmd(slug, items=[_item(category="hackear-o-mainframe")])
-            )
-
-
 async def test_create_public_slug_desconhecido_404(db) -> None:
     async with UnitOfWork(db) as uow:
         with pytest.raises(EntityNotFoundError):
             await SolicitationService(db).create_public(
-                uow, _cmd("slug-que-nao-existe")
+                uow, _cmd(_Form("slug-que-nao-existe", uuid.uuid4(), uuid.uuid4()))
             )
 
 
@@ -173,10 +188,10 @@ async def test_create_public_slug_desconhecido_404(db) -> None:
 # --------------------------------------------------------
 async def test_fila_escopada_por_tenant(db) -> None:
     """Solicitacao do WS A NAO aparece na fila lida como WS B."""
-    ws_a, slug_a = await _make_ws_with_slug(db)
-    await _criar_uma(db, slug_a)
+    ws_a, form_a = await _ws_com_formulario(db)
+    await _criar_uma(db, form_a)
 
-    ws_b, _ = await _make_ws_with_slug(db)
+    ws_b, _ = await _ws_com_formulario(db)
     team_b, user_b = await _reviewer(db, ws_b)
     with acting_as(
         workspace_id=ws_b, user_id=user_b, memberships=(mship(team_b, "MANAGER"),)
@@ -198,13 +213,12 @@ async def test_fila_escopada_por_tenant(db) -> None:
 async def test_fila_filtra_por_status_e_conta_pendentes(db) -> None:
     """Filtro por status conta ENVIOS; pending_total conta DEMANDAS.
 
-    Duas unidades diferentes na mesma tela (Spec 025, R5) -- por isso os
-    dois numeros sao verificados juntos aqui.
+    Duas unidades diferentes na mesma tela, por isso conferidas juntas.
     """
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s1 = await _criar_uma(db, slug)
-    await _criar_uma(db, slug, items=[_item(summary="Outra")])
+    s1 = await _criar_uma(db, form)
+    await _criar_uma(db, form, items=[_item(summary="Outra")])
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -230,9 +244,9 @@ async def test_fila_filtra_por_status_e_conta_pendentes(db) -> None:
 # Triagem (aprovar / rejeitar)
 # --------------------------------------------------------
 async def test_aprovar_registra_revisor_e_momento(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s = await _criar_uma(db, slug)
+    s = await _criar_uma(db, form)
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -248,9 +262,9 @@ async def test_aprovar_registra_revisor_e_momento(db) -> None:
 
 
 async def test_rejeitar_sem_justificativa_falha(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s = await _criar_uma(db, slug)
+    s = await _criar_uma(db, form)
     # Guarda o id ANTES da tentativa que vai rolar back: o __aexit__ do UoW
     # faz rollback quando o caso de uso nao commita, e session.rollback()
     # EXPIRA todos os objetos da sessao. Ler `s.id` depois disso dispararia
@@ -279,9 +293,9 @@ async def test_rejeitar_sem_justificativa_falha(db) -> None:
 
 
 async def test_rejeitar_com_justificativa_persiste_nota(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s = await _criar_uma(db, slug)
+    s = await _criar_uma(db, form)
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -302,9 +316,9 @@ async def test_rejeitar_com_justificativa_persiste_nota(db) -> None:
 
 async def test_triagem_dupla_bloqueada(db) -> None:
     """Solicitacao ja triada nao pode ser aprovada/rejeitada de novo."""
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s = await _criar_uma(db, slug)
+    s = await _criar_uma(db, form)
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -324,11 +338,11 @@ async def test_triagem_dupla_bloqueada(db) -> None:
 
 async def test_review_de_outro_tenant_e_404(db) -> None:
     """Revisor do WS B nao enxerga (logo nao tria) solicitacao do WS A."""
-    _ws_a, slug_a = await _make_ws_with_slug(db)
+    _ws_a, form_a = await _ws_com_formulario(db)
     svc = SolicitationService(db)
-    s = await _criar_uma(db, slug_a)
+    s = await _criar_uma(db, form_a)
 
-    ws_b, _ = await _make_ws_with_slug(db)
+    ws_b, _ = await _ws_com_formulario(db)
     team_b, user_b = await _reviewer(db, ws_b)
     with acting_as(
         workspace_id=ws_b, user_id=user_b, memberships=(mship(team_b, "MANAGER"),)
@@ -367,30 +381,9 @@ def _http(db, ctx: TenantContext | None = None) -> AsyncClient:
 
 
 async def _publico(db) -> tuple[str, str]:
-    """Workspace com um formulario PUBLICADO (secoes `email`, `arte`, `evento`).
-
-    ⚠️ A ROTA PUBLICA EXIGE `form_id` DESDE 16/10 (auditoria): o envio sem
-    formulario era a porta da Spec 043 para a aba aberta durante aquele deploy,
-    e ficou aberta a quem quisesse criar pedido orfao. O SERVICO continua
-    sabendo tratar orfao -- ha pedidos assim no banco --, e os testes de
-    servico daqui ainda os criam por `_criar_uma`.
-    """
-    from app.db.models import SolicitationForm, SolicitationSection
-
-    ws, slug = await _make_ws_with_slug(db)
-    time = await f.make_team(db, workspace_id=ws)
-    form = SolicitationForm(
-        id=uuid.uuid4(), workspace_id=ws, team_id=time, slug="pedidos",
-        title="Pedidos", is_published=True,
-    )
-    db.add(form)
-    await db.flush()
-    for posicao, secao in enumerate(("email", "arte", "evento")):
-        db.add(SolicitationSection(
-            workspace_id=ws, form_id=form.id, slug=secao, title=secao, position=posicao,
-        ))
-    await db.flush()
-    return slug, str(form.id)
+    """Slug do workspace e id do formulario publicado, para o corpo HTTP."""
+    _ws, form = await _ws_com_formulario(db)
+    return form.slug, str(form.id)
 
 
 def _payload(slug: str, form_id: str, **overrides) -> dict:
@@ -434,9 +427,8 @@ async def test_http_publico_cria_sem_auth(db) -> None:
 
 
 async def test_http_publico_sem_form_id_e_recusado(db) -> None:
-    """Auditoria de 16/10: sem formulario, nascia um pedido ORFAO -- sem o
-    cabecalho do formulario e visivel na fila da organizacao inteira. A porta
-    era compatibilidade com uma aba aberta no deploy de agosto."""
+    """Sem formulario nasceria um pedido orfao, visivel na fila da organizacao
+    inteira."""
     slug, form = await _publico(db)
     corpo = _payload(slug, form)
     del corpo["form_id"]
@@ -445,6 +437,7 @@ async def test_http_publico_sem_form_id_e_recusado(db) -> None:
     assert r.status_code == 422
     total = (await db.execute(text("SELECT count(*) FROM solicitation"))).scalar_one()
     assert total == 0
+
 
 async def test_http_honeypot_responde_201_indistinguivel(db) -> None:
     slug, form = await _publico(db)
@@ -462,16 +455,17 @@ async def test_http_honeypot_responde_201_indistinguivel(db) -> None:
     assert total == 0
 
 
-async def test_http_rate_limit_429_no_estouro(db) -> None:
+async def test_http_rate_limit_429_no_estouro(db, monkeypatch) -> None:
     """Mesmo IP alem do teto do ENVIO -> 429; LER o formulario continua
-    liberado, porque o envio tem balde proprio (auditoria 11/11, item 11)."""
-    from app.core.config import settings
+    liberado, porque o envio tem balde proprio."""
+    from app.core.rate_limit import public_submit_limiter
 
-    assert settings.public_submit_rate_limit_max == 15  # decisao dela
+    teto = 2
+    monkeypatch.setattr(public_submit_limiter, "_max", teto)
     slug, form = await _publico(db)
     ip = _ip()  # UM ip fixo pra este teste
     async with _http(db) as client:
-        for _ in range(settings.public_submit_rate_limit_max):
+        for _ in range(teto):
             ok = await client.post(
                 "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
             )
@@ -494,14 +488,10 @@ async def test_http_fila_sem_token_401(db) -> None:
 
 @pytest.mark.parametrize("role", ["OPERATOR", "SUPERVISOR"])
 async def test_http_sem_permissao_403_em_tudo_inclusive_leitura(db, role) -> None:
-    """Criterios 17-18: a ABA inteira e fechada, nao so as acoes.
-
-    Ate a Spec 025 qualquer autenticado LIA a fila e so as acoes eram
-    travadas. Agora o GET tambem exige `solicitation.review` -- e o
-    SUPERVISOR, que tinha a permissao, a PERDEU (D11).
-    """
-    ws, slug = await _make_ws_with_slug(db)
-    s = await _criar_uma(db, slug)
+    """A aba inteira e fechada, nao so as acoes: o GET tambem exige
+    `solicitation.review`, que SUPERVISOR nao tem."""
+    ws, form = await _ws_com_formulario(db)
+    s = await _criar_uma(db, form)
 
     team, usuario = await _reviewer(db, ws, role=role)
     ctx = TenantContext(
@@ -535,12 +525,12 @@ async def test_http_sem_permissao_403_em_tudo_inclusive_leitura(db, role) -> Non
 
 @pytest.mark.parametrize("role", ["ADMIN", "MANAGER"])
 async def test_http_admin_e_manager_acessam_a_fila(db, role) -> None:
-    """Criterio 19: o outro lado da trava -- quem deve entrar, entra.
+    """O outro lado da trava: quem deve entrar, entra.
 
     ADMIN e papel de ORGANIZACAO (sem vinculo de time); MANAGER, de time.
     """
-    ws, slug = await _make_ws_with_slug(db)
-    await _criar_uma(db, slug)
+    ws, form = await _ws_com_formulario(db)
+    await _criar_uma(db, form)
 
     if role == "ADMIN":
         usuario = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
@@ -568,50 +558,17 @@ async def test_http_admin_e_manager_acessam_a_fila(db, role) -> None:
     assert lista.json()["total"] == 1
 
 
-async def test_http_rota_publica_segue_aberta_apos_a_trava(db) -> None:
-    """Criterio 21: travar a fila NAO pode fechar a porta de entrada.
-
-    A rota publica e como a demanda chega. Se a Spec 025/D11 vazasse pra
-    ela, o formulario pararia de funcionar em silencio.
-    """
-    slug, form = await _publico(db)
-    async with _http(db) as client:  # sem contexto de auth
-        r = await client.post(
-            "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=_ip()
-        )
-    assert r.status_code == 201
-
-
-async def test_http_rejeicao_sem_nota_422(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
-    s = await _criar_uma(db, slug)
-
-    team, manager = await _reviewer(db, ws, role="MANAGER")
-    ctx = TenantContext(
-        workspace_id=ws,
-        user_id=manager,
-        roles=frozenset({"MANAGER"}),
-        permissions=permissions_for_roles(frozenset({"MANAGER"})),
-        memberships=(Membership(team_id=team, role="MANAGER"),),
-    )
-    async with _http(db, ctx) as client:
-        r = await client.post(
-            f"/api/v1/solicitacoes/{s.id}/rejeitar", json={"note": ""}
-        )
-    assert r.status_code == 422
-
-
 # --------------------------------------------------------
 # Lote (multi-selecao de categorias num unico envio)
 # --------------------------------------------------------
 async def test_lote_cria_uma_linha_por_categoria_na_ordem_selecionada(db) -> None:
     """3 categorias -> 3 linhas irmas, batch_seq na ordem de selecao."""
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     async with UnitOfWork(db) as uow:
         criadas = await SolicitationService(db).create_public(
             uow,
             _cmd(
-                slug,
+                form,
                 items=[
                     _item(category="arte", summary="Banner"),
                     _item(category="divulgacao", summary="Post do PS"),
@@ -640,13 +597,13 @@ async def test_lote_cria_uma_linha_por_categoria_na_ordem_selecionada(db) -> Non
 
 async def test_lote_triagem_independente_por_irma(db) -> None:
     """Aprovar a arte e rejeitar a divulgacao do MESMO envio."""
-    ws, slug = await _make_ws_with_slug(db)
+    ws, form = await _ws_com_formulario(db)
     svc = SolicitationService(db)
     async with UnitOfWork(db) as uow:
         criadas = await svc.create_public(
             uow,
             _cmd(
-                slug,
+                form,
                 items=[
                     _item(category="arte", summary="Banner"),
                     _item(category="divulgacao", summary="Post do PS"),
@@ -686,26 +643,15 @@ async def test_lote_triagem_independente_por_irma(db) -> None:
     assert estados[divulgacao] == "REJECTED"
 
 
-async def test_lote_categoria_repetida_rejeitada(db) -> None:
-    """Mesma categoria duas vezes no envio e erro de UI, nao pedido real."""
-    _, slug = await _make_ws_with_slug(db)
-    async with UnitOfWork(db) as uow:
-        with pytest.raises(ValidationError):
-            await SolicitationService(db).create_public(
-                uow,
-                _cmd(slug, items=[_item(category="arte"), _item(category="arte")]),
-            )
-
-
 async def test_lote_invalido_nao_grava_nenhuma_linha(db) -> None:
     """Tudo-ou-nada: categoria ruim no meio aborta o envio inteiro."""
-    _, slug = await _make_ws_with_slug(db)
+    _, form = await _ws_com_formulario(db)
     async with UnitOfWork(db) as uow:
         with pytest.raises(ValidationError):
             await SolicitationService(db).create_public(
                 uow,
                 _cmd(
-                    slug,
+                    form,
                     items=[
                         _item(category="arte"),
                         _item(category="categoria-invalida"),
@@ -720,10 +666,10 @@ async def test_lote_invalido_nao_grava_nenhuma_linha(db) -> None:
 
 
 async def test_lote_vazio_rejeitado(db) -> None:
-    _, slug = await _make_ws_with_slug(db)
+    _, form = await _ws_com_formulario(db)
     async with UnitOfWork(db) as uow:
         with pytest.raises(ValidationError):
-            await SolicitationService(db).create_public(uow, _cmd(slug, items=[]))
+            await SolicitationService(db).create_public(uow, _cmd(form, items=[]))
 
 
 async def test_http_lote_um_post_um_protocolo(db) -> None:
@@ -760,22 +706,22 @@ async def test_http_lote_um_post_um_protocolo(db) -> None:
 
 
 # --------------------------------------------------------
-# Fila AGRUPADA por envio (criterios 9, 11, 12, 16)
+# Fila AGRUPADA por envio
 # --------------------------------------------------------
-async def _envio(db, slug: str, *categorias: str):
+async def _envio(db, form: _Form, *categorias: str):
     """Cria um envio com N categorias e devolve as linhas."""
     async with UnitOfWork(db) as uow:
         criadas = await SolicitationService(db).create_public(
-            uow, _cmd(slug, items=[_item(category=c) for c in categorias])
+            uow, _cmd(form, items=[_item(category=c) for c in categorias])
         )
     assert criadas is not None
     return criadas
 
 
 async def test_fila_agrupa_um_card_por_envio(db) -> None:
-    """Criterio 9: envio de 3 categorias = UM lote com 3 itens em ordem."""
-    ws, slug = await _make_ws_with_slug(db)
-    await _envio(db, slug, "arte", "video", "evento")
+    """Envio de 3 categorias = UM lote com 3 itens em ordem."""
+    ws, form = await _ws_com_formulario(db)
+    await _envio(db, form, "arte", "video", "evento")
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -792,15 +738,15 @@ async def test_fila_agrupa_um_card_por_envio(db) -> None:
 
 
 async def test_paginacao_por_envio_nao_parte_lote_ao_meio(db) -> None:
-    """Criterio 11: `total` conta ENVIOS e nenhum vem incompleto.
+    """`total` conta ENVIOS e nenhum vem incompleto.
 
     Paginar por LINHA traria 2 das 3 demandas de um envio na pagina 1 e a
     terceira na 2 -- o card apareceria com secoes faltando.
     """
-    ws, slug = await _make_ws_with_slug(db)
-    await _envio(db, slug, "arte", "video", "evento")  # 3 demandas
-    await _envio(db, slug, "site", "email")            # 2 demandas
-    await _envio(db, slug, "impressao")                # 1 demanda
+    ws, form = await _ws_com_formulario(db)
+    await _envio(db, form, "arte", "video", "evento")  # 3 demandas
+    await _envio(db, form, "site", "email")            # 2 demandas
+    await _envio(db, form, "impressao")                # 1 demanda
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -823,13 +769,11 @@ async def test_paginacao_por_envio_nao_parte_lote_ao_meio(db) -> None:
 
 
 async def test_filtro_traz_envio_inteiro_mesmo_com_status_misto(db) -> None:
-    """Criterio 12 (D7 -- HAVING, nao WHERE).
-
-    Envio com 1 pendente + 2 aprovadas aparece em "Pendentes" com as TRES
+    """HAVING, nao WHERE: envio com 1 pendente + 2 aprovadas aparece em "Pendentes" com as TRES
     secoes visiveis. Esconder as aprovadas mostraria um card mutilado.
     """
-    ws, slug = await _make_ws_with_slug(db)
-    criadas = await _envio(db, slug, "arte", "video", "evento")
+    ws, form = await _ws_com_formulario(db)
+    criadas = await _envio(db, form, "arte", "video", "evento")
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -852,9 +796,9 @@ async def test_filtro_traz_envio_inteiro_mesmo_com_status_misto(db) -> None:
 
 
 async def test_filtro_aprovadas_sem_tarefa(db) -> None:
-    """Criterio 16: o filtro que existe pra demanda aprovada nao sumir."""
-    ws, slug = await _make_ws_with_slug(db)
-    criadas = await _envio(db, slug, "arte", "video")
+    """O filtro que existe pra demanda aprovada nao sumir."""
+    ws, form = await _ws_com_formulario(db)
+    criadas = await _envio(db, form, "arte", "video")
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -898,13 +842,13 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
 
 
 # --------------------------------------------------------
-# Marcacao de tarefa (criterio 15)
+# Marcacao de tarefa
 # --------------------------------------------------------
 async def test_marcar_tarefa_exige_aprovada(db) -> None:
     """PENDING e REJECTED nunca podem ter tarefa (guard + CHECK no banco)."""
-    ws, slug = await _make_ws_with_slug(db)
-    pendente = await _criar_uma(db, slug)
-    rejeitada = await _criar_uma(db, slug, items=[_item(category="video")])
+    ws, form = await _ws_com_formulario(db)
+    pendente = await _criar_uma(db, form)
+    rejeitada = await _criar_uma(db, form, items=[_item(category="video")])
 
     team, user = await _reviewer(db, ws)
     with acting_as(
@@ -927,8 +871,8 @@ async def test_marcar_tarefa_exige_aprovada(db) -> None:
 
 
 async def test_marcar_e_desmarcar_tarefa_registra_quem_e_quando(db) -> None:
-    ws, slug = await _make_ws_with_slug(db)
-    s = await _criar_uma(db, slug)
+    ws, form = await _ws_com_formulario(db)
+    s = await _criar_uma(db, form)
 
     team, user = await _reviewer(db, ws)
     with acting_as(

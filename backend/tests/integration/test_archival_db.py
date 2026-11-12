@@ -1,13 +1,8 @@
-"""Varredura de auto-arquivamento (Spec 013/035) -- contra Postgres real.
+"""Varredura de auto-arquivamento (`archive_stale`) -- contra Postgres real.
 
 Cobre: arquiva so os elegiveis (terminais com `terminal_since` mais velho que
-o limite), grava history ARCHIVED com flag automated, e idempotencia.
-Isolamento de tenant: a varredura num workspace nao toca no outro.
-
-⚠️ A REGRA MUDOU DE FONTE na fatia 2b da Spec 035. Era `completed_at` para
-COMPLETED e `updated_at` para CANCELLED; passou a ser `terminal_since` para as
-duas. Ver `_set_terminal` abaixo, e `test_equivalencia_varredura_db.py`, que
-prova que o conjunto selecionado continua o mesmo.
+o limite) e o isolamento de tenant. O history `automated` e a idempotencia
+ficam em `test_archive_stale_cascata_db.py`.
 """
 
 from __future__ import annotations
@@ -15,9 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from sqlalchemy import select
 
-from app.db.models import TaskHistory
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.task_service import TaskService
 from tests.integration import factories as f
@@ -52,13 +45,10 @@ def _set_terminal(task, *, status, completed_at=None, when):
     """Forca status + carimbos no passado. Atribuir updated_at explicito
     sobrescreve o onupdate ORM (que e ORM-side, nao trigger de banco).
 
-    ⚠️ `terminal_since` usa a MESMA formula do backfill das migrations 0008 e
-    0009 (`COALESCE(completed_at, updated_at)` para COMPLETED, `updated_at`
-    para CANCELLED). Estes testes plantam linha direto, sem passar pelo
-    service, entao nada preencheria o campo -- e desde a fatia 2b da Spec 035 e
-    ele que a varredura le. Sem esta linha os seis testes de varredura acusam
-    "arquivou 0", que e o produto CERTO agindo sobre um mundo que nao existe
-    em producao (la o backfill ja passou).
+    ⚠️ `terminal_since` e o que a varredura le (`COALESCE(completed_at,
+    updated_at)` para COMPLETED, `updated_at` para CANCELLED). Estes testes
+    plantam linha direto, sem passar pelo service, entao nada preencheria o
+    campo: sem esta linha a varredura "arquiva 0", com o produto CERTO.
 
     ⚠️ Consequencia aceita: este arquivo deixa de provar que o PRODUTO grava o
     relogio -- ele planta o valor. Quem prova a escrita e
@@ -101,45 +91,6 @@ async def test_varredura_arquiva_so_os_elegiveis(db) -> None:
     assert t_cancel_velha.is_archived is True
     assert t_done_recente.is_archived is False
     assert t_ativa.is_archived is False
-
-
-async def test_history_automated_por_task_arquivada(db) -> None:
-    ctx, ws, team, user = await _ws_admin(db)
-    velho = NOW - timedelta(days=30)
-    t = await _mk(db, ws, user, team, "x")
-    _set_terminal(t, status=TaskStatus.COMPLETED, completed_at=velho, when=velho)
-    await db.flush()
-
-    with acting_as(**ctx):
-        await TaskService(db).archive_stale(now=NOW, actor_user_id=user, days=20)
-
-    rows = (
-        await db.execute(
-            select(TaskHistory).where(
-                TaskHistory.task_id == t.id,
-                TaskHistory.event_type == "archived",
-            )
-        )
-    ).scalars().all()
-    assert len(rows) == 1
-    assert rows[0].user_id == user
-    assert rows[0].event_metadata == {"automated": True, "reason": "stale_terminal"}
-
-
-async def test_idempotente(db) -> None:
-    ctx, ws, team, user = await _ws_admin(db)
-    velho = NOW - timedelta(days=25)
-    t = await _mk(db, ws, user, team, "x")
-    _set_terminal(t, status=TaskStatus.COMPLETED, completed_at=velho, when=velho)
-    await db.flush()
-
-    with acting_as(**ctx):
-        svc = TaskService(db)
-        first = await svc.archive_stale(now=NOW, actor_user_id=user, days=20)
-        second = await svc.archive_stale(now=NOW, actor_user_id=user, days=20)
-
-    assert first == 1
-    assert second == 0  # ja arquivada -> nao reentra
 
 
 async def test_isolamento_entre_workspaces(db) -> None:

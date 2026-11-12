@@ -1,7 +1,6 @@
 /**
- * Filtros do quadro por equipe (2026-07-27).
- *
- * O que estes testes travam, em ordem de importancia:
+ * Filtros do quadro por equipe. O que estes testes travam, em ordem de
+ * importancia:
  *
  *   1. HERANCA POR RAIZ -- filtrar pela pessoa que so aparece numa SUBTAREFA
  *      tem de manter o card da raiz. Sem isso o filtro parece quebrado: a
@@ -84,7 +83,7 @@ describe("escopoDaTask", () => {
     expect(escopoDaTask(avulsa(RAIZ), undefined, PROJETOS)).toBeUndefined();
   });
 
-  // ---- em projeto: o time do PROJETO manda (§8) ----
+  // ---- em projeto: o time do PROJETO manda ----
   it("em projeto do subtime -> interna", () => {
     expect(escopoDaTask(noProjeto(SEO, PROJ_SEO), SEO, PROJETOS)).toBe(
       "interna",
@@ -92,10 +91,8 @@ describe("escopoDaTask", () => {
   });
 
   /**
-   * ESTE e o teste que carrega o §8. As 7 tarefas encontradas em producao
-   * tinham exatamente esta forma: team_id do subtime, dentro de um projeto da
-   * raiz. Ate 03/08 vinham marcadas "Interna" -- e o workspace inteiro as via,
-   * porque quem ve o projeto ve a tarefa (task_guards.py:67-69).
+   * Quem vê o projeto vê a tarefa: marcar "Interna" uma tarefa de subtime
+   * dentro de projeto da raiz prometeria uma confidencialidade que não existe.
    */
   it("time do subtime MAS projeto da raiz -> compartilhada, nao interna", () => {
     expect(escopoDaTask(noProjeto(SEO, PROJ_RAIZ), SEO, PROJETOS)).toBe(
@@ -112,15 +109,15 @@ describe("escopoDaTask", () => {
     }
   });
 
-  // ---- D3/D4: quando nao da pra prometer nada ----
-  it("D3 -- projeto AUSENTE do mapa -> indefinido, nunca interna", () => {
+  // ---- quando nao da pra prometer nada ----
+  it("projeto AUSENTE do mapa -> indefinido, nunca interna", () => {
     // Lista truncada em 1000, projeto arquivado, ou listAllProjects falhou.
     expect(
       escopoDaTask(noProjeto(SEO, PROJ_FORA_DO_MAPA), SEO, PROJETOS),
     ).toBe("indefinido");
   });
 
-  it("D3 -- mapa VAZIO nao faz nada virar interna", () => {
+  it("mapa VAZIO nao faz nada virar interna", () => {
     // O caso da chamada que falhou: nenhuma tarefa em projeto pode ser
     // classificada, e nenhuma pode ser prometida como confidencial.
     expect(escopoDaTask(noProjeto(SEO, PROJ_SEO), SEO, new Map())).toBe(
@@ -128,7 +125,7 @@ describe("escopoDaTask", () => {
     );
   });
 
-  it("D4 -- projeto SEM time -> indefinido", () => {
+  it("projeto SEM time -> indefinido", () => {
     expect(escopoDaTask(noProjeto(SEO, PROJ_PESSOAL), SEO, PROJETOS)).toBe(
       "indefinido",
     );
@@ -169,7 +166,7 @@ describe("passaEscopo", () => {
 
   it("indefinido e o OPOSTO de undefined: filtro especifico esconde", () => {
     // Dentro do modo subtime, "nao sei classificar" nao pode aparecer em
-    // "So internas" -- seria repetir a promessa quebrada do §8.
+    // "So internas": seria prometer uma confidencialidade que nao existe.
     expect(passaEscopo("interna", "indefinido")).toBe(false);
     expect(passaEscopo("compartilhada", "indefinido")).toBe(false);
     // Mas "Todas" continua mostrando: esconder da visao sem filtro seria
@@ -179,17 +176,13 @@ describe("passaEscopo", () => {
 });
 
 describe("responsaveisPorRaiz", () => {
-  // ⚠️ SPEC 042 (B2) -- OS TRES CASOS ABAIXO PRENDEM O CAMINHO NOVO. Com
-  // `root_only` a subarvore nao esta mais carregada, entao caminhar por
-  // `parent_task_id` acharia NADA; quem responde e `subtree_assignee_ids`,
-  // agregado pelo backend. Os testes de HERANCA logo abaixo continuam
-  // exercitando o caminhamento, que segue vivo para `/minhas-tarefas` -- la a
-  // lista AINDA traz subtarefa, por desenho.
-  it("B2: usa `subtree_assignee_ids` quando o backend manda", () => {
-    // ⚠️ O par e torto de proposito: `assignee_ids` (so a raiz) NAO tem a Ana,
-    // e nao ha subtarefa carregada. Se a funcao ignorar o campo novo, o filtro
-    // por Ana perde este card -- que e exatamente o caso comum que o filtro
-    // existe para cobrir ("a raiz e a campanha; a pessoa toca uma peca dela").
+  // Com `root_only` a subárvore não vem carregada; quem responde é
+  // `subtree_assignee_ids`, agregado pelo backend. Os testes de HERANCA abaixo
+  // exercitam o caminho por `parent_task_id`, usado quando a lista traz
+  // subtarefa.
+  it("usa `subtree_assignee_ids` quando o backend manda", () => {
+    // O par é torto de propósito: `assignee_ids` (só a raiz) NÃO tem a Ana, e
+    // não há subtarefa carregada.
     const tasks = [
       t("r1", { assignee_ids: [BRUNO], subtree_assignee_ids: [BRUNO, ANA] }),
     ];
@@ -198,7 +191,7 @@ describe("responsaveisPorRaiz", () => {
     );
   });
 
-  it("B2: campo novo VAZIO significa 'ninguem', e nao 'caia no antigo'", () => {
+  it("`subtree_assignee_ids` VAZIO significa 'ninguem', e nao 'caia no antigo'", () => {
     // Lista vazia e resposta, nao ausencia. Cair no ramo velho aqui faria a
     // raiz aparecer sob o responsavel dela mesma quando o backend ja disse que
     // a subarvore nao tem ninguem.
@@ -293,13 +286,11 @@ describe("passaResponsavel", () => {
     expect(passaResponsavel([ANA], "inexistente", porRaiz)).toBe(false);
   });
 
-  // ---------------- multi-selecao: UNIAO (03/08/2026) ----------------
+  // ---------------- multi-selecao: UNIAO ----------------
 
   /**
-   * O TESTE QUE CARREGA A DECISAO. Com Ana e Bruno marcados, r1 (so Ana, via
-   * subtarefa) e r2 (so Bruno) passam AS DUAS. Com "E" nenhuma passaria, e o
-   * quadro ficaria vazio quando a gestao marcasse duas pessoas -- que e o
-   * momento em que ela mais espera ver coisa.
+   * Com Ana e Bruno marcados, r1 (só Ana, via subtarefa) e r2 (só Bruno)
+   * passam as duas. Com "E" nenhuma passaria.
    */
   it("UNIAO: duas marcadas mostram as tarefas de CADA uma", () => {
     expect(passaResponsavel([ANA, BRUNO], "r1", porRaiz)).toBe(true);
@@ -331,7 +322,7 @@ describe("temFiltroNovo", () => {
 });
 
 // -------------------------------------------------------------------
-// Painel de filtros (29/07)
+// Painel de filtros
 // -------------------------------------------------------------------
 describe("contaFiltrosAtivos", () => {
   it("zero quando nada estreita o quadro", () => {
@@ -365,7 +356,7 @@ describe("contaFiltrosAtivos", () => {
 });
 
 // -------------------------------------------------------------------
-// Pastilhas de filtro ativo (Spec 031, C3)
+// Pastilhas de filtro ativo
 // -------------------------------------------------------------------
 describe("listaFiltrosAtivos", () => {
   const rotulos = (
@@ -377,8 +368,7 @@ describe("listaFiltrosAtivos", () => {
     expect(listaFiltrosAtivos(FILTROS_LIMPOS)).toEqual([]);
   });
 
-  it("BUSCA vira pastilha -- era o furo numero um do badge", () => {
-    // Antes da C3 o badge dizia "0" com a busca preenchida.
+  it("BUSCA vira pastilha", () => {
     expect(rotulos({ ...FILTROS_LIMPOS, busca: "landing" })).toEqual([
       "Busca: landing",
     ]);
@@ -416,7 +406,7 @@ describe("listaFiltrosAtivos", () => {
     expect(chip.rotulo.endsWith("\u2026")).toBe(true);
   });
 
-  it("ARQUIVADAS vira pastilha -- era o furo numero dois", () => {
+  it("ARQUIVADAS vira pastilha", () => {
     expect(rotulos({ ...FILTROS_LIMPOS, arquivadas: true })).toEqual([
       "Incluindo arquivadas",
     ]);
@@ -472,7 +462,7 @@ describe("normalizarBusca", () => {
   });
 });
 
-describe("raizesQueCasamBusca -- a busca inclui SUBTAREFA (05/08)", () => {
+describe("raizesQueCasamBusca: a busca inclui SUBTAREFA", () => {
   /**
    * O quadro so desenha `depth === 0`: subtarefa nao tem card. Achar uma
    * subtarefa pela busca so pode significar TRAZER A RAIZ dela -- e essa e a
@@ -495,7 +485,7 @@ describe("raizesQueCasamBusca -- a busca inclui SUBTAREFA (05/08)", () => {
     expect([...raizesQueCasamBusca(ARVORE, "campanha")]).toEqual(["r1"]);
   });
 
-  it("casa pelo titulo da SUBTAREFA e devolve a RAIZ -- era o pedido", () => {
+  it("casa pelo titulo da SUBTAREFA e devolve a RAIZ", () => {
     expect([...raizesQueCasamBusca(ARVORE, "roteiro do video")]).toEqual(["r1"]);
   });
 
@@ -513,7 +503,7 @@ describe("raizesQueCasamBusca -- a busca inclui SUBTAREFA (05/08)", () => {
   });
 
   it("busca vazia devolve vazio -- quem decide 'sem filtro' e o chamador", () => {
-    // ⚠️ Nao devolver "todas" aqui e deliberado: o Board so consulta este
+    // Nao devolver "todas" aqui e deliberado: o Board so consulta este
     // conjunto quando `buscaNorm !== ""`. Devolver todas as raizes daria um
     // segundo lugar decidindo o que e "sem busca".
     expect(raizesQueCasamBusca(ARVORE, "").size).toBe(0);

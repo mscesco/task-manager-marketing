@@ -1,13 +1,8 @@
-"""@mencao na EDICAO de comentario (Spec 032, Fatia 3).
+"""@mencao na EDICAO de comentario: so quem entrou na edicao e notificado.
 
-Ate 03/08 `edit_comment` nunca chamava `extract_mentions`: o `@` salvava e
-ninguem era notificado, sem erro e sem log. Report da Camila com captura --
-comentario criado mencionando uma pessoa, tentativa de mencionar a segunda na
-edicao, nada acontece.
-
-O teste que carrega a spec e `test_edicao_sem_mexer_em_mencao_nao_notifica`:
-sem o delta (D2), corrigir uma virgula num comentario com quatro mencoes
-notifica as quatro de novo -- e corrigir virgula E o uso mais comum de editar.
+O teste central e `test_edicao_sem_mexer_em_mencao_nao_notifica`: sem o delta,
+corrigir uma virgula num comentario com quatro mencoes notifica as quatro de
+novo -- e corrigir virgula E o uso mais comum de editar.
 
 Complementa `test_mentions_in_comment_db.py`, que cobre a CRIACAO.
 """
@@ -34,9 +29,8 @@ async def _world(db):
     dentro -- OPERATOR da raiz, alcanca a task
     fora   -- OPERATOR de B; NAO alcanca task interna de A
 
-    ⚠️ Sao precisos DOIS subtimes. A primeira versao tinha so B e montava a
-    task "fora de escopo" na RAIZ -- e tarefa da raiz TODO MUNDO alcanca
-    (regra R2, 31/07). O teste falhava por cenario errado, com o codigo certo.
+    ⚠️ Sao precisos DOIS subtimes: tarefa da RAIZ todo mundo alcanca, entao a
+    task "fora de escopo" tem de estar num subtime (A) que `fora` (B) nao ve.
     """
     ws = await f.make_workspace(db)
     r = await f.make_team(db, workspace_id=ws)
@@ -78,7 +72,7 @@ async def _conta(db, recipient_id, tipo):
 
 
 # ----------------------------------------------------------
-# Criterio 1 -- o pedido
+# o pedido
 # ----------------------------------------------------------
 async def test_edicao_acrescenta_mencao_notifica(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -94,7 +88,7 @@ async def test_edicao_acrescenta_mencao_notifica(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 2 -- O TESTE QUE CARREGA A SPEC (D2)
+# o delta: so a mencao nova notifica
 # ----------------------------------------------------------
 async def test_edicao_sem_mexer_em_mencao_nao_notifica(db) -> None:
     """Corrigir uma virgula NAO pode renotificar quem ja estava la.
@@ -122,7 +116,7 @@ async def test_edicao_sem_mexer_em_mencao_nao_notifica(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 3 -- so o novo
+# so o novo
 # ----------------------------------------------------------
 async def test_edicao_notifica_so_o_novo(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -142,7 +136,7 @@ async def test_edicao_notifica_so_o_novo(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 4 -- remover nao faz nada (D3)
+# remover nao faz nada
 # ----------------------------------------------------------
 async def test_edicao_removendo_mencao_nao_notifica(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -155,12 +149,12 @@ async def test_edicao_removendo_mencao_nao_notifica(db) -> None:
             task_id=task.id, comment_id=c.id, content="oi"
         )
         await db.flush()
-        # a notificacao ja emitida PERMANECE -- nao existe des-notificar (D3)
+        # a notificacao ja emitida PERMANECE -- nao existe des-notificar
         assert await _conta(db, dentro, "TASK_MENTIONED") == 1
 
 
 # ----------------------------------------------------------
-# Criterio 5 -- escopo (D7)
+# escopo
 # ----------------------------------------------------------
 async def test_mencao_fora_do_escopo_nao_notifica_na_edicao(db) -> None:
     """Mesmo filtro da criacao. O id pode ter sido COLADO no texto."""
@@ -180,7 +174,7 @@ async def test_mencao_fora_do_escopo_nao_notifica_na_edicao(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 6 -- uuid que nao e usuario: salva mesmo assim
+# uuid que nao e usuario: salva mesmo assim
 # ----------------------------------------------------------
 async def test_uuid_invalido_salva_sem_notificar(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -198,7 +192,7 @@ async def test_uuid_invalido_salva_sem_notificar(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 7 -- auto-mencao
+# auto-mencao
 # ----------------------------------------------------------
 async def test_automencao_na_edicao_nao_notifica(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -213,7 +207,7 @@ async def test_automencao_na_edicao_nao_notifica(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 8 -- editar nao reemite TASK_COMMENTED (D4)
+# editar nao reemite TASK_COMMENTED
 # ----------------------------------------------------------
 async def test_edicao_nao_emite_task_commented(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -232,7 +226,7 @@ async def test_edicao_nao_emite_task_commented(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 9 -- edited_at continua
+# edited_at continua
 # ----------------------------------------------------------
 async def test_edited_at_continua_sendo_gravado(db) -> None:
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
@@ -246,7 +240,7 @@ async def test_edited_at_continua_sendo_gravado(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 10 -- nao-autor: 403 e NADA emitido
+# nao-autor: 403 e NADA emitido
 # ----------------------------------------------------------
 async def test_nao_autor_403_e_nada_emitido(db) -> None:
     """A autorizacao vem ANTES da emissao. Sabotagem alvo: mover o `can_edit`
@@ -269,15 +263,13 @@ async def test_nao_autor_403_e_nada_emitido(db) -> None:
 
 
 # ----------------------------------------------------------
-# D5 -- desvio consciente da D3 da Spec 019
+# responsavel ja notificado pelo comentario recebe a mencao
 # ----------------------------------------------------------
 async def test_responsavel_que_ja_recebeu_commented_recebe_mencao(db) -> None:
-    """A D3 da 019 diz que ninguem recebe duas notificacoes pelo MESMO
-    comentario. Na edicao isso nao se sustenta: a pessoa pode ter recebido
-    TASK_COMMENTED quando o comentario nasceu (por ser responsavel) e so
-    agora ser mencionada. Sao eventos diferentes, em momentos diferentes.
-
-    ⚠️ Desvio DELIBERADO (D5). Quem ler a D3 da 019 depois vai achar defeito.
+    """⚠️ Excecao DELIBERADA a "ninguem recebe duas notificacoes pelo MESMO
+    comentario": a pessoa pode ter recebido TASK_COMMENTED quando o comentario
+    nasceu (por ser responsavel) e so agora ser mencionada. Sao eventos
+    diferentes, em momentos diferentes.
     """
     ws, r, a, b, autor, dentro, outro, fora, task, ctx = await _world(db)
     await f.make_assignment(
@@ -295,10 +287,10 @@ async def test_responsavel_que_ja_recebeu_commented_recebe_mencao(db) -> None:
 
 
 # ----------------------------------------------------------
-# D3-bis -- re-acrescentar notifica de novo (aceito)
+# re-acrescentar notifica de novo (aceito)
 # ----------------------------------------------------------
 async def test_readicionar_mencao_notifica_de_novo(db) -> None:
-    """Comportamento ACEITO na D3-bis, nao defeito.
+    """Comportamento ACEITO, nao defeito.
 
     Exige tres edicoes deliberadas (mencionar, tirar, repor). Fechar exigiria
     consultar as TASK_MENTIONED ja emitidas pra este comment_id -- uma leitura

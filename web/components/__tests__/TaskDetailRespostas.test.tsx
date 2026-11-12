@@ -1,4 +1,4 @@
-// Pedido de 26/10 -- a seta que recolhe as respostas de um comentário, e o
+// A seta que recolhe as respostas de um comentário, e o
 // comentário que a notificação aponta (`?comentario=`) abrindo e piscando.
 //
 // (O cenário -- mocks, tarefa e montagem -- é o de `TaskDetailEsc.test.tsx`.)
@@ -141,8 +141,8 @@ afterEach(() => {
 });
 
 // ⚠️ SEM `*ByRole` NESTE ARQUIVO: ele percorre a árvore de acessibilidade do
-// TaskDetail inteiro a cada tentativa, e na suíte cheia da máquina dela passou
-// dos 5 s (26/10). O texto acha o mesmo botão; o `aria-expanded` segue conferido.
+// TaskDetail inteiro a cada tentativa, e na suíte cheia passa do timeout de
+// 5 s. O texto acha o mesmo botão; o `aria-expanded` segue conferido.
 function seta() {
   const b = screen.getByText("2 respostas").closest("button");
   if (!b) throw new Error("a seta não é um botão");

@@ -1,38 +1,25 @@
 /**
- * Spec 038, fatia B — a regra de atraso com hora.
- *
- * ⚠️ O TESTE QUE MAIS IMPORTA É O DO PREFIXO. Ele é o único que separa a regra
- * certa da comparação ingênua, e a ingênua falha em SILÊNCIO — sem erro, sem
- * log, sem nada na tela. Se alguém "simplificar" para
- * `` `${dueDate} ${dueTime}` < `${agora.data}` ``, ou trocar o corte de segundos
- * por nada, é ele que cai.
- *
- * SABOTAGENS (todas fazem a suíte ficar vermelha aqui, e só aqui):
- *   A. Ignorar `dueTime` e cair sempre em `dueDate < agora.data`.
- *   B. Não cortar os segundos que o Postgres devolve (`"18:00:00"`).
- *   C. Tratar "sem hora" como meia-noite.
- *   D. Trocar `Intl` por aritmética de offset (`-3h`) -- cai no horário de verão.
+ * A regra de atraso com hora. O caso que mais importa é o do mesmo dia
+ * (venceu hoje às 09:00, agora são 18:00): a comparação ingênua só por data
+ * erra em silêncio.
  */
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { agoraNoWorkspace, estaAtrasada, type Agora } from "../prazo";
 import { deadlineLabel } from "../status";
 
 const agora = (data: string, hora: string): Agora => ({ data, hora });
 
-describe("estaAtrasada -- sem hora, a regra de sempre", () => {
+describe("estaAtrasada: sem hora", () => {
   it("prazo de ONTEM está atrasada", () => {
     expect(estaAtrasada("2026-08-18", null, agora("2026-08-19", "09:00"))).toBe(
       true
     );
   });
 
-  it("⚠️ prazo de HOJE NÃO está atrasada, mesmo às 23:59 -- sabotagem C", () => {
-    // ⚠️ É O COMPORTAMENTO DE 100% DAS 1085 TAREFAS DE PRODUÇÃO. Sem hora, o
-    // prazo é o DIA, e o dia só acaba à meia-noite. Tratar "sem hora" como
-    // meia-noite poria toda tarefa com prazo hoje em atraso de manhã -- que é
-    // exatamente o backfill que o desenho `date` + `time` nulo evitou.
+  it("prazo de HOJE NÃO está atrasada, mesmo às 23:59", () => {
+    // Sem hora, o prazo é o dia inteiro; não é meia-noite.
     expect(estaAtrasada("2026-08-19", null, agora("2026-08-19", "23:59"))).toBe(
       false
     );
@@ -45,12 +32,9 @@ describe("estaAtrasada -- sem hora, a regra de sempre", () => {
   });
 });
 
-describe("estaAtrasada -- com hora", () => {
-  it("⚠️ venceu HOJE às 09:00 e agora são 18:00 → ATRASADA", () => {
-    // ⚠️ ESTE É O CASO QUE A COMPARAÇÃO INGÊNUA ERRA. Com `due_date < hoje`,
-    // "2026-08-19" < "2026-08-19" é false, e a tarefa nunca ficaria vermelha
-    // no dia do vencimento -- o pedido inteiro desta fatia morreria em
-    // silêncio. Sabotagem A.
+describe("estaAtrasada: com hora", () => {
+  it("venceu HOJE às 09:00 e agora são 18:00 → ATRASADA", () => {
+    // Com só `due_date < hoje`, a tarefa nunca ficaria vermelha no dia.
     expect(
       estaAtrasada("2026-08-19", "09:00", agora("2026-08-19", "18:00"))
     ).toBe(true);
@@ -62,7 +46,7 @@ describe("estaAtrasada -- com hora", () => {
     ).toBe(false);
   });
 
-  it("⚠️ o minuto EXATO ainda não atrasou", () => {
+  it("o minuto EXATO ainda não atrasou", () => {
     // Fronteira: às 18:00 em ponto o prazo é agora, não passado.
     expect(
       estaAtrasada("2026-08-19", "18:00", agora("2026-08-19", "18:00"))
@@ -72,10 +56,9 @@ describe("estaAtrasada -- com hora", () => {
     ).toBe(true);
   });
 
-  it("⚠️ aceita a hora COM SEGUNDOS, como o Postgres devolve -- sabotagem B", () => {
-    // ⚠️ `TIME` volta como `"18:00:00"`. Sem cortar, `"2026-08-19 18:00:00"` vs
-    // `"2026-08-19 18:00"` compara a string mais longa como MAIOR -- e a tarefa
-    // deixaria de atrasar no minuto exato, por um motivo invisível.
+  it("aceita a hora COM SEGUNDOS, como o Postgres devolve", () => {
+    // Sem cortar, `"18:00:00"` compara como maior que `"18:00"` e a tarefa
+    // deixa de atrasar no minuto exato.
     expect(
       estaAtrasada("2026-08-19", "18:00:00", agora("2026-08-19", "18:01"))
     ).toBe(true);
@@ -91,7 +74,7 @@ describe("estaAtrasada -- com hora", () => {
   });
 });
 
-describe("estaAtrasada -- ausências", () => {
+describe("estaAtrasada: ausências", () => {
   it("sem prazo nunca atrasa", () => {
     expect(estaAtrasada(null, null, agora("2026-08-19", "09:00"))).toBe(false);
     expect(estaAtrasada(undefined, "18:00", agora("2026-08-19", "09:00"))).toBe(
@@ -99,11 +82,9 @@ describe("estaAtrasada -- ausências", () => {
     );
   });
 
-  it("⚠️ hora SEM data devolve false, e não explode", () => {
-    // O backend recusa esse par com 422 (`_validate_hora`), então ele não
-    // existe em dado válido. Mas a tela não é o lugar de descobrir isso, e uma
-    // tarefa não pode ficar vermelha por um estado que ninguém enxerga nem
-    // conserta pela interface.
+  it("hora SEM data devolve false, e não explode", () => {
+    // O backend recusa esse par com 422; a tela não deve pintar de vermelho
+    // um estado que ninguém conserta pela interface.
     expect(estaAtrasada(null, "18:00", agora("2026-08-19", "23:00"))).toBe(
       false
     );
@@ -111,13 +92,8 @@ describe("estaAtrasada -- ausências", () => {
 });
 
 describe("agoraNoWorkspace", () => {
-  it("⚠️ lê no fuso de São Paulo, e não no do navegador -- sabotagem D", () => {
+  it("lê no fuso de São Paulo, e não no do navegador", () => {
     // 19/08/2026 às 02:00 UTC é ainda 18/08 às 23:00 em São Paulo (UTC-3).
-    // ⚠️ ESTE É O CASO QUE O COMENTÁRIO DO JOB DESCREVE desde a Spec 023:
-    // "perto da meia-noite UTC/BRT divergem e o dia sairia errado". Uma
-    // implementação que usasse a data local do navegador (ou UTC) daria
-    // "2026-08-19" aqui, e a tarefa com prazo 18/08 apareceria atrasada uma
-    // hora antes da conta.
     const a = agoraNoWorkspace(new Date("2026-08-19T02:00:00Z"));
     expect(a.data).toBe("2026-08-18");
     expect(a.hora).toBe("23:00");
@@ -129,7 +105,7 @@ describe("agoraNoWorkspace", () => {
     expect(a.hora).toBe("12:00");
   });
 
-  it("⚠️ a hora é 24h, e a meia-noite é 00:00 e não 24:00", () => {
+  it("a hora é 24h, e a meia-noite é 00:00 e não 24:00", () => {
     // `en-GB` com `hour12: false` já devolve `00`, mas alguns ambientes
     // devolvem `24` para meia-noite -- e `"24:00"` ordenaria depois de tudo.
     const a = agoraNoWorkspace(new Date("2026-08-19T03:30:00Z"));
@@ -137,54 +113,34 @@ describe("agoraNoWorkspace", () => {
   });
 });
 
-describe("deadlineLabel -- o rótulo NÃO pode discordar da cor", () => {
-  // ⚠️ ESTE BLOCO NASCEU DE UM DEFEITO REAL, achado pela Camila na tela em
-  // 18/08: a tarefa ficava VERMELHA e o rótulo dizia "Vence hoje". Eu tinha
-  // deixado o `deadlineTone` ciente da hora e esquecido o `deadlineLabel`.
-  //
-  // ⚠️ COR E TEXTO DISCORDANDO É PIOR QUE OS DOIS ERRADOS, e este projeto já
-  // pagou por isso uma vez: o `TaskDetailChecklist.test.tsx` existe porque o
-  // card dizia "2/2" e o detalhe da MESMA tarefa dizia "(0/2)".
-  //
-  // ⚠️ ESTES TESTES USAM O RELÓGIO DE VERDADE, e por isso comparam com datas
-  // relativas a hoje -- não com uma data fixa, que passaria a mentir amanhã.
-  function hojeEmSP(): string {
-    return agoraNoWorkspace().data;
-  }
+describe("deadlineLabel: o rótulo não pode discordar da cor", () => {
+  // 15:00 UTC = 12:00 em São Paulo.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-19T15:00:00Z"));
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-  it("⚠️ hora JÁ PASSADA hoje não diz 'Vence hoje'", () => {
-    const rotulo = deadlineLabel(hojeEmSP(), "00:01");
+  it("hora JÁ PASSADA hoje não diz 'Vence hoje'", () => {
+    const rotulo = deadlineLabel("2026-08-19", "09:00");
     expect(rotulo).not.toContain("Vence hoje");
     expect(rotulo).toContain("Venceu");
   });
 
   it("hora AINDA POR VIR hoje diz que vence hoje, com a hora", () => {
-    expect(deadlineLabel(hojeEmSP(), "23:59")).toBe("Vence hoje às 23:59");
+    expect(deadlineLabel("2026-08-19", "18:00")).toBe("Vence hoje às 18:00");
   });
 
-  it("sem hora, o rótulo de hoje é o de sempre", () => {
-    // ⚠️ É o comportamento das 1085 tarefas de produção. Não pode mudar.
-    expect(deadlineLabel(hojeEmSP(), null)).toBe("Vence hoje");
-    expect(deadlineLabel(hojeEmSP())).toBe("Vence hoje");
-  });
-
-  it("⚠️ corta os segundos que o Postgres devolve", () => {
-    expect(deadlineLabel(hojeEmSP(), "23:59:00")).toBe("Vence hoje às 23:59");
+  it("corta os segundos que o Postgres devolve", () => {
+    expect(deadlineLabel("2026-08-19", "18:00:00")).toBe("Vence hoje às 18:00");
   });
 });
 
-describe("⚠️ o FUSO do ambiente não pode decidir a regra", () => {
-  // ⚠️ ESTE BLOCO NASCEU DO CI REPROVANDO (18/08), e o defeito era REAL e não
-  // do teste: eu pus `estaAtrasada` em `America/Sao_Paulo` e deixei
-  // `deadlineDays` na meia-noite LOCAL. Duas fontes de verdade para "que dia é
-  // hoje" -- exatamente o que o comentário antigo do `deadlineDays` dizia que
-  // não podia acontecer.
-  //
-  // ⚠️ ERA INVISÍVEL NA MÁQUINA DA EQUIPE. Todo mundo em BRT, então as duas
-  // concordavam sempre. Só o runner do CI, que roda em UTC, viu -- e só na
-  // janela entre 00:00 e 03:00 UTC, quando São Paulo ainda está no dia
-  // anterior. **Defeito que só aparece em três horas do dia, num fuso que
-  // ninguém da equipe usa, é o tipo que sobrevive por meses.**
+describe("o fuso do ambiente não decide a regra", () => {
+  // Entre 00:00 e 03:00 UTC, São Paulo ainda está no dia anterior: uma conta
+  // na meia-noite LOCAL de uma máquina em UTC erraria o dia.
   afterEach(() => {
     vi.useRealTimers();
   });
@@ -196,8 +152,6 @@ describe("⚠️ o FUSO do ambiente não pode decidir a regra", () => {
     const hojeSP = agoraNoWorkspace().data;
     expect(hojeSP).toBe("2026-08-18"); // em SP ainda é dia 18
 
-    // ⚠️ COM `deadlineDays` NO FUSO LOCAL isto dava "Atrasada 1 dia", porque a
-    // data local do runner já era 19 e a de SP ainda era 18.
     expect(deadlineLabel(hojeSP, "23:59")).toBe("Vence hoje às 23:59");
     expect(deadlineLabel(hojeSP)).toBe("Vence hoje");
   });

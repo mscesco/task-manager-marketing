@@ -1,16 +1,6 @@
-// O detalhe da tarefa AVISA quando uma escrita falha (17/09).
-//
-// ⚠️ O DEFEITO QUE ESTE ARQUIVO PRENDE: o `TaskDetail` guardava a mensagem de
-// falha (responsável, prioridade, coluna, arquivar, excluir) num `erro` que
-// NADA desenhava desde 30/07 -- a caixa saiu num redesenho. O clique falhava em
-// silêncio. Nenhum portão via: `tsc` não reclama de estado gravado e não lido
-// (só com `--noUnusedLocals`, que foi como apareceu).
-//
-// Agora a falha vai para a pilha de avisos do app, e este teste monta o
-// `AvisosProvider` de verdade para ver o texto NA TELA.
-//
-// SABOTAGEM: em `excluir()` do `TaskDetail`, trocar `avisar(` por `void (`.
-// Deve cair o primeiro teste.
+// O detalhe da tarefa AVISA quando uma escrita falha (responsável, prioridade,
+// coluna, arquivar, excluir). Monta o `AvisosProvider` de verdade para ver o
+// texto NA TELA.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";

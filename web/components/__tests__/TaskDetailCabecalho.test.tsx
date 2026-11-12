@@ -1,4 +1,4 @@
-// Pedido dela (11/11) -- titulo longo no detalhe.
+// Titulo longo no detalhe.
 //
 // O titulo vai ate DUAS linhas (era uma, com reticencias), e mora na coluna da
 // esquerda: crescer nao pode empurrar os comentarios. Por isso, lado a lado, as
@@ -17,7 +17,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // Sem isto a busca de links vai à rede, falha, e
     // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),

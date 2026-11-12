@@ -1,10 +1,7 @@
-"""Entrega 10 -- subtarefa herda o team_id do pai.
+"""Subtarefa herda o team_id do pai.
 
-Garante que uma subtarefa criada sem team_id explicito NAO cai no subtime
-default do criador, mas herda o time do pai (subtree coerente; esquiva a
-divida #2 do fallback silencioso). E que team_id explicito vence a heranca.
-
-Roda so com db-test de pe + TEST_DATABASE_URL setada (senao e PULADO).
+Uma subtarefa criada sem team_id explicito herda o time do pai, e nao o
+subtime de quem cria. team_id explicito vence a heranca.
 """
 
 from __future__ import annotations

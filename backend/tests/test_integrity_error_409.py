@@ -1,4 +1,4 @@
-"""Auditoria de 21/10 -- `IntegrityError` cru vira 409, e nao 500.
+"""`IntegrityError` cru vira 409, e nao 500.
 
 Dois pedidos iguais ao mesmo tempo passam na consulta "ja existe?" e o
 segundo estoura no indice unico. Nao e defeito do servidor; e conflito.

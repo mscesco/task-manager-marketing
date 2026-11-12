@@ -1,4 +1,4 @@
-"""Fatia FINA de HTTP: mapeamento excecao->status (errors.py).
+"""Mapeamento excecao->status HTTP (errors.py).
 
 Via httpx ASGITransport, sobrescrevendo a sessao de banco/UoW pela sessao
 de teste e a auth por um TenantContext fixo. Cobre o que o nivel de
@@ -101,19 +101,13 @@ async def test_remove_assignee_ausente_404(db) -> None:
 async def test_watcher_terceiro_fora_do_escopo_de_edicao_403(db) -> None:
     """403, e nao 404: o ator ENXERGA a task e mesmo assim nao inscreve outro.
 
-    ⚠️ RECONSTRUIDO NA SPEC 037 (F5). A versao anterior usava um ator sem
-    vinculo nenhum, que enxergava por `created_by` (ADR 0013). Sem aquele ramo
-    ele nao enxerga mais nada, e a resposta viraria 404 -- que e outro teste.
-
     O ponto DESTE arquivo e o mapeamento excecao->status, entao o que importa
     e a fronteira 403/404: 403 = "vejo e nao posso", 404 = "nao vejo". O
     cenario que ainda produz 403 e task em PROJETO COMUM do time A (que ele
     alcanca) pinada no time B (que ele nao alcanca) -- ve pelo projeto, edita
     pela task.
 
-    ⚠️ Desde a Spec 053 (B) quem barra este cenario e a PERMISSAO, perguntada
-    no time da tarefa -- a metade que ficara sem caminho voltou a existir. O
-    status continua 403. Ver `test_seguidores_053b_db.py`.
+    Quem barra este cenario e a PERMISSAO, perguntada no time da tarefa.
     """
     ws, r, a, manager, proj, ctx = await _world(db)
     b = await f.make_team(db, workspace_id=ws, parent_team_id=r)

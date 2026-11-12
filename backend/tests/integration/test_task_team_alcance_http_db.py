@@ -1,57 +1,17 @@
-"""Spec 037, fatia 1 (parte 1) -- `team_id` escrito a mao dentro da lente.
+"""`team_id` escrito a mao tem de estar dentro da lente de quem escreve.
 
-CRITERIO 3 DA SPEC: `POST /tasks` com `team_id` fora da lente de quem cria
-devolve 422. **Vale para todo cliente, nao so para a tela.**
+`POST /tasks` com `team_id` fora da lente devolve 422 com
+`details.field == "team_id"`, para todo cliente, nao so a tela. Pela rota,
+porque a promessa e a forma da resposta HTTP.
 
-POR QUE PELA ROTA, E NAO PELO SERVICO:
-    Mesmo precedente do `test_boards_list_http_db`: teste que chama o service
-    direto prova a regra e nao percorre o gate da rota. A validacao aqui mora
-    no service, mas o que a spec promete e o **422 com
-    `details.field == "team_id"`**, e isso e forma de resposta HTTP -- se
-    alguem trocar o handler de `ValidationError`, o teste de service continua
-    verde e a promessa quebra.
-
-⚠️ A SEGUNDA PORTA, QUE NAO ESTAVA NO `plan.md`:
-    `PATCH /tasks/{id}` aceita `team_id` e ate 06/08 o escrevia direto em
-    `task.team_id`, sem checagem nenhuma de alcance. O `_assert_editable`
-    guarda o time ATUAL da tarefa, nunca o novo. Fechar so o `POST` deixaria a
-    regra valendo na criacao e nao valendo na edicao -- que e a forma exata do
-    defeito que a propria ADR 0031 descreve ("valia pra quem usava a tela").
-    Ver `test_patch_...` abaixo.
-
-⚠️ O QUE A VALIDACAO **NAO** MORDE, DE PROPOSITO:
-    O `team_id` RESOLVIDO. A precedencia em `TaskService.create` e
-    *explicito -> herdado do pai (ADR 0024) -> default do criador*, e enquanto
-    o ramo `created_by` da ADR 0013 existir (ele so cai na fatia 5), o pai pode
-    estar fora da lente de quem cria a subtarefa. Validar o valor resolvido
-    quebraria esse caminho **sem que nenhum teste existente avisasse**, porque
-    o arreio sempre cria subtarefa com o pai dentro da lente.
-    `test_subtarefa_herda_time_fora_da_lente_e_isso_e_permitido` existe para
-    travar essa decisao.
+A segunda porta e o `PATCH /tasks/{id}` com `team_id`: o `_assert_editable`
+guarda o time ATUAL da tarefa, nunca o novo.
 
 O MUNDO (montado em `_setup`):
     raiz Marketing + subtime SEO + subtime Design.
     - `sup`   : SUPERVISOR do SEO   -> lente = {SEO, raiz}
     - `adm`   : ADMIN de organizacao -> lente = None (todos os times)
-    - `dsg`   : OPERATOR do Design  -> existe para ser responsavel valido de
-                tarefa do Design (ADR 0031 exige responsavel, e o responsavel
-                precisa alcancar a tarefa)
-
-SABOTAGEM DESTA PARTE (executada, resultado no handoff):
-    Apagar o bloco INTEIRO da chamada a `_assert_team_in_reach` no `create`
-    (as duas linhas do `if`, nao afrouxar o `in`).
-    Devem cair `test_supervisor_nao_cria_tarefa_em_subtime_irmao` e
-    `test_supervisor_nao_cria_tarefa_em_time_de_outro_workspace`, ambos com
-    `DID NOT RAISE` -- a criacao passa e devolve 201.
-    ⚠️ O teste do PATCH **nao** cai nessa sabotagem, e e isso que prova que as
-    duas portas sao independentes.
-
-O QUE ESTES TESTES NAO PROVAM:
-    - nada sobre o predicado da parte 2 (fatia 1+2, outra metade, outro
-      arquivo);
-    - nada sobre a E1: o ramo `created_by` continua vivo ate a fatia 5;
-    - nada sobre o front. Esta fatia nao muda tela nenhuma -- a tela ja
-      respeitava a regra (`web/lib/api.ts:702` fixa a raiz).
+    - `dsg`   : OPERATOR do Design  -> responsavel valido de tarefa do Design
 """
 
 from __future__ import annotations
@@ -177,11 +137,8 @@ def _payload(*, team_id: uuid.UUID | None, assignee: uuid.UUID, titulo="T"):
 
 
 async def test_supervisor_nao_cria_tarefa_em_subtime_irmao(db) -> None:
-    """A pergunta que abriu a Spec 037, agora respondida pela API.
-
-    A supervisora de SEO manda `team_id` do Design. A TELA nunca faz isso (nao
-    ha seletor de time no modal), mas n8n, Swagger e curl fazem.
-    """
+    """A supervisora de SEO manda `team_id` do Design. A tela nunca faz isso,
+    mas n8n, Swagger e curl fazem."""
     m = await _setup(db)
     async with _client(db, m["ctx_sup"]) as cli:
         r = await cli.post(
@@ -190,9 +147,7 @@ async def test_supervisor_nao_cria_tarefa_em_subtime_irmao(db) -> None:
         )
 
     assert r.status_code == 422, r.text
-    # ⚠️ Afirma o CAMPO, nao a frase. A spec promete
-    # `details.field == "team_id"`; o texto da mensagem e livre e mudar o texto
-    # nao pode derrubar o teste.
+    # Afirma o CAMPO, nao a frase: o texto da mensagem e livre.
     assert r.json()["error"]["details"]["field"] == "team_id", r.text
 
 
@@ -213,11 +168,7 @@ async def test_supervisor_nao_cria_tarefa_em_time_de_outro_workspace(db) -> None
 
 
 async def test_o_pin_na_raiz_continua_funcionando(db) -> None:
-    """⚠️ O caminho que `web/lib/api.ts:702` usa em TODA criacao de tarefa.
-
-    Se este teste cair, a fatia quebrou o produto inteiro, nao um caso de
-    borda: a tela manda o `team_id` da raiz explicitamente em todo POST.
-    """
+    """A tela manda o `team_id` da raiz explicitamente em todo POST."""
     m = await _setup(db)
     async with _client(db, m["ctx_sup"]) as cli:
         r = await cli.post(
@@ -264,32 +215,8 @@ async def test_admin_alcanca_qualquer_time_da_arvore(db) -> None:
 
 
 async def test_subtarefa_com_pai_fora_da_lente_para_no_404(db) -> None:
-    """⚠️ A PAREDE MUDOU DE LUGAR NA F5 DESTA MESMA SPEC. Leia isto inteiro.
-
-    Historico, porque ele e a licao:
-
-    1. Ao escrever a F1, a hipotese era *"morder o `team_id` RESOLVIDO em vez
-       do explicito quebraria a criacao de subtarefa cujo pai esta fora da
-       lente (heranca da ADR 0024)"*.
-    2. Medido na F1: a hipotese estava errada. O caminho ja morria um passo
-       depois -- a ADR 0031 exige responsavel, `assign_many_or_fail` chama
-       `assert_editable` na tarefa recem-criada, e Design nao esta na lente de
-       EDICAO da supervisora. Vinha **403**. O docstring anterior dizia, com
-       todas as letras, que este teste "documenta onde a parede realmente
-       esta".
-    3. ⚠️ A **F5** moveu a parede para ANTES. Sem o ramo `created_by` (E1), a
-       supervisora nao enxerga mais o proprio pai pinado no Design: o
-       `parent_task_id` nem resolve, e a recusa vem como **404** na
-       visibilidade do pai, antes de qualquer designacao.
-
-    A recusa continua existindo, e agora e mais cedo e mais correta: nao da
-    para nem REFERENCIAR um pai que voce nao alcanca.
-
-    ⚠️ A LICAO, e ela vale alem deste arquivo: teste que documenta ONDE a
-    parede esta tem prazo de validade -- e o prazo pode vencer dentro da
-    PROPRIA spec, por causa de outra fatia. O que nao muda e a conferencia do
-    banco, logo abaixo: qualquer que seja a parede, nao pode sobrar filha.
-    """
+    """Subtarefa de um pai que a supervisora nao enxerga: 404 na visibilidade
+    do pai, antes de qualquer designacao. E nao sobra filha no banco."""
     m = await _setup(db)
     pai = await f.make_task(
         db,
@@ -309,14 +236,10 @@ async def test_subtarefa_com_pai_fora_da_lente_para_no_404(db) -> None:
             },
         )
 
-    # 404: quem nao alcanca o pai nao sabe que ele existe (ADR 0038).
+    # 404: quem nao alcanca o pai nao sabe que ele existe.
     assert r.status_code == 404, r.text
 
-    # ⚠️ CONFERE O BANCO. A tarefa chega a ser inserida e flushada ANTES da
-    # designacao (a designacao precisa da linha com id e time resolvidos); o
-    # que a desfaz e o rollback do router. Se um dia alguem commitar antes de
-    # designar, o status continua 403 e sobra uma tarefa orfa -- exatamente o
-    # estado que a ADR 0031 existe para impedir.
+    # Confere o banco: a recusa nao pode deixar filha sem responsavel.
     filhas = (
         await db.execute(
             select(Task).where(Task.parent_task_id == pai.id)
@@ -329,15 +252,8 @@ async def test_subtarefa_com_pai_fora_da_lente_para_no_404(db) -> None:
 
 
 async def test_patch_nao_move_tarefa_para_time_fora_da_lente(db) -> None:
-    """⚠️ A porta que o `plan.md` nao tinha visto.
-
-    `PATCH /tasks/{id}` aceita `team_id` e o escrevia direto, sem checagem. A
-    supervisora pega uma tarefa DELA (que ela edita, `_assert_editable` passa)
-    e tenta empurra-la para o Design.
-
-    ⚠️ Sem esta trava, a pessoa consegue jogar a propria tarefa para fora do
-    proprio alcance -- e depois da fatia 5 ela nem a veria mais para desfazer.
-    """
+    """A supervisora edita a propria tarefa (`_assert_editable` passa) mas nao
+    a empurra para o Design: depois nao a veria mais para desfazer."""
     m = await _setup(db)
     t = await f.make_task(
         db,
@@ -355,22 +271,10 @@ async def test_patch_nao_move_tarefa_para_time_fora_da_lente(db) -> None:
     assert r.status_code == 422, r.text
     assert r.json()["error"]["details"]["field"] == "team_id", r.text
 
-    # ⚠️ AQUI NAO DA PARA "CONFERIR O BANCO", E ISSO E DO ARREIO, NAO DO TESTE.
-    # Medido em 06/08: relendo `task.team_id` depois deste 422, a linha volta
-    # NULA -- some inteira. O isolamento do `conftest` roda tudo dentro de uma
-    # transacao externa, e o rollback da request desfaz TAMBEM o insert da
-    # factory. A linha existe antes da chamada e nao existe depois; em
-    # producao ela sobreviveria, porque la o dado anterior esta commitado.
-    #
-    # ⚠️ CONSEQUENCIA PARA A F4 (criterio 6 da spec, "conferir o BANCO"):
-    # aquela conferencia so e possivel no caminho que PASSA -- a movimentacao
-    # permitida que remove as designacoes. No caminho que BARRA, a unica
-    # afirmacao possivel neste arreio e a resposta. Quem escrever a F4 precisa
-    # saber disto antes, nao no meio.
-    #
-    # A prova de que a escrita nao aconteceu esta no teste seguinte, pelo
-    # contraste: o PATCH permitido MUDA o time no banco, o barrado nem chega
-    # a existir.
+    # ⚠️ Aqui nao da para conferir o banco: o rollback da request desfaz
+    # TAMBEM o insert da factory (tudo roda numa transacao externa), e a linha
+    # some. O contraste esta no teste seguinte, em que o PATCH permitido muda o
+    # time no banco.
 
 
 async def test_patch_para_time_dentro_da_lente_continua_passando(db) -> None:
@@ -395,13 +299,12 @@ async def test_patch_para_time_dentro_da_lente_continua_passando(db) -> None:
     ).scalar_one_or_none()
     assert time_no_banco == m["raiz"]
 
-# ------------------------------------------------ auditoria de 16/10
+# ------------------------------------------------ pai invisivel com team_id explicito
 
 
 async def test_subtarefa_com_team_id_explicito_nao_pendura_em_pai_invisivel(db) -> None:
-    """O `team_id` explicito (SEO, na lente dela) e o responsavel do SEO
-    passavam pelas duas travas acima, e o pai do Design nunca era conferido:
-    201, com a filha pendurada numa tarefa que ela nao enxerga."""
+    """Com `team_id` explicito (SEO, na lente dela) e responsavel do SEO, as
+    travas de time passam: o pai do Design tem de ser conferido mesmo assim."""
     m = await _setup(db)
     pai = await f.make_task(
         db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"], title="Pai no Design"

@@ -1,7 +1,6 @@
-"""Spec 023 -- varredura de avisos de prazo (due-soon + overdue).
+"""Varredura de avisos de prazo (due-soon + overdue) e o endpoint trancado.
 
-Contra Postgres real. NOW fixo 12:00 UTC = 09:00 America/Sao_Paulo, entao "hoje"
-local = 2026-06-25. Cobre os criterios 1-8 da spec + o endpoint trancado.
+NOW fixo 12:00 UTC = 09:00 America/Sao_Paulo, entao "hoje" local = 2026-06-25.
 """
 
 from __future__ import annotations
@@ -11,12 +10,12 @@ from datetime import UTC, date, datetime, time
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.core.config import settings
 from app.core.deps import get_db_session
-from app.db.models import Notification
-from app.db.models.enums import TaskStatus
+from app.db.models import BoardColumn, Notification, Task
+from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.main import create_app
 from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
@@ -39,12 +38,8 @@ async def _ws(db):
 
 
 async def _task(db, *, ws, team, user, due, title="t", status=TaskStatus.BACKLOG):
-    # ⚠️ `status` vai para a FACTORY, e nao e atribuido depois. A factory
-    # resolve a COLUNA a partir do status no momento da criacao; atribuir
-    # `t.status` depois deixa a tarefa na coluna do status ANTIGO. Enquanto o
-    # aviso de prazo lia `task.status` isso era inofensivo. Desde a F1a quem
-    # decide o aviso e a coluna, e a atribuicao tardia faria este arquivo
-    # afirmar o contrario do que o produto faz.
+    # ⚠️ `status` vai para a FACTORY, e nao e atribuido depois: a factory
+    # resolve a coluna pelo status, e quem decide o aviso e a coluna.
     t = await f.make_task(
         db,
         workspace_id=ws,
@@ -189,11 +184,10 @@ async def test_backfill_nao_dispara_retroativo(db) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Conta desativada (12/08) -- o filtro `is_active` em `_recipients`.
+# Conta desativada -- o filtro `is_active` em `_recipients`.
 #
-# ⚠️ Sao TRES casos e nao um. Os dois caminhos de `_recipients` filtravam
-# errado, e o terceiro teste tranca a consequencia que a correcao cria (aviso
-# que nao vai para ninguem) para ela nao ser redescoberta como surpresa.
+# Os dois caminhos de `_recipients` (responsaveis e fallback do criador), e a
+# consequencia aceita: aviso que nao vai para ninguem.
 # ---------------------------------------------------------------------------
 
 
@@ -218,7 +212,7 @@ async def test_responsavel_inativo_nao_recebe_aviso(db) -> None:
     r = await DeadlineNotifyService(db).run(now=NOW)
     assert r["overdue_count"] == 1
     assert await _count(db, recipient=ativo, type_="TASK_OVERDUE", task_id=t.id) == 1
-    # ⚠️ O QUE ESTE TESTE EXISTE PARA PEGAR. Antes de 12/08 esta linha era 1.
+    # ⚠️ O QUE ESTE TESTE EXISTE PARA PEGAR: o responsavel inativo nao recebe.
     assert await _count(db, recipient=inativo, type_="TASK_OVERDUE", task_id=t.id) == 0
     # ⚠️ E o criador NAO entra: havia responsavel ativo, entao o fallback nao
     # roda. Sem esta linha, devolver `[ativo, criador]` passaria verde.
@@ -277,7 +271,7 @@ async def test_criador_inativo_sem_responsavel_nao_notifica_ninguem(db) -> None:
     assert t.overdue_notified_for == OVERDUE
 
 
-# 12 -- a hora conta (auditoria de 21/10). NOW e 09:00 em Sao Paulo: vencer hoje
+# 12 -- a hora conta. NOW e 09:00 em Sao Paulo: vencer hoje
 # as 8h ja e atraso; as 10h ainda e "em breve" -- como o selo do quadro diz.
 async def test_hoje_com_hora_passada_e_atrasada_e_nao_em_breve(db) -> None:
     ws, team, user = await _ws(db)
@@ -323,9 +317,8 @@ async def test_endpoint_trancado(db, monkeypatch) -> None:
         assert r_ok.status_code == 200
 
 
-# Auditoria de 11/11, item 18 -- o job faz o MESMO numero de consultas com 1
-# tarefa ou com 4: destinatarios, trava de alcance e insercao saem em lote.
-# Antes eram umas 7 por tarefa, com as linhas travadas pelo `FOR UPDATE`.
+# O job faz o MESMO numero de consultas com 1 tarefa ou com 4: destinatarios,
+# trava de alcance e insercao saem em lote.
 async def test_consultas_nao_crescem_com_as_tarefas(db, connection) -> None:
     from sqlalchemy import event
 
@@ -365,3 +358,36 @@ async def test_consultas_nao_crescem_com_as_tarefas(db, connection) -> None:
     assert com_quatro == com_uma
     for t in quatro:
         assert await _count(db, recipient=resp, type_="TASK_OVERDUE", task_id=t.id) == 1
+
+
+# Quem decide o aviso e a coluna, nao o status: uma coluna viva com a cobranca
+# desligada nao avisa.
+async def test_coluna_sem_cobranca_nao_avisa(db) -> None:
+    ws, team, user = await _ws(db)
+    t = await _task(
+        db, ws=ws, team=team, user=user, due=OVERDUE, status=TaskStatus.IN_PROGRESS
+    )
+    # `synchronize_session="fetch"`: as colunas ja estao na sessao, e um UPDATE
+    # textual mudaria a linha sem a sessao saber.
+    r = await db.execute(
+        update(BoardColumn)
+        .where(
+            BoardColumn.workspace_id == ws,
+            BoardColumn.legacy_status == TaskStatus.IN_PROGRESS,
+        )
+        .values(notify_deadline=False)
+        .execution_options(synchronize_session="fetch")
+    )
+    assert r.rowcount == 1
+    await db.flush()
+    coluna = (
+        await db.execute(
+            select(BoardColumn.notify_deadline, BoardColumn.semantic)
+            .join(Task, Task.column_id == BoardColumn.id)
+            .where(Task.id == t.id)
+        )
+    ).first()
+    assert coluna == (False, ColumnSemantic.IN_PROGRESS)
+
+    resultado = await DeadlineNotifyService(db).run(now=NOW)
+    assert resultado["overdue_count"] == 0

@@ -1,7 +1,5 @@
-"""Testes de logica PURA das reacoes no comentario (Spec 050) -- sem DB.
-
-Rodam em qualquer lugar (nao exigem TEST_DATABASE_URL).
-"""
+"""Reacoes no comentario, logica pura: emoji livre normalizado e a fileira
+de pilulas."""
 
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ from app.modules.tasks.domain.comment_reaction import (
 from app.shared.exceptions.base import ValidationError
 
 
-# --- emoji livre (§4.3) ---
+# --- emoji livre ---
 @pytest.mark.parametrize(
     "entrada",
     ["👍", "❤️", "👍🏽", "👨‍👩‍👧", "🇧🇷", "#️⃣"],
@@ -54,11 +52,11 @@ def test_recusa_o_que_nao_e_exatamente_um_emoji(entrada: str) -> None:
     ],
 )
 def test_normaliza_para_a_forma_completa(entrada: str, gravado: str) -> None:
-    """⚠️ Sem isto, `❤` e `❤️` viram duas pilulas para o mesmo coracao."""
+    """Sem isto, `❤` e `❤️` viram duas pilulas para o mesmo coracao."""
     assert normalize_emoji(entrada) == gravado
 
 
-# --- a fileira (§4.4) ---
+# --- a fileira ---
 def test_agrupa_preservando_a_ordem_de_chegada() -> None:
     ana, bruno, caio = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     fileira = group_reactions(

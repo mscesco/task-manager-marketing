@@ -1,38 +1,9 @@
 /**
- * `/minhas-tarefas` -- teste de componente, escrito ANTES da fatia 4b.
+ * `/minhas-tarefas`: teste de montagem. A tela não pinta nada até a lista E as
+ * colunas chegarem, para não piscar concluídas que ninguém pediu.
  *
- * POR QUE ESTE ARQUIVO EXISTE. A fatia 4 da Spec 036 troca `STATUSES` (const
- * sincrona) por colunas vindas da API, e a sondagem da fatia 4 (absorvida no
- * `plan.md`, §Fatia 4 -- por que ela virou TRES) mediu que esta
- * tela e onde a mudanca pesa: 1195 linhas, 7 usos de `STATUSES`, tres
- * constantes derivadas em escopo de MODULO (`STATUS_LABEL`, `STATUS_COLOR`,
- * `TODOS_STATUS`) e -- o ponto duro do §5 -- o filtro padrao rodando como
- * inicializador de `useState`, no primeiro render, antes de qualquer fetch.
- *
- * Ate 10/08/2026 esta tela tinha ZERO teste de componente. Os tres portoes
- * (tsc, npm test, next build) passavam com ela quebrada.
- *
- * ⚠️ ESTE ARQUIVO NAO PROVA QUE A FATIA 4b ESTA CERTA. Ele prova que o
- * comportamento de HOJE continua valendo depois dela. Se um destes testes
- * ficar vermelho durante a 4b, a pergunta e "isso era intencional?" -- e se
- * for, o teste se reescreve junto com a decisao, nao se apaga.
- *
- * ⚠️ DECISAO A, TOMADA EM 10/08: a tela NAO renderiza ate as colunas
- * chegarem. E a alternativa ao "lista pisca mostrando concluidas que ninguem
- * pediu". A sondagem dizia que isso daria "um estado de carregando que a tela
- * nao tinha", e **isso esta errado**: o gate ja existe hoje
- * (`page.tsx`, `if (!items) return <Loading />`). A 4b
- * acrescenta uma condicao a esse `if`, nao uma tela nova. O teste 1 prende o
- * gate para que essa extensao seja barata e verificavel.
- *
- * O QUE ESTE ARQUIVO **NAO** TESTA, de proposito (mesma fronteira do
- * `Board.test.tsx`, o primeiro teste de componente do projeto):
- *   - drag-and-drop (dnd-kit exige eventos de ponteiro que o jsdom nao gera
- *     de forma confiavel; isso e E2E);
- *   - aparencia -- cor, espacamento, tema continuam sendo conferencia visual;
- *   - REGRA. `colunasPadraoMinhasTarefas` ja tem teste em
- *     `lib/__tests__/paridadeColuna.test.ts`. Aqui se testa a MONTAGEM dela na tela,
- *     que e exatamente o que nao tinha cobertura.
+ * Fora daqui: drag-and-drop (jsdom não gera os eventos de ponteiro), aparência,
+ * e a regra `colunasPadraoMinhasTarefas` (testada em `paridadeColuna.test.ts`).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -48,11 +19,8 @@ import MinhasTarefasPage from "@/app/minhas-tarefas/page";
 import type { Member, MyTaskItem, Project } from "@/lib/api";
 import { indiceDeColunas, type Coluna } from "@/lib/coluna";
 
-// ⚠️ O AppShell usa `useRouter`/`usePathname`. Mock incompleto de
-// next/navigation derruba a arvore inteira com `invariant expected app router
-// to be mounted` -- um erro que nao fala de AppShell nenhum. Medido em
-// 10/08/2026: sem estes dois blocos, os cinco testes deste arquivo falham no
-// primeiro render, antes de qualquer assercao.
+// ⚠️ Mock incompleto de next/navigation derruba a árvore com `invariant
+// expected app router to be mounted`, um erro que não aponta a causa.
 import { ActiveTeamProvider } from "@/lib/useActiveTeam";
 
 vi.mock("next/navigation", () => ({
@@ -61,15 +29,9 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
-// ⚠️ AppShell fora do teste, mesmo motivo do `ArquivadasPai.test.tsx`: ele e
-// importado por 13 paginas (nao existe `layout.tsx`), busca sessao e times, e
-// monta o menu inteiro. Arrastar isso pra dentro de um teste sobre o filtro
-// padrao de `/minhas-tarefas` faz o teste falhar por coisas que nao tem
-// relacao com o que ele mede. O que se quer medir aqui e a PAGINA.
-// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
-// fornece (Spec 048, fatia C). Sem isto a tela fica carregando para sempre:
-// ela ESPERA a barra resolver o time antes de buscar -- e um passa-tudo nunca
-// o entrega (`active` fica `null`, que significa "ainda não sei").
+// AppShell fora do teste: ele busca sessão e times e monta o menu inteiro.
+// ⚠️ O mock precisa fornecer o contexto de time: a tela espera o time ativo
+// antes de buscar, e com `active: null` ("ainda não sei") carrega para sempre.
 vi.mock("@/components/AppShell", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <ActiveTeamProvider
@@ -88,10 +50,8 @@ vi.mock("@/components/AppShell", () => ({
 /** O time que o `AppShell` falso diz estar ativo. */
 const TIME_DO_TESTE = "time-do-teste";
 
-// ⚠️ `importOriginal` em vez de fabrica seca: `@/lib/api` tem ~40 exports e
-// TaskCard/TaskModal/TaskDetail importam varios deles. Uma fabrica que so
-// devolvesse os usados por esta pagina faria os outros virarem `undefined` no
-// import -- erro que aparece longe da causa. Mesmo motivo do `Board.test.tsx`.
+// `importOriginal`: TaskCard/TaskModal/TaskDetail importam outros exports de
+// `@/lib/api`, e uma fábrica seca os deixaria `undefined`.
 vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
@@ -116,12 +76,8 @@ const RAIZ = "team-marketing";
 const ANA = "user-ana";
 
 /**
- * As colunas do quadro geral, como o `GET /boards` as devolve.
- *
- * ⚠️ SO AS QUE OS TESTES USAM, e nao as oito. A paridade com o backend e
- * afirmada em `lib/__tests__/paridadeColuna.test.ts`, contra a tabela
- * completa; repetir as oito aqui seria uma segunda copia da mesma tabela para
- * manter em dia.
+ * As colunas do quadro geral que os testes usam (a paridade com o backend
+ * está em `paridadeColuna.test.ts`).
  */
 const COLUNAS: Coluna[] = [
   {
@@ -159,9 +115,9 @@ const COLUNAS: Coluna[] = [
 /**
  * Um quadro AVULSO, com uma coluna que nao existe no geral.
  *
- * ⚠️ `Em Revisão` e `IN_PROGRESS` e NAO e alvo -- entao ela cai em
- * `Em Andamento` pelo degrau 2 da ADR 0042, e o card fica agrupado numa coluna
- * com OUTRO nome. E exatamente esse caso que a tag existe para explicar.
+ * ⚠️ `Em Revisão` é `IN_PROGRESS` e NÃO é alvo, então cai em `Em Andamento`
+ * (coluna equivalente) e o card fica agrupado numa coluna com OUTRO nome: é o
+ * caso que a tag existe para explicar.
  * ⚠️ `Aguardando cliente` tem `notify_deadline: false`: serve para provar que
  * o alerta de prazo le a coluna REAL da tarefa, e nao a equivalente.
  */
@@ -236,8 +192,8 @@ const MEMBROS: Member[] = [
 ];
 
 /**
- * As cinco chamadas que a tela dispara ao montar (`page.tsx`, efeito de
- * carga). `truncated` e configuravel porque o teste 5 e sobre ele.
+ * As chamadas que a tela dispara ao montar. `truncated` é configurável para o
+ * teste do teto.
  */
 function montarApi(
   itens: MyTaskItem[],
@@ -291,9 +247,6 @@ afterEach(() => {
 describe("minhas-tarefas -- fiacao da tela", () => {
   // ------------------------------------------------------------------ 1
   it("nao pinta tarefa nenhuma enquanto a lista nao chega", async () => {
-    // ⚠️ ESTE E O TESTE QUE A FATIA 4b VAI ESTENDER. Hoje o gate espera
-    // `items`; depois da 4b ele espera `items` E as colunas. A promessa
-    // pendente abaixo e o que segura o primeiro render.
     let resolver: (v: unknown) => void = () => {};
     const pendente = new Promise((r) => {
       resolver = r;
@@ -321,11 +274,8 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 1b
   it("nao pinta tarefa nenhuma enquanto as COLUNAS nao chegam", async () => {
-    // ⚠️ O IRMAO DO TESTE 1, e o que a fatia 4b acrescentou ao portao: a lista
-    // ja chegou, as colunas nao. Sem esta condicao no `if`, a tela pintaria
-    // sem filtro e reordenaria quando as colunas chegassem -- a lista piscando
-    // com concluidas que ninguem pediu, que e o cenario que a decisao de
-    // 10/08 recusou.
+    // A lista já chegou, as colunas não. Sem esperar, a tela pintaria sem
+    // filtro e piscaria concluídas quando as colunas chegassem.
     let resolver: (v: unknown) => void = () => {};
     const pendente = new Promise((r) => {
       resolver = r;
@@ -352,9 +302,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 1c
   it("os chips de filtro vem da API, com o NOME da coluna", async () => {
-    // ⚠️ Antes da 4b os rotulos vinham de `STATUSES`, cravado no front. Este
-    // teste cai se alguem voltar a ler dali -- e e o unico que prova que o
-    // caminho novo chegou na tela, e nao so no modulo.
+    // Cai se os rótulos voltarem a sair de `STATUSES`, cravado no front.
     montarApi([item({ id: "t1", title: "Uma tarefa" })]);
 
     render(<MinhasTarefasPage />);
@@ -362,11 +310,8 @@ describe("minhas-tarefas -- fiacao da tela", () => {
       expect(screen.getByText("Uma tarefa")).toBeTruthy();
     });
 
-    // ⚠️ MIRA NO BOTAO, e nao no texto solto. Medido em 10/08: "Em Andamento"
-    // aparece DUAS vezes na tela depois da 4b -- como chip de filtro e como
-    // rotulo da linha --, e as duas vem de `coluna.name`. Um `getByText`
-    // simples estoura com "Found multiple elements", e a ambiguidade e ela
-    // propria a prova de que a migracao chegou nos dois lugares.
+    // ⚠️ Mira no BOTÃO: "Em Andamento" aparece também como rótulo da linha, e
+    // `getByText` estouraria com "Found multiple elements".
     const chip = (nome: string) => screen.getByRole("button", { name: nome });
 
     // Os tres nomes da fixture, que NAO sao os 8 status do `STATUSES`.
@@ -381,12 +326,6 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 2
   it("abre escondendo as CONCLUIDAS, e so elas", async () => {
-    // ⚠️ O PONTO DURO DO §5 DA SONDAGEM. `statusPadraoMinhasTarefas()` rodava
-    // como inicializador de `useState` -- no primeiro render, antes do fetch.
-    // Quando a lista de status vier da API, este inicializador nao tem mais o
-    // dado na hora em que roda. Este teste e o que diz se a solucao escolhida
-    // preservou o comportamento.
-    //
     // ⚠️ Afirma os DOIS lados: a concluida some E as outras ficam. Um teste
     // que so afirmasse "nao aparece a concluida" passaria com a tela vazia.
     montarApi([
@@ -406,8 +345,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 3
   it("o botao Todos religa as concluidas", async () => {
-    // O outro lado do teste 2: o padrao esconde, mas o usuario consegue ver.
-    // Sem este, uma 4b que simplesmente removesse o filtro passaria no 2.
+    // O padrão esconde, mas a pessoa consegue ver.
     montarApi([
       item({ id: "t1", title: "Em andamento", status: "IN_PROGRESS", column_id: "col-progress" }),
       item({ id: "t2", title: "Ja concluida", status: "COMPLETED", column_id: "col-done" }),
@@ -428,10 +366,8 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 4
   it("le /me/assignments, e nao a listagem geral de tarefas", async () => {
-    // ⚠️ Parece obvio e nao e: as duas rotas devolvem task e o componente
-    // importa as duas (`listTasks` e usada para buscar as subtarefas do
-    // detalhe). Trocar a fonte por engano durante a 4b daria uma tela
-    // plausivel, cheia de tarefas que nao sao da pessoa.
+    // ⚠️ As duas rotas devolvem task e o componente importa as duas; trocar a
+    // fonte daria uma tela plausível, cheia de tarefas que não são da pessoa.
     montarApi([item({ id: "t1", title: "Minha tarefa" })]);
 
     render(<MinhasTarefasPage />);
@@ -445,8 +381,7 @@ describe("minhas-tarefas -- fiacao da tela", () => {
 
   // ------------------------------------------------------------------ 5
   it("avisa quando a lista foi truncada pelo teto", async () => {
-    // Perda silenciosa vira aviso honesto (`truncadoTotal`). O numero exibido
-    // e o TOTAL do backend, nao o tamanho da lista carregada -- por isso o
+    // O número exibido é o TOTAL do backend, nao o tamanho da lista carregada -- por isso o
     // mock manda 250 com um item so.
     montarApi([item({ id: "t1", title: "Uma tarefa" })], {
       truncated: true,
@@ -462,32 +397,9 @@ describe("minhas-tarefas -- fiacao da tela", () => {
   });
 });
 
-// =====================================================================
-// Spec 036, fatia 4c-2 -- o KANBAN desta tela tambem le colunas da API.
-//
-// ⚠️ A vista de LISTA foi migrada na 4b; esta ficou para tras por BLOQUEIO DE
-// CONTRATO (o arrastar mandava `status`, e o front nao sabe traduzir coluna ->
-// status). O bloqueio acabou com o `PATCH column_id` da fatia 5a.
-//
-// ⚠️ O ARRASTAR EM SI CONTINUA SEM PORTAO -- jsdom nao exercita drag-and-drop.
-// Estes testes cobrem o DESENHO e o AGRUPAMENTO das colunas; o `onDragEnd`
-// desta tela so tem conferencia manual, igual ao do `Board.tsx`.
-//
-// SABOTAGENS -- ✅ MEDIDAS EM 10/08/2026:
-//
-//   D. `map[t.column_id]` -> `map[t.status]` no agrupamento. **Caem 2**:
-//      "agrupa o card pela COLUNA" e "card em coluna desconhecida nao some em
-//      silencio".
-//   E. Apagar o `else fora++`. **Cai 1**: "card em coluna desconhecida nao
-//      some em silencio".
-//   F. Cabecalho da coluna com nome fixo em vez de `coluna.name`. **Cai 1**:
-//      "as colunas do kanban tem o NOME que veio da API".
-//
-// ⚠️ NENHUMA delas derruba a suite inteira, e isso e o ponto: as tres apontam
-// para decisoes DIFERENTES. Uma sabotagem que derruba tudo prova que a linha e
-// viva, nao QUAL regra ela carrega -- registrado no `Board.test.tsx`.
-// =====================================================================
-describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
+// O kanban desta tela: desenho e agrupamento das colunas. O `onDragEnd` não
+// roda em jsdom.
+describe("minhas-tarefas -- o kanban le colunas da API", () => {
   async function abrirQuadro() {
     render(<MinhasTarefasPage />);
     await screen.findByRole("button", { name: "Quadro" });
@@ -500,10 +412,8 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
     ]);
     await abrirQuadro();
 
-    // ⚠️ Na vista de QUADRO os chips de filtro de coluna somem (eles sao da
-    // vista de lista), entao "Em Andamento" aparece UMA vez: o cabecalho da
-    // coluna. Medido -- a primeira versao deste teste esperava duas, herdando
-    // a armadilha da 4b, que vale para a vista de LISTA.
+    // ⚠️ Na vista de QUADRO os chips de filtro somem, então "Em Andamento"
+    // aparece UMA vez (na de lista seriam duas).
     await waitFor(() => {
       expect(screen.getAllByText("Em Andamento")).toHaveLength(1);
     });
@@ -516,7 +426,7 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
   });
 
   /**
-   * ⚠️ O TESTE QUE SEPARA "le coluna" de "le status": a tarefa tem
+   * Separa "lê coluna" de "lê status": a tarefa tem
    * `status: "COMPLETED"` e `column_id` de Em Andamento. Agrupando por status
    * ela cairia em Concluído.
    */
@@ -532,20 +442,16 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
     await abrirQuadro();
 
     const card = await screen.findByText("Card teimoso");
-    // Sobe do card ate a coluna. ⚠️ `[data-coluna]` e nao
-    // `div[style*='min-width']`: o seletor por estilo casava com qualquer div
-    // que mencionasse min-width, e em 21/08 o titulo do card ganhou
-    // `minWidth: 0` -- o `closest` passou a achar o proprio titulo, e o teste
-    // acusou "coluna errada" em vez de "seletor frouxo".
+    // ⚠️ `[data-coluna]`, não seletor por estilo: o próprio título do card
+    // tem `minWidth` e o `closest` o acharia.
     const coluna = card.closest("[data-coluna]");
     expect(coluna?.textContent).toContain("Em Andamento");
     expect(coluna?.textContent).not.toContain("Concluído");
   });
 
   /**
-   * ⚠️ MAIS PROVAVEL AQUI QUE NO `Board.tsx`: esta tela junta tarefas de
-   * QUALQUER quadro e desenha as colunas do quadro GERAL. No dia do quadro
-   * interno, tarefa de subtime cai exatamente neste contador.
+   * Esta tela junta tarefas de QUALQUER quadro e desenha as colunas do GERAL:
+   * coluna fora do mapa vira contador, não some.
    */
   it("card em coluna desconhecida nao some em silencio", async () => {
     montarApi([
@@ -562,30 +468,8 @@ describe("minhas-tarefas -- o kanban le colunas da API (fatia 4c-2)", () => {
   });
 });
 
-// =====================================================================
-// FATIA 5b-5b -- tarefa que mora em OUTRO quadro.
-//
-// ⚠️ NENHUM DESTES CASOS EXISTE EM PRODUCAO AINDA. O primeiro quadro
-// nao-padrao nasce na 5b-6, e esta fatia e pre-requisito dela: no minuto em
-// que existir uma tarefa fora do Quadro geral, esta tela e a primeira a
-// mostra-la. Sem o que estes testes trancam, ela some -- e some CALADA na
-// vista de lista.
-//
-// SABOTAGENS (executar antes de commitar):
-//   A. Em `page.tsx`, no filtro `filtrados`, voltar para
-//          const okStatus = colunasOn === null || colunasOn.has(t.column_id);
-//      -> some da LISTA. Cai "a tarefa de quadro avulso aparece na LISTA".
-//   B. No agrupamento `porColuna`, voltar para `map[t.column_id]`
-//      -> volta para o contador. Cai "o card de quadro avulso e DESENHADO no
-//      kanban" e "a tag do card diz o quadro e a coluna de origem".
-//   C. Em `colunaDe`, trocar `posicaoDaTarefa.get(t.id)?.origem.coluna` por
-//      `colunaPorId.get(t.column_id)` -> o alerta de prazo morre. Cai
-//      "o alerta de prazo sobrevive".
-//   D. Em `colunaDe`, usar `colunaDaTela` no lugar de `origem.coluna`
-//      -> o alerta passa a sair da coluna equivalente. Cai "coluna com
-//      notify_deadline false NAO ganha alerta".
-// =====================================================================
-describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
+// Tarefa que mora em OUTRO quadro: sem tratamento ela some calada da lista.
+describe("minhas-tarefas -- tarefa de outro quadro", () => {
   /** Uma tarefa que vive no quadro Campanhas, na coluna `Em Revisão`. */
   function tarefaAvulsa(over: Partial<MyTaskItem> = {}) {
     return item({
@@ -598,10 +482,8 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
   }
 
   it("⚠️ a tarefa de quadro avulso aparece na LISTA", async () => {
-    // ⚠️ A REGRESSAO MAIS GRAVE DAS QUATRO, porque e a unica sem contador
-    // nenhum. O filtro de coluna da lista guarda ids do quadro GERAL; o
-    // `column_id` desta tarefa nunca esta neles, e ela era descartada em
-    // silencio -- sem aviso, sem numero, sem log.
+    // ⚠️ O filtro de coluna da lista guarda ids do quadro GERAL; o `column_id`
+    // desta tarefa nunca está neles, e na lista não há contador que avise.
     montarApi([tarefaAvulsa()]);
 
     render(<MinhasTarefasPage />);
@@ -622,9 +504,8 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
   });
 
   it("⚠️ o card de quadro avulso e DESENHADO no kanban, e nao so contado", async () => {
-    // Antes desta fatia o card caia no `foraDaColuna`: contado e invisivel.
-    // `Em Revisão` e `IN_PROGRESS` sem alvo, entao o degrau 2 da ADR 0042 a
-    // manda para `Em Andamento`, que E alvo no geral.
+    // `Em Revisão` é `IN_PROGRESS` sem alvo, então vai para a equivalente
+    // `Em Andamento`, e não para o contador `foraDaColuna`.
     montarApi([tarefaAvulsa()]);
 
     render(<MinhasTarefasPage />);
@@ -654,26 +535,21 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
   });
 
   it("⚠️ o alerta de prazo sobrevive numa tarefa de outro quadro", async () => {
-    // ⚠️ O comentario do `dueTone` dizia que sem coluna resolvida "o lado
-    // seguro e nao alertar". Era verdade quando "sem coluna" significava dado
-    // faltando; virou o lado que MATA o aviso quando passou a significar
-    // "outro quadro". `Em Revisão` tem `notify_deadline: true`.
+    // O alerta lê a coluna REAL da tarefa (`Em Revisão`, com
+    // `notify_deadline: true`), mesmo ela não estando no quadro geral.
     montarApi([tarefaAvulsa({ due_date: "2020-01-01" })]);
 
     render(<MinhasTarefasPage />);
     await screen.findByText("Tarefa do Campanhas");
 
-    // `getAll`: desde a fatia 7 do redesign a lista agrupa em "Atrasadas", e o
-    // cabeçalho do grupo também casa com /atrasad/ -- o que se afirma aqui é
-    // que o ALERTA existe, e com ele o grupo.
+    // O que se afirma é que o selo de atraso existe. `getAll` só tolera mais
+    // de um casamento; a lista agrupa por data, não em "Atrasadas".
     expect(screen.getAllByText(/atrasad/i).length).toBeGreaterThan(0);
   });
 
   it("⚠️ coluna com notify_deadline false NAO ganha alerta pela equivalente", async () => {
-    // ⚠️ O DEFEITO ESPELHO DO ANTERIOR, e o motivo de haver DUAS colunas por
-    // card. `Aguardando cliente` nao avisa prazo; a equivalente dela no geral
-    // (`Em Andamento`) avisa. Ler a coluna errada daria um alerta que a pessoa
-    // que criou a coluna desligou de proposito.
+    // O espelho do anterior: `Aguardando cliente` não avisa prazo, mas a
+    // equivalente dela no geral (`Em Andamento`) avisa.
     montarApi([
       tarefaAvulsa({ column_id: "av-espera", due_date: "2020-01-01" }),
     ]);
@@ -685,11 +561,8 @@ describe("minhas-tarefas -- tarefa de outro quadro (fatia 5b-5b)", () => {
   });
 });
 
-// ⚠️⚠️ DEFEITO DE 14/09, reportado na tela: com a lista recortada pelo Comercial
-// e zero tarefas lá, o aviso de vazio SUBSTITUÍA a barra inteira -- e desde a
-// Spec 048 é nela que mora o seletor de time. A tela sumia com a única porta
-// de volta. Antes do recorte, "zero tarefas" era "zero em todo lugar" e
-// esconder os controles não custava nada; agora vazio é o estado de UM time.
+// ⚠️ Vazio é o estado de UM time: o aviso não pode substituir a barra, porque
+// é nela que mora o seletor de time (a única porta de volta).
 describe("Minhas tarefas -- vazia, a barra continua", () => {
   it("⚠️ sem tarefa no time, os controles seguem na tela", async () => {
     montarApi([]);

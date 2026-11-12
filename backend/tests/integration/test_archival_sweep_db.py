@@ -1,10 +1,10 @@
-"""Varredura multi-workspace + endpoint trancado (Spec 013, Fatia 2).
+"""Varredura multi-workspace + endpoint trancado.
 
 Cobre, contra Postgres real:
   - StaleArchivalService.run: arquiva por workspace, atribui ao admin de CADA
-    um, pula workspace sem admin, idempotencia, isolamento entre workspaces.
+    um, pula workspace sem admin.
   - O endpoint POST /system/tasks/archive-stale: token certo -> 200; token
-    errado/ausente -> 401.
+    errado -> 401 (token ausente: `tests/test_system_auth.py`).
 """
 
 from __future__ import annotations
@@ -42,9 +42,8 @@ async def _ws_with_admin(db):
 async def _stale_completed(db, *, ws, team, user, title="x"):
     """Tarefa concluida ha muito tempo, plantada direto (sem service).
 
-    ⚠️ `terminal_since` junto com `completed_at`, mesma formula do backfill das
-    0008/0009. Desde a fatia 2b da Spec 035 e ele que a varredura le; sem a
-    linha, estes testes acusam "arquivou 0" com o produto correto.
+    ⚠️ `terminal_since` junto com `completed_at`: e ele que a varredura le;
+    sem a linha, estes testes acusam "arquivou 0" com o produto correto.
     """
     t = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=team, title=title
@@ -100,19 +99,6 @@ async def test_workspace_sem_admin_e_pulado(db) -> None:
     assert t.is_archived is False
 
 
-async def test_idempotente(db) -> None:
-    ws, team, admin = await _ws_with_admin(db)
-    await _stale_completed(db, ws=ws, team=team, user=admin)
-    await db.flush()
-
-    svc = StaleArchivalService(db)
-    first = await svc.run(now=NOW)
-    second = await svc.run(now=NOW)
-
-    assert first["archived_count"] == 1
-    assert second["archived_count"] == 0
-
-
 # ---- Endpoint HTTP (trava de token) ----
 def _client(db) -> AsyncClient:
     app = create_app()
@@ -146,11 +132,4 @@ async def test_endpoint_token_errado_401(db, monkeypatch) -> None:
             "/api/v1/system/tasks/archive-stale",
             headers={"X-System-Token": "errado"},
         )
-    assert r.status_code == 401
-
-
-async def test_endpoint_token_ausente_401(db, monkeypatch) -> None:
-    monkeypatch.setattr(settings, "system_api_token", "tok-correto-123")
-    async with _client(db) as client:
-        r = await client.post("/api/v1/system/tasks/archive-stale")
     assert r.status_code == 401

@@ -1,4 +1,4 @@
-// Spec 051, fatia E -- editar o próprio nome.
+// Editar o próprio nome.
 import { describe, expect, it } from "vitest";
 import { NOME_MAXIMO, nomeParaSalvar } from "@/lib/nomeProprio";
 

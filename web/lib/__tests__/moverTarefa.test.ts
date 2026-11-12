@@ -94,7 +94,7 @@ describe("frasesDaPrevia", () => {
   it("nada muda, nada a dizer", () => {
     expect(frasesDaPrevia({ ...base, mudou: false, subtarefas: 3 })).toEqual([]);
   });
-  it("as quatro frases da spec, na ordem", () => {
+  it("as quatro frases, na ordem", () => {
     expect(
       frasesDaPrevia({
         ...base,
@@ -110,7 +110,7 @@ describe("frasesDaPrevia", () => {
       "Você vira responsável por 1 tarefa que ficaria sem ninguém.",
     ]);
   });
-  it("avisa o status que muda, com o nome da tela (auditoria 11/11)", () => {
+  it("avisa o status que muda, com o nome da tela", () => {
     expect(
       frasesDaPrevia({
         ...base,

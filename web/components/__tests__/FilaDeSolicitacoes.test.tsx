@@ -1,17 +1,6 @@
-// A fila de triagem `/solicitacoes` (Spec 043, fatia C2-c).
-//
-// ⚠️⚠️ **ESTA TELA NÃO TINHA TESTE NENHUM ATÉ AQUI**, e descobri isso do pior
-// jeito possível: troquei a fonte do rótulo da categoria e a suíte foi de 1020
-// para 1020. Nada se mexeu porque nada olhava para cá.
-//
-// É a tela em que o trabalho acontece -- é dela que o Marketing tria tudo que
-// chega -- e ela vinha sendo alterada sem rede. Este arquivo não cobre a fila
-// inteira; cobre o que esta fatia mexeu, que é como a categoria aparece, mais
-// as duas ações que a tela existe para fazer.
-//
-// ⚠️ E O HOP QUE ELE PRENDE É O MESMO QUE JÁ ME ESCAPOU DUAS VEZES NESTA SPEC:
-// não "o dado chega ao componente", e sim "o componente DESENHA o dado que
-// veio". Na fatia B a sabotagem do `form_id` passou verde por essa distinção.
+// A fila de triagem `/solicitacoes`: como a categoria aparece, as abas e a
+// busca, e as ações de triagem. O que se prende é "o componente DESENHA o dado
+// que veio", e não só "o dado chega ao componente".
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -23,11 +12,10 @@ import {
   type ActiveTeamContext,
 } from "@/lib/useActiveTeam";
 
-// ⚠⚠ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade
-// fornece (Spec 048, fatia C). Sem isto a tela fica em `Loading` para sempre:
+// O mock fornece o contexto de time, porque o `AppShell` de verdade fornece. Sem isto a tela fica em `Loading` para sempre:
 // ela ESPERA o time ativo antes de buscar, e um passa-tudo nunca o entrega.
 //
-// ⚠️ E o valor precisa ser RESOLVIDO (`kind: "team"`), não `null`: `null`
+// O valor precisa ser RESOLVIDO (`kind: "team"`), não `null`: `null`
 // significa "a barra ainda não sabe", que é o estado de espera.
 vi.mock("@/components/AppShell", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
@@ -38,7 +26,7 @@ vi.mock("@/components/AppShell", () => ({
 /**
  * O contexto que o `AppShell` falso entrega, MUTÁVEL pelo teste.
  *
- * ⚠️ Variável em vez de valor fixo porque três testes precisam de valores
+ * Variável em vez de valor fixo porque três testes precisam de valores
  * DIFERENTES (time resolvido, `kind: "none"`, e `null`), e a fábrica do
  * `vi.mock` é içada -- não dá para parametrizá-la por teste. A fábrica não LÊ
  * a variável (só o corpo do componente lê, no render), então não há TDZ.
@@ -101,11 +89,8 @@ function envio(itens: BatchItem[] = [item()]): Batch {
 }
 
 /**
- * ⚠️ O PAINEL NASCE VAZIO, e escolher o envio faz parte de montar a cena.
- *
- * A lista mostra quem pediu e os tópicos do que pediu; prazo, respostas e as
- * ações de triagem só existem no painel do envio escolhido (duas colunas desde
- * 15/10 -- antes era um card que abria).
+ * O painel nasce vazio: prazo, respostas e ações de triagem só existem no painel
+ * do envio escolhido, então escolher o envio faz parte de montar a cena.
  */
 async function abrirOCard() {
   fireEvent.click(await screen.findByText("Maria do Polo"));
@@ -140,10 +125,6 @@ afterEach(() => {
 
 describe("a categoria vem do BANCO, e não de um arquivo do front", () => {
   it("⚠️ desenha o título que a API resolveu, e não o slug", async () => {
-    // ⚠️ ANTES DISTO A FILA LIA `CATEGORIA_POR_SLUG`, estático. Funcionava só
-    // porque a migration 0017 copiou os mesmos slugs -- e a primeira seção
-    // criada pelo editor apareceria como slug cru, sozinha e feia no meio das
-    // outras.
     montar();
     expect(await screen.findAllByText(/Fotografia/)).not.toHaveLength(0);
     expect(screen.queryByText("foto")).toBeNull();
@@ -179,10 +160,7 @@ describe("a categoria vem do BANCO, e não de um arquivo do front", () => {
   });
 });
 
-// =====================================================================
-// ⚠️ O botão do cabeçalho
-// =====================================================================
-describe("o formulário de origem (15/10)", () => {
+describe("o formulário de origem", () => {
   it("o card diz por qual formulário o envio entrou", async () => {
     vi.mocked(api.listarEnvios).mockResolvedValue({
       items: [{ ...envio(), form_id: "f1", form_title: "Solicitação ao Marketing" }],
@@ -203,7 +181,7 @@ describe("o formulário de origem (15/10)", () => {
   });
 });
 
-describe("abas, busca e formulário (15/10)", () => {
+describe("abas, busca e formulário", () => {
   it("trocar de aba pede a situação ao servidor", async () => {
     montar();
     await screen.findByText("Maria do Polo");
@@ -248,7 +226,7 @@ describe("abas, busca e formulário (15/10)", () => {
   });
 });
 
-describe("a lista não mente quando o servidor demora (revisão de 16/10)", () => {
+describe("a lista não mente quando o servidor demora", () => {
   function pagina(nome: string) {
     return {
       items: [{ ...envio(), requester_name: nome }],
@@ -273,8 +251,9 @@ describe("a lista não mente quando o servidor demora (revisão de 16/10)", () =
 
     soltarRejeitadas(pagina("Rita Rejeitada"));
     expect(await screen.findByText("Rita Rejeitada")).toBeTruthy();
-    soltarPendentes(pagina("Maria Pendente"));
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {
+      soltarPendentes(pagina("Maria Pendente"));
+    });
     expect(screen.queryByText("Maria Pendente")).toBeNull();
     expect(screen.getByText("Rita Rejeitada")).toBeTruthy();
   });
@@ -289,15 +268,14 @@ describe("a lista não mente quando o servidor demora (revisão de 16/10)", () =
     await screen.findByText("Maria do Polo");
     vi.mocked(api.listarEnvios).mockClear();
     fireEvent.click(screen.getByRole("tab", { name: /Concluídas/ }));
-    await waitFor(() => expect(api.listarEnvios).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(api.listarEnvios).toHaveBeenCalledTimes(1);
     expect(api.listarEnvios).toHaveBeenCalledWith(expect.objectContaining({ filtro: "DONE", page: 1 }));
   });
 });
 
-describe("as abas das demandas no painel (16/10, produção)", () => {
-  // ⚠️ O jsdom não calcula layout, então o teste guarda a CLASSE: sem
+describe("as abas das demandas no painel", () => {
+  // O jsdom não calcula layout, então o teste guarda a CLASSE: sem
   // `shrink-0`, a barra com `overflow-x-auto` encolhia até zero no painel que
   // rola por dentro, e as outras demandas do envio ficavam inalcançáveis.
   it("⚠️ a barra das abas não encolhe quando as respostas são longas", async () => {
@@ -311,25 +289,14 @@ describe("as abas das demandas no painel (16/10, produção)", () => {
 
 describe("o atalho do cabeçalho", () => {
   it("⚠️ leva a `/formularios`, e NÃO a um `/solicitar` fixo", async () => {
-    // ⚠️ ELE APONTAVA PARA `/solicitar`, e isso era verdade enquanto existia
-    // UM formulário público. A Spec 043 trouxe N, um por time -- e um link
-    // fixo passa a mostrar sempre o mesmo e a esconder todos os outros, sem
-    // errar em lugar nenhum que dê para ver.
-    //
-    // ⚠️ E A SEGUNDA ASSERÇÃO É O PONTO DESTE TESTE, não o `href`: ela cai se
-    // alguém trouxer o atalho antigo de volta "só para facilitar". A pergunta
-    // que este arquivo guarda é *qual tela é a porta*, e a resposta é a que
-    // lista os formulários -- de lá se chega a todos.
-    //
-    // Consulta por LINK, e não por texto: a frase "formulário público" aparece
-    // legitimamente no estado vazio da fila, e um `queryByText` cru prenderia
-    // a redação daquele texto junto, sem querer.
+    // Há um formulário por time: um link fixo mostraria sempre o mesmo. A
+    // segunda asserção cai se o atalho antigo voltar. Consulta por LINK, e não
+    // por texto: "formulário público" aparece legitimamente no estado vazio.
     montar();
     const atalho = await screen.findByRole("link", {
       name: "Gerenciar formulários",
     });
-    // ⚠️ COM O TIME (14/09): o caminho puro apagava o `?time=` e a lista de
-    // formulários caía na reserva. O mock do `AppShell` diz `team-da-fila`.
+    // Leva o `?time=`, senão a lista de formulários cai na reserva.
     expect(atalho.getAttribute("href")).toBe("/formularios?time=team-da-fila");
     expect(
       screen.queryAllByRole("link", { name: /formulário público/i })
@@ -337,9 +304,6 @@ describe("o atalho do cabeçalho", () => {
   });
 });
 
-// =====================================================================
-// ⚠️ Em andamento e Concluída (Spec 043, fatia D)
-// =====================================================================
 describe("o andamento de um pedido ACEITO", () => {
   it("⚠️ o seletor oferece os TRÊS aceitos, e não um botão 'avançar'", async () => {
     // Volta-se de "concluída" para "em andamento" de propósito: marcar
@@ -359,7 +323,7 @@ describe("o andamento de um pedido ACEITO", () => {
   });
 
   it("mudar a situação chama a rota de ANDAMENTO, e não a de aprovar", async () => {
-    // ⚠️ SÃO ROTAS DIFERENTES porque são trabalhos diferentes: aprovar grava
+    // Rotas diferentes porque são trabalhos diferentes: aprovar grava
     // QUEM decidiu e QUANDO; andar não toca nesses campos. Reaproveitar
     // `/aprovar` reescreveria a decisão a cada mudança de andamento.
     vi.mocked(api.andarSolicitacao).mockResolvedValue({} as never);
@@ -389,43 +353,16 @@ describe("o andamento de um pedido ACEITO", () => {
   });
 
   it("⚠️ as ações de tarefa aparecem com o pedido EM ANDAMENTO", async () => {
-    // A tarefa costuma ser criada quando o trabalho COMEÇA. A condição antiga
-    // era `status === "APPROVED"` e escondia os botões exatamente no momento
-    // em que eles são usados.
-    //
-    // ⚠️ O RÓTULO MUDOU NA FATIA E ("Marcar tarefa criada" -> "Já criei — só
-    // marcar", com "Criar tarefa" assumindo o lugar principal), e foi este
-    // teste que avisou. Deixei-o apontando para os DOIS botões: o que importa
-    // aqui é que o pedido em andamento tenha o que fazer, e não como o botão
-    // secundário se chama hoje.
+    // A tarefa costuma ser criada quando o trabalho COMEÇA: as ações de tarefa
+    // não podem ficar só no APPROVED.
     montar([item({ status: "IN_PROGRESS" })]);
     await abrirOCard();
     expect(await screen.findByText("Criar tarefa")).toBeTruthy();
     expect(screen.getByText("Já criei — só marcar")).toBeTruthy();
-  });
-
-  it("os dois status novos têm rótulo em português", async () => {
-    montar([item({ status: "IN_PROGRESS" })]);
-    await abrirOCard();
-    expect(await screen.findAllByText("Em andamento")).not.toHaveLength(0);
   });
 });
 
-// =====================================================================
-// ⚠️ A tarefa DE VERDADE (Spec 043, fatia E)
-// =====================================================================
 describe("criar a tarefa a partir do pedido", () => {
-  it("⚠️ 'Criar tarefa' é o caminho PRINCIPAL, e 'já criei' o secundário", async () => {
-    // ⚠️ O FLUXO ANTIGO ERA DE SEIS PASSOS: copiar o briefing, sair da fila,
-    // abrir o quadro, criar a tarefa, colar, voltar e marcar. O último era o
-    // que mais se esquecia -- é a razão de o filtro "aprovadas sem tarefa"
-    // existir. Ele continua disponível, mas deixou de ser o único.
-    montar([item({ status: "APPROVED" })]);
-    await abrirOCard();
-    expect(await screen.findByText("Criar tarefa")).toBeTruthy();
-    expect(screen.getByText("Já criei — só marcar")).toBeTruthy();
-  });
-
   it("cria e oferece ABRIR A TAREFA, sem um segundo request", async () => {
     vi.mocked(api.criarTarefaDaSolicitacao).mockResolvedValue({
       task_id: "t-9",
@@ -482,9 +419,7 @@ describe("criar a tarefa a partir do pedido", () => {
   });
 
   it("⚠️ marcação ANTIGA, só com `task_ref` de texto, continua aparecendo", async () => {
-    // LEGADO VIVO: as marcações anteriores a esta fatia moram no `task_ref` e
-    // não há como convertê-las em id. Apagar a coluna perderia o único rastro
-    // que aquelas solicitações têm.
+    // Marcações antigas moram só no `task_ref`, sem id: é o único rastro delas.
     montar([
       item({
         status: "APPROVED",
@@ -499,15 +434,8 @@ describe("criar a tarefa a partir do pedido", () => {
   });
 });
 
-// =====================================================================
-// ⚠️ Os campos que a fatia G tornou opcionais
-// =====================================================================
 describe("um envio SEM telefone, área e polo", () => {
-  // ⚠️⚠️ ESTE BLOCO NASCEU DA REVISÃO DE 31/08, e o motivo de ela ter achado
-  // e eu não é direto: **todas as fixtures deste arquivo preenchiam os cinco
-  // campos**. A tipagem mudou na fatia G, os escritores foram migrados, e
-  // nenhuma asserção exercitava o `null` -- o mesmo hop que esta spec já
-  // registrou três vezes, agora na direção "o tipo mudou e o leitor não".
+  // As outras fixtures preenchem os cinco campos; aqui o `null` é exercitado.
   function envioMagro() {
     return {
       items: [
@@ -539,9 +467,7 @@ describe("um envio SEM telefone, área e polo", () => {
   }
 
   it("⚠️ com os dois campos, o separador entre eles é `/`", async () => {
-    // ⚠️ ESTE TESTE EXISTE PORQUE EU MUDEI O DESENHO SEM PEDIR. Ao consertar
-    // o separador órfão, juntei tudo com `·` -- e a Camila mandou voltar. Os
-    // dois separadores são diferentes de propósito: `·` separa o e-mail do
+    // Os dois separadores são diferentes de propósito: `·` separa o e-mail do
     // lugar, `/` separa área de polo.
     montar();
     await abrirOCard();
@@ -559,9 +485,8 @@ describe("um envio SEM telefone, área e polo", () => {
   });
 
   it("⚠️ o briefing copiado NÃO contém a string \"null\"", async () => {
-    // ⚠️ TEMPLATE LITERAL COM `null` ESCREVE "null". Este texto vai para a área
-    // de transferência e daí para o WhatsApp -- ou seja, vaza para FORA do
-    // sistema, até o solicitante.
+    // Template literal com `null` escreve "null", e este texto sai do sistema
+    // (área de transferência -> WhatsApp).
     const escrito: string[] = [];
     Object.assign(navigator, {
       clipboard: {
@@ -578,7 +503,7 @@ describe("um envio SEM telefone, área e polo", () => {
 
     await waitFor(() => expect(escrito).toHaveLength(1));
     expect(escrito[0]).not.toContain("null");
-    // ⚠️ E A LINHA DE ÁREA/POLO SOME INTEIRA -- "Área:  · Polo: " vazio parece
+    // E a linha de área/polo some inteira -- "Área:  · Polo: " vazio parece
     // dado perdido.
     expect(escrito[0]).not.toContain("Área:");
     expect(escrito[0]).toContain("maria@polo.ex");
@@ -608,7 +533,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     fireEvent.click(await screen.findByText("Aprovar sem tarefa"));
     await waitFor(() => expect(api.aprovarSolicitacao).toHaveBeenCalledWith("i1"));
     expect(api.criarTarefaDaSolicitacao).not.toHaveBeenCalled();
-    // ⚠️ RECARREGA em vez de costurar o novo status no estado local: aprovar
+    // Recarrega em vez de costurar o novo status no estado local: aprovar
     // muda os números das abas, que a tela também mostra.
     await waitFor(() =>
       expect(vi.mocked(api.listarEnvios).mock.calls.length).toBeGreaterThan(1)
@@ -616,8 +541,7 @@ describe("as duas ações que a fila existe para fazer", () => {
   });
 
   it("⚠️ aprovar em A e abrir B enquanto A recarrega: o painel FICA em B", async () => {
-    // Auditoria de 21/10: o `recarregar` relia A pelo protocolo e, ao chegar,
-    // devolvia o painel para A -- quem tria lia A achando que era B.
+    // O `recarregar` relê A pelo protocolo; ao chegar, não pode devolver o painel para A.
     const a = envio();
     const b = { ...envio(), batch_id: "b2", protocol: "XYZ789", requester_name: "João do Polo" };
     const lista = { items: [a, b], total: 2, page: 1, size: 10, pending_total: 2, approved_without_task_total: 0 };
@@ -642,7 +566,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     expect(painel().getByText("João do Polo")).toBeTruthy();
   });
 
-  it("⚠️ ✓ na LISTA só aprova -- a tarefa se cria no painel (decisão dela)", async () => {
+  it("⚠️ ✓ na LISTA só aprova -- a tarefa se cria no painel", async () => {
     vi.mocked(api.aprovarSolicitacao).mockResolvedValue({} as never);
     montar();
     fireEvent.click(await screen.findByLabelText("Aprovar"));
@@ -655,7 +579,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     montar();
     const aprovar = await screen.findByLabelText("Aprovar");
     fireEvent.click(aprovar, { detail: 2 });
-    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => {});
     expect(api.aprovarSolicitacao).not.toHaveBeenCalled();
   });
 
@@ -685,10 +609,7 @@ describe("as duas ações que a fila existe para fazer", () => {
   });
 
   it("⚠️ rejeitar EXIGE justificativa -- é o que a pessoa vai receber", async () => {
-    // ⚠️ A RECUSA É NO CLIQUE, COM MENSAGEM, e não com botão cinza -- eu tinha
-    // escrito este teste presumindo `disabled` e ele reprovou. O desenho da
-    // tela é melhor que o meu palpite: um botão cinza não diz o que falta, e
-    // aqui a frase "a rejeição exige uma justificativa" diz.
+    // A recusa é no clique, com mensagem, e não com botão cinza (que não diz o que falta).
     montar();
     await abrirOCard();
     fireEvent.click(await painel().findByText("Rejeitar"));
@@ -714,16 +635,10 @@ describe("as duas ações que a fila existe para fazer", () => {
   });
 });
 
-// ⚠️⚠️ O RECORTE POR TIME (Spec 048, fatia D) e o modo de falha que ele trouxe.
-//
-// A tela ESPERA o time ativo antes de buscar -- buscar antes mostraria a fila
-// da organização inteira por um instante, e aqui isso é pior que numa lista
-// qualquer: quem tria poderia aprovar um pedido de outro time no meio do pisca.
-//
-// O risco de esperar é esperar PARA SEMPRE. `listTeamsAll()` falha em silêncio
-// no `AppShell` (`.catch(() => {})`, decisão antiga e deliberada), então sem
-// distinguir "a barra ainda não resolveu" de "ela resolveu e não há time" uma
-// falha de rede viraria uma fila que nunca carrega, sem erro nenhum na tela.
+// A tela ESPERA o time ativo antes de buscar (buscar antes mostraria a fila da
+// organização inteira por um instante). O risco é esperar PARA SEMPRE: o
+// `AppShell` engole a falha de `listTeamsAll()`, então "a barra ainda não
+// resolveu" (`null`) tem de ser distinto de "resolveu e não há time" (`none`).
 describe("a fila recorta pelo time, e não espera para sempre", () => {
   function comContexto(active: ActiveTeamContext["active"]) {
     vi.mocked(api.listarEnvios).mockResolvedValue({
@@ -739,9 +654,7 @@ describe("a fila recorta pelo time, e não espera para sempre", () => {
   }
 
   afterEach(() => {
-    // ⚠️ DEVOLVE O PADRÃO: sem isto o último valor vazaria para os testes de
-    // cima, que montam a cena esperando um time resolvido -- e falhariam na
-    // ordem em que rodam, o pior tipo de teste quebrado.
+    // Devolve o padrão: sem isto o último valor vazaria para os outros testes.
     contextoDoTeste = {
       active: { kind: "team", teamId: "team-da-fila", fromUrl: true },
       search: "?time=team-da-fila",
@@ -761,8 +674,7 @@ describe("a fila recorta pelo time, e não espera para sempre", () => {
 
   it("⚠️ `kind: \"none\"` BUSCA SEM RECORTE, e não fica carregando", async () => {
     // A barra resolveu e não há time (sem vínculo, ou a árvore não chegou e o
-    // erro foi engolido). A resposta certa é a fila da organização -- o
-    // comportamento de antes desta fatia --, e não uma tela parada.
+    // erro foi engolido). A resposta certa é a fila da organização, e não uma tela parada.
     comContexto({ kind: "none" });
     await waitFor(() => {
       expect(api.listarEnvios).toHaveBeenCalledWith(

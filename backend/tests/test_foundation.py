@@ -1,12 +1,5 @@
-"""Testes da foundation.
-
-Servem de MODELO para os testes dos modulos futuros. Cobrem
-as garantias mais importantes da base:
-    - isolamento multi-tenant (TenantContext + BaseRepository);
-    - emissao/validacao de tokens;
-    - respostas HTTP da app (health e auth).
-
-Rodar: pytest (com o venv ativo).
+"""Foundation: isolamento multi-tenant (TenantContext + BaseRepository),
+senha e JWT, e respostas HTTP basicas da app.
 """
 
 from __future__ import annotations
@@ -87,9 +80,8 @@ def test_password_hash_roundtrip() -> None:
     assert not verify_password("errado", h)
 
 
-# Hashes gerados pelo `passlib` 1.7.4 (o que gravou TODAS as senhas de hoje),
-# em 16/10, antes de ele sair. Se a troca para `bcrypt` direto tivesse mudado
-# formato, custo ou o corte de 72 bytes, ninguem mais entraria.
+# Hashes gerados pelo `passlib` 1.7.4, que gravou as senhas existentes. Se o
+# `bcrypt` direto mudar formato, custo ou o corte de 72 bytes, ninguem entra.
 _HASH_DO_PASSLIB = "$2b$12$zWiU5OT9Kcvj4sjVA.fM1uwWeGsTlhVBkAnYt5BhhNcACMWqUOq0C"
 _HASH_DO_PASSLIB_100_X = "$2b$12$gH70mJeJO9CSee8BAZGLvOjxW2Z7pZKIT4kKBqmh0yrY0DevrpqpG"
 
@@ -125,8 +117,8 @@ def test_access_token_rejected_as_refresh() -> None:
 # --------------------------------------------------------
 # TenantContext -- roles e permissions
 # --------------------------------------------------------
-def test_tenant_context_carries_roles_and_permissions() -> None:
-    """tenant_scope propaga roles e permissions; has_* funciona."""
+def test_tenant_context_carries_permissions() -> None:
+    """tenant_scope propaga as permissions; has_permission funciona."""
     ws, usr = uuid.uuid4(), uuid.uuid4()
     with tenant_scope(
         ws,
@@ -135,8 +127,6 @@ def test_tenant_context_carries_roles_and_permissions() -> None:
         permissions=frozenset({"task.create", "task.delete"}),
     ):
         ctx = require_tenant()
-        assert ctx.has_role("ADMIN")
-        assert not ctx.has_role("OPERATOR")
         assert ctx.has_permission("task.create")
         assert not ctx.has_permission("organization.update")
 
@@ -150,11 +140,14 @@ def test_permissions_derived_from_roles() -> None:
 
     operator = permissions_for_roles(frozenset({"OPERATOR"}))
     assert "task.create" in operator
-    assert "project.delete" not in operator  # operator nao deleta projeto
+    assert "task.assign" in operator
+    assert "project.delete" not in operator
+    assert "task.delete" not in operator
 
     # ADMIN e papel de ORGANIZACAO (nao de time): vem do mapa de org.
     admin = permissions_for_org_role("ADMIN")
     assert "organization.update" in admin
+    assert "task.assign" in admin
 
     # Uniao de papeis acumula permissoes; papel invalido e ignorado.
     mixed = permissions_for_roles(frozenset({"OPERATOR", "MANAGER", "LIXO"}))
@@ -176,7 +169,8 @@ def test_health_endpoint() -> None:
 
 
 def test_protected_route_requires_auth() -> None:
-    """Rota protegida sem token devolve 401 no formato de erro padrao."""
+    """Rota protegida sem token devolve 401 no formato de erro padrao, com o
+    request_id do log no corpo (o mesmo do header de resposta)."""
     from starlette.testclient import TestClient
 
     from app.db.session import db_manager
@@ -184,20 +178,9 @@ def test_protected_route_requires_auth() -> None:
 
     app = create_app()
     db_manager.init()
-    client = TestClient(app)
-    response = client.get("/api/v1/auth/me")
-    assert response.status_code == 401
-    assert response.json()["error"]["code"] == "authentication_failed"
-
-def test_erro_traz_o_request_id_do_log() -> None:
-    """Auditoria de 16/10: o corpo lia o `X-Request-ID` da REQUISICAO, que o
-    front nunca manda -- saia sempre `null`, e nada ligava a tela ao log."""
-    from starlette.testclient import TestClient
-
-    from app.main import create_app
-
-    r = TestClient(create_app()).get("/api/v1/auth/me")
+    r = TestClient(app).get("/api/v1/auth/me")
     assert r.status_code == 401
+    assert r.json()["error"]["code"] == "authentication_failed"
     assert r.json()["request_id"]
     assert r.json()["request_id"] == r.headers["X-Request-ID"]
 

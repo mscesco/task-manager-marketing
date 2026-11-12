@@ -1,5 +1,5 @@
 /**
- * Persistencia do estado da barra lateral (Spec 039, F3-bis).
+ * Persistencia do estado da barra lateral.
  *
  * ⚠️ O caso que mais importa aqui NAO e "grava e le" -- e o de valor
  * CORROMPIDO. `v === "true"` sozinho transformaria qualquer lixo em `false`, e
@@ -75,7 +75,7 @@ describe("lerQuadrosAberto", () => {
   });
 });
 
-describe("Spec 063: o menu conforme a largura", () => {
+describe("o menu conforme a largura", () => {
   it("corta em 768 e 1024", () => {
     expect(faixaDaLargura(767)).toBe("celular");
     expect(faixaDaLargura(768)).toBe("tablet");

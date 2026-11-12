@@ -1,12 +1,9 @@
-// Spec 053, fatia D -- seguidores no modal de CRIAR tarefa.
+// Seguidores no modal de CRIAR tarefa.
 //
 // O que se prende: o seguidor escolhido chega no ARGUMENTO de `createTask`
-// (o corpo e o `createTaskCorpo.test.ts`), o campo nasce vazio (D6), e o 422
+// (o corpo e o `createTaskCorpo.test.ts`), o campo nasce vazio, e o 422
 // dos seguidores e lido pelo `details.field` -- nao se confunde com o dos
 // responsaveis.
-//
-// SABOTAGEM (medida): em `TaskModal.salvar`, apagar `watcher_ids: watcherIds`.
-// Deve cair "o seguidor escolhido vai no createTask".
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -82,7 +79,7 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: "board-geral",
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    // O cadeado vem do servidor, em toda resposta.
     can_delete: true,
     ...over,
   };
@@ -130,7 +127,7 @@ afterEach(() => {
 });
 
 describe("TaskModal -- seguidores na criação", () => {
-  it("o campo nasce vazio (D6)", async () => {
+  it("o campo nasce vazio", async () => {
     mocks();
     render(<TaskModal open newTaskTeam={null} onClose={() => {}} onSaved={() => {}} />);
     expect(await screen.findByText("Ninguém segue ainda.")).toBeTruthy();

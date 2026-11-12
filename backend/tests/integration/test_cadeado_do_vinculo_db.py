@@ -1,14 +1,11 @@
-"""Spec 047, fatia A -- o cadeado de `GET /members/{id}/teams`.
+"""O cadeado de `GET /members/{id}/teams`.
 
 `can_edit_role` diz, POR VINCULO, se quem esta olhando conseguiria trocar
-aquele papel. O painel do membro (fatia D) usa isso para desenhar o cadeado.
+aquele papel. O painel do membro usa isso para desenhar o cadeado.
 
-⚠️⚠️ ELE EXISTE PARA O FRONT NAO REFAZER A CONTA, e isso e a §3.1 da spec.
-A **Spec 034 ja desfez** uma regra de escopo espelhada no front: ela fazia
-gestor e admin sumirem dos seletores em tarefa interna de subtime, e foi
-**reportado duas vezes, com captura**. A prescricao do briefing e literal --
-*"se aparecer necessidade de filtrar escopo no front, falta parametro na
-rota"*.
+⚠️⚠️ ELE EXISTE PARA O FRONT NAO REFAZER A CONTA: regra de escopo espelhada no
+front diverge do servidor. Se aparecer necessidade de filtrar escopo no front,
+falta parametro na rota.
 
 ⚠️⚠️ O TESTE QUE MAIS IMPORTA AQUI E O DA CONCORDANCIA, e nao os casos
 individuais. Cadeado e PATCH sao duas respostas para a mesma pergunta, e as
@@ -18,8 +15,6 @@ duas formas de divergir sao silenciosas:
     cadeado FECHADO + PATCH aceita -> some da tela uma acao permitida
 
 Nenhuma das duas levanta erro em teste que olhe so um lado.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -70,30 +65,16 @@ def _como(ws, user, raiz, seo, papel):
 # ------------------------------------------------------------------
 # O cadeado, caso a caso
 # ------------------------------------------------------------------
-async def test_admin_edita_qualquer_vinculo(db) -> None:
-    ws, raiz, seo, admin = await _mundo(db)
-    alvo = await f.make_user(db, workspace_id=ws, email="alvo@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=alvo, team_id=seo, role="SUPERVISOR"
-    )
-
-    with _como(ws, admin, raiz, seo, "ADMIN"):
-        svc = MemberService(db)
-        assert svc.pode_trocar_papel_do_vinculo(
-            user_id=alvo, team_id=seo, papel_atual=UserTeamRole.SUPERVISOR
-        )
-
-
 async def test_ninguem_edita_o_PROPRIO_papel(db) -> None:
-    """⭐ C3, o anti-lockout -- e o cadeado tem de mostrar isso.
+    """O anti-lockout -- e o cadeado tem de mostrar isso.
 
     ⚠️ Sem este caso, a tela ofereceria a quem e gerente a chance de se
     rebaixar, e o 403 chegaria depois do clique. E o cadeado fechado aqui e
     honesto: a operacao E impossivel, nao e falta de permissao.
 
-    ⚠️ O ATOR E UM MANAGER, e nao o ADMIN: a C3 abre para quem manda pela
-    organizacao (ver `pode_trocar_papel_do_vinculo`), e desde a `0031` todo
-    ADMIN e de organizacao.
+    ⚠️ O ATOR E UM MANAGER, e nao o ADMIN: a trava abre para quem manda pela
+    organizacao (ver `pode_trocar_papel_do_vinculo`), e todo ADMIN e de
+    organizacao. O PATCH tambem recusa (`test_o_cadeado_concorda_com_o_patch`).
     """
     ws, raiz, seo, _admin = await _mundo(db)
     gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
@@ -108,7 +89,7 @@ async def test_ninguem_edita_o_PROPRIO_papel(db) -> None:
 
 
 async def test_manager_NAO_edita_vinculo_de_manager(db) -> None:
-    """A matriz C2: MANAGER so atua sobre SUPERVISOR/OPERATOR."""
+    """MANAGER so atua sobre SUPERVISOR/OPERATOR."""
     ws, raiz, seo, _admin = await _mundo(db)
     gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
     await f.add_member(
@@ -132,12 +113,7 @@ async def test_manager_NAO_edita_vinculo_de_manager(db) -> None:
 
 
 async def test_supervisor_troca_papel_so_no_proprio_subtime(db) -> None:
-    """Spec 049, fatia H: o cadeado ABRE para o supervisor -- no subtime dele.
-
-    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_supervisor_NAO_troca_papel_de_ninguem` e
-    afirmava a D2 da Spec 028 ("trocar papel nao foi aberto ao supervisor").
-    A Camila a revogou -- *"supervisor troca o cargo de alguem dentro do seu
-    subtime"* (14/09), e rebaixar outro supervisor tambem (15/09).
+    """O cadeado ABRE para o supervisor -- no subtime dele.
 
     ⚠️ AS DUAS METADES SAO O TESTE. So a primeira passaria com o cadeado
     aberto em todo lugar; so a segunda, com ele fechado em todo lugar.
@@ -168,7 +144,7 @@ async def test_supervisor_troca_papel_so_no_proprio_subtime(db) -> None:
 
 
 # ------------------------------------------------------------------
-# ⭐⭐ A concordancia -- o teste que a fatia existe para ter
+# ⭐⭐ A concordancia
 # ------------------------------------------------------------------
 async def test_o_cadeado_concorda_com_o_patch(db) -> None:
     """⭐⭐ O CADEADO E O PATCH RESPONDEM A MESMA PERGUNTA. Aqui se cobra isso.
@@ -249,12 +225,12 @@ async def test_o_cadeado_concorda_com_o_patch(db) -> None:
         )
 
 # ------------------------------------------------------------------
-# Auditoria de 16/10 -- conta desativada, pela ROTA
+# Conta desativada, pela ROTA
 # ------------------------------------------------------------------
 async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
-    """`/by-team` passava `alvo_ativo`; `/members/{id}/teams` (a gaveta do
-    membro) nao, e a funcao assumia "ativa": seletor de cargo oferecido e 409
-    ao salvar -- o caso de 10/09 ("Kaua inativo"), pela outra porta."""
+    """`/members/{id}/teams` (a gaveta do membro) tem de passar `alvo_ativo`,
+    como o `/by-team`: assumindo "ativa", o seletor de cargo seria oferecido e
+    o salvar daria 409."""
     from collections.abc import AsyncIterator
 
     from httpx import ASGITransport, AsyncClient

@@ -1,17 +1,8 @@
-// Spec 054, fatia D -- o cartao "Notificações" do Meu perfil (montagem).
-//
-// A regra esta em `lib/notificationPreferences.ts` e tem teste proprio; aqui
-// se prende o que o desenho faz:
-//   - a grade nasce com um interruptor por celula, cada um com o nome da linha
-//     e da coluna;
-//   - clicar manda `{type_group, role, enabled}` e vira na hora (otimista);
-//   - ⚠️ falha VOLTA ATRAS e avisa -- senao a tela mostraria um silencio que o
-//     servidor nao gravou;
-//   - travada fica ligada e desabilitada, com a explicacao ao lado;
-//   - prazo nao tem celula de seguidor.
-//
-// SABOTAGEM (medida): em `change`, tirar o `setToggles(before)` do `catch`. Deve
-// cair "falha volta atras e avisa".
+// O cartão "Notificações" do Meu perfil (montagem). A regra está em
+// `lib/notificationPreferences.ts`; aqui se prende o desenho: um interruptor por
+// célula com o nome da linha e da coluna, clicar manda `{type_group, role,
+// enabled}` e vira na hora, falha VOLTA ATRÁS e avisa, travada fica ligada e
+// desabilitada.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -53,39 +44,29 @@ beforeEach(() => {
   );
 });
 
-// ⚠️ Explicito (web/AGENTS.md §11): sem isto uma tela fica montada e a
+// Explícito: sem isto uma tela fica montada e a
 // proxima `getByRole` acha dois interruptores com o mesmo nome.
 afterEach(() => cleanup());
 
 describe("a grade", () => {
-  it("nasce com 28 interruptores, todos ligados", async () => {
+  it("nasce com um interruptor por célula, todos ligados", async () => {
     render(<NotificationPreferences />);
     const interruptores = await screen.findAllByRole("switch");
-    expect(interruptores.length).toBe(28); // 25 + as 3 travadas (resposta: 11/11)
+    expect(interruptores.length).toBe(tudoLigado().length);
     expect(interruptores.every((b) => b.getAttribute("aria-checked") === "true")).toBe(true);
     expect(screen.getByText("Você recebe todos os avisos.")).toBeTruthy();
   });
 
-  it("cada celula se chama pela linha e pela coluna", async () => {
+  it("cada célula se chama pela linha e pela coluna, e prazo não tem seguidor", async () => {
     render(<NotificationPreferences />);
-    expect(
-      await screen.findByRole("switch", { name: "Comentário novo, como seguidor" }),
-    ).toBeTruthy();
-    expect(
-      screen.getByRole("switch", { name: "Mudança de coluna, como responsável" }),
-    ).toBeTruthy();
-  });
-
-  it("⚠️ prazo nao tem celula de seguidor", async () => {
-    render(<NotificationPreferences />);
-    await screen.findAllByRole("switch");
-    expect(
-      screen.queryByRole("switch", { name: "Prazo chegando, como seguidor" }),
-    ).toBeNull();
-    expect(
-      screen.getByRole("switch", { name: "Prazo chegando, como responsável" }),
-    ).toBeTruthy();
-    // a coluna vazia diz "não se aplica", e nao finge um interruptor
+    const tabela = await screen.findByRole("table");
+    for (const rotulo of ["Seguidor", "Responsável", "Criador"]) {
+      expect(within(tabela).getByRole("columnheader", { name: rotulo })).toBeTruthy();
+    }
+    expect(screen.getByRole("switch", { name: "Comentário novo, como seguidor" })).toBeTruthy();
+    expect(screen.getByRole("switch", { name: "Prazo chegando, como responsável" })).toBeTruthy();
+    expect(screen.queryByRole("switch", { name: "Prazo chegando, como seguidor" })).toBeNull();
+    // A coluna vazia diz "não se aplica", e não finge um interruptor.
     expect(screen.getAllByLabelText("não se aplica").length).toBe(2);
   });
 
@@ -179,13 +160,5 @@ describe("carregar", () => {
       await screen.findByText("Não consegui carregar suas preferências de notificação."),
     ).toBeTruthy();
     expect(screen.queryAllByRole("switch").length).toBe(0);
-  });
-
-  it("a tabela tem cabecalho de coluna para cada papel", async () => {
-    render(<NotificationPreferences />);
-    const tabela = await screen.findByRole("table");
-    for (const rotulo of ["Seguidor", "Responsável", "Criador"]) {
-      expect(within(tabela).getByRole("columnheader", { name: rotulo })).toBeTruthy();
-    }
   });
 });

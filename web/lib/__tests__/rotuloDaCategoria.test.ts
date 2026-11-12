@@ -1,17 +1,5 @@
-/**
- * O rótulo da categoria na fila (Spec 043, fatia C2-c).
- *
- * ⚠️⚠️ **A FILA NÃO TINHA TESTE NENHUM.** Descobri isso ao trocar a fonte do
- * rótulo e ver a suíte marcar 1020 → 1020: nada se mexeu porque nada olhava
- * para lá. `/solicitacoes` é a tela onde o trabalho realmente acontece — é
- * dela que o Marketing tria tudo — e ela vinha sendo reescrita sem rede.
- *
- * ⚠️ E O DEFEITO QUE ESTA FATIA CONSERTA ERA INVISÍVEL: a fila lia
- * `CATEGORIA_POR_SLUG`, um arquivo estático, enquanto o formulário público já
- * lia o banco desde a fatia B. Funcionava porque a migration 0017 copiou os
- * mesmos slugs. A primeira seção criada pelo editor da fatia C2 apareceria ali
- * como slug cru e "❓" — e só ela, ao lado das outras bonitas.
- */
+// O rótulo da categoria na fila vem do que o backend resolveu no banco; o slug
+// cru é só a reserva.
 
 import { describe, expect, it } from "vitest";
 
@@ -68,15 +56,14 @@ describe("rotuloDaCategoria", () => {
   });
 
   it("⚠️ o TÍTULO manda, mesmo quando difere do slug -- é renomear funcionando", () => {
-    // O slug fica gravado no pedido e não muda; o título é resolvido na hora.
-    // Renomear "Foto" para "Fotografia" arruma a fila inteira, inclusive os
-    // pedidos de julho. É a razão de um campo ser permanente e o outro não.
+    // O slug fica gravado no pedido e não muda; o título é resolvido na hora,
+    // então renomear a seção arruma a fila inteira, inclusive pedidos antigos.
     const r = rotuloDaCategoria(item({ category: "foto", category_title: "Fotografia" }));
     expect(r.titulo).toBe("Fotografia");
   });
 });
 
-describe("numeroDaRepeticao (Spec 059)", () => {
+describe("numeroDaRepeticao", () => {
   it("vazio quando a seção aparece uma vez no envio", () => {
     const a = item({ id: "a", category: "foto", batch_seq: 1 });
     const b = item({ id: "b", category: "arte", batch_seq: 2 });

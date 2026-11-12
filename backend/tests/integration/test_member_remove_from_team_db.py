@@ -1,17 +1,10 @@
-"""Spec 015, Fatia 4 -- remover (B3) vinculo de membro.
+"""Remover vinculo de membro (`remove_member_from_team`).
 
 Regras:
-    C1 -- ao remover, a pessoa perde acesso; tarefas ficam (nao testavel
-          aqui, pois e dormente: tudo roda na raiz).
-    C2 -- matriz: ADMIN (de organizacao) qualquer; MANAGER so SUPERVISOR/OPERATOR.
-    C3 -- ninguem remove a si mesmo.
-
-⚠️ O BLOCO B2 (MOVER DE SUBTIME) SAIU EM 17/09/2026, com a rota
-`POST /members/{id}/move-subteam` e `MemberService.move_member_subteam`, que
-nao tinham chamador na tela. O nome do arquivo ficou para nao perder o
-historico do git.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+    - ao remover, a pessoa perde acesso; as tarefas ficam;
+    - ADMIN (de organizacao) remove qualquer um; MANAGER so SUPERVISOR/OPERATOR;
+    - ninguem remove a si mesmo;
+    - o ultimo vinculo nao sai (o membro ficaria sem time).
 """
 
 from __future__ import annotations
@@ -38,7 +31,7 @@ async def _membership(db, *, user_id, team_id):
 
 
 # --------------------------------------------------------
-# B3 -- remover vinculo
+# remover vinculo
 # --------------------------------------------------------
 async def test_admin_remove_vinculo(db) -> None:
     ws = await f.make_workspace(db)
@@ -105,7 +98,7 @@ async def test_manager_nao_remove_alvo_manager(db) -> None:
 async def test_nao_remove_proprio_vinculo(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
-    # ⚠️ UM MANAGER, e nao o ADMIN: a C3 abre para quem manda pela
+    # ⚠️ UM MANAGER, e nao o ADMIN: a trava abre para quem manda pela
     # organizacao (ele pode se tirar de um time e se recolocar). A trava e de
     # quem tem a autoridade SO pelo vinculo.
     mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")

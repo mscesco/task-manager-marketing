@@ -1,18 +1,6 @@
-"""Testes do submodulo Collaboration (Entrega 4) -- logica pura, sem DB.
-
-Cobertura:
-    - permissions: OPERATOR ganhou task.assign.
-    - history builders: assigned / unassigned (event_type + metadata).
-    - task_guards (puro): task_visible / task_editable cobrindo
-        * pessoal proprio vs alheio
-        * criador sempre ve (ADR 0013) mas NAO edita -- ⚠️ a ADR 0013 caiu
-          com a 0038 (E1): hoje criar nao concede leitura
-        * lente de time (comum / avulsa)
-        * admin (lente None)
-
-Os fluxos com escrita real no Postgres (assignment/watcher, history,
-idempotencia, 404/422 ponta a ponta) estao em `tests/integration/`, em
-especial `test_collaboration_db.py` e `test_seguidores_053b_db.py`.
+"""Collaboration, logica pura: builders de historico de atribuicao e os
+guards `task_visible` / `task_editable`. Os fluxos com banco estao em
+`tests/integration/`.
 """
 
 from __future__ import annotations
@@ -20,11 +8,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 
-from app.db.models.enums import OrgRole, UserTeamRole
-from app.modules.auth.domain.permissions import (
-    permissions_for_org_role,
-    permissions_for_roles,
-)
 from app.modules.tasks.application.task_guards import task_editable, task_visible
 from app.modules.tasks.domain.history import (
     TaskHistoryEventType,
@@ -55,23 +38,6 @@ def _id() -> uuid.UUID:
 
 
 # --------------------------------------------------------
-# permissions
-# --------------------------------------------------------
-def test_operator_now_has_task_assign() -> None:
-    perms = permissions_for_roles(frozenset({UserTeamRole.OPERATOR.value}))
-    assert "task.assign" in perms
-    # nao ganhou edicao/delete de tabela alem do que ja tinha
-    assert "task.delete" not in perms
-
-
-def test_admin_still_has_task_assign() -> None:
-    # ADMIN e papel de ORGANIZACAO desde a 0031 -- o mapa plano de time nao o
-    # conhece mais.
-    perms = permissions_for_org_role(OrgRole.ADMIN.value)
-    assert "task.assign" in perms
-
-
-# --------------------------------------------------------
 # history builders
 # --------------------------------------------------------
 def test_build_assigned_entry() -> None:
@@ -89,20 +55,11 @@ def test_build_unassigned_entry() -> None:
 
 
 # --------------------------------------------------------
-# task_visible (ADR 0013 + Entrega 3)
+# task_visible
 # --------------------------------------------------------
 def test_visible_creator_NAO_ve_avulsa_fora_da_lente() -> None:
-    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
-
-    Ate a Spec 037 ele afirmava o contrario: `created_by` garantia visao mesmo
-    com o time fora da lente (ADR 0013). A ADR 0038 retirou isso -- a lente de
-    time e a unica fonte de visibilidade.
-
-    ⚠️ ELE NAO FOI APAGADO, DE PROPOSITO. Apagar deixaria a regra sem
-    afirmacao nenhuma: nada impediria alguem de reintroduzir o ramo
-    `created_by` mais adiante e ver tudo verde. Inverter mantem o ponto sob
-    vigilancia.
-    """
+    """Criar nao concede leitura: a lente de time e a unica fonte de
+    visibilidade. Trava contra a volta de um ramo `created_by`."""
     creator = _id()
     team_copy = _id()  # subtime irmao, fora da lente do criador
     task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
@@ -111,20 +68,6 @@ def test_visible_creator_NAO_ve_avulsa_fora_da_lente() -> None:
         task=task, project=None, visible=frozenset()
     )
     # e com o time na lente, ve -- como qualquer outra pessoa.
-    assert task_visible(
-        task=task, project=None, visible=frozenset({team_copy})
-    )
-
-
-def test_visible_noncreator_avulsa_needs_lens() -> None:
-    creator = _id()
-    team_copy = _id()
-    task = _Task(id=_id(), created_by=creator, team_id=team_copy, project_id=None)
-    # quem nao criou e nao tem o time na lente: nao ve
-    assert not task_visible(
-        task=task, project=None, visible=frozenset()
-    )
-    # com o time na lente: ve
     assert task_visible(
         task=task, project=None, visible=frozenset({team_copy})
     )
@@ -139,9 +82,9 @@ def test_visible_common_project_by_project_team() -> None:
     assert task_visible(
         task=task, project=proj, visible=frozenset({proj_team})
     )
-    # projeto fora da lente e nao e criador -> nao ve
+    # o projeto prevalece: time da task na lente, projeto fora -> nao ve
     assert not task_visible(
-        task=task, project=proj, visible=frozenset()
+        task=task, project=proj, visible=frozenset({task.team_id})
     )
 
 
@@ -154,7 +97,7 @@ def test_visible_missing_project_is_invisible() -> None:
 
 
 # --------------------------------------------------------
-# task_editable (ADR 0013: created_by NAO edita)
+# task_editable (created_by nao edita)
 # --------------------------------------------------------
 def test_editable_creator_does_not_get_edit() -> None:
     creator = _id()

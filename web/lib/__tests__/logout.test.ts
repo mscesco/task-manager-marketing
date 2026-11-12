@@ -1,16 +1,9 @@
-// =====================================================
-// lib/__tests__/logout.test.ts -- Spec 030 (D4), lado do front
-// -----------------------------------------------------
-// Testa `logout()` de `lib/api.ts`. Cabe no escopo do vitest.config
-// (`lib/**`) porque a funcao vive em lib/, nao em componente.
-//
-// O QUE ESTES TESTES PROTEGEM, e que `tsc` e `next build` NAO pegam:
+// `logout()` de `lib/api.ts`. O que estes testes protegem:
 //   - o Bearer sair vazio (logout vira no-op silencioso -- pior falha
 //     possivel: o botao "responde", a sessao continua viva no servidor);
 //   - `logout()` lancar e derrubar o `sair()` antes do `router.replace`,
 //     prendendo a pessoa numa tela com token ja limpo;
 //   - a ORDEM entre ler o token e limpar o localStorage (ver o ultimo teste).
-// =====================================================
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearTokens, logout, setTokens } from "@/lib/api";
@@ -19,9 +12,8 @@ const ACCESS = "access-de-teste";
 const REFRESH = "refresh-de-teste";
 
 // Os parametros sao declarados (mesmo sem uso) para o mock.calls ficar
-// TIPADO como [string, RequestInit] -- sem isso o `tsc` reprova o cast
-// mais adiante, ainda que o vitest passe. Portoes diferentes, erros
-// diferentes: `npm test` verde nao dispensa `npx tsc --noEmit`.
+// TIPADO como [string, RequestInit]: sem isso o `tsc` reprova o cast mais
+// adiante, ainda que o vitest passe.
 function mockFetch() {
   const spy = vi.fn(
     async (_url: string, _init?: RequestInit) =>

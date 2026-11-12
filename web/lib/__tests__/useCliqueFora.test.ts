@@ -1,23 +1,16 @@
 // Clicar fora fecha; arrastar pra fora nao (lib/useCliqueFora.ts).
 //
-// O teste que importa e "seleciona texto dentro e solta fora": e o caso
-// reportado, e e o unico que passa na versao antiga com `stopPropagation`.
+// O caso que importa é "seleciona texto dentro e solta fora".
 import { fireEvent, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { deveFecharNoClique, useFecharAoClicarFora, useFecharAoClicarForaDe } from "@/lib/useCliqueFora";
 
 describe("deveFecharNoClique", () => {
-  it("pressionou fora e soltou fora -> FECHA", () => {
+  it("só fecha quem pressionou E soltou fora (arrastar selecionando não fecha)", () => {
     expect(deveFecharNoClique(true, true)).toBe(true);
-  });
-  it("pressionou DENTRO e soltou fora -> nao fecha (arrastou selecionando)", () => {
     expect(deveFecharNoClique(false, true)).toBe(false);
-  });
-  it("pressionou fora e soltou DENTRO -> nao fecha", () => {
     expect(deveFecharNoClique(true, false)).toBe(false);
-  });
-  it("pressionou dentro e soltou dentro -> nao fecha", () => {
     expect(deveFecharNoClique(false, false)).toBe(false);
   });
 });
@@ -40,7 +33,6 @@ describe("useFecharAoClicarFora", () => {
   });
 
   it("seleciona texto DENTRO e solta FORA nao fecha", () => {
-    // O caso da captura: arrastar da descricao ate o quadro atras.
     const fechar = vi.fn();
     const { result } = renderHook(() => useFecharAoClicarFora(fechar));
     result.current.onMouseDown(ev(dentroDoCard));
@@ -59,10 +51,8 @@ describe("useFecharAoClicarFora", () => {
   });
 
   it("gesto recusado NAO deixa resto pro clique seguinte", () => {
-    // Regressao do `zera SEMPRE` no onClick. A ordem importa: o resto
-    // perigoso e o `pressionouFora` ficar TRUE de um gesto que nao fechou.
-    // Se ele nao for zerado, basta um mouseup no fundo depois -- sem
-    // mousedown nenhum -- pra fechar por heranca.
+    // O onClick zera sempre: se `pressionouFora` sobrasse TRUE de um gesto
+    // que não fechou, um mouseup no fundo sem mousedown fecharia por herança.
     const fechar = vi.fn();
     const { result } = renderHook(() => useFecharAoClicarFora(fechar));
 
@@ -91,7 +81,7 @@ describe("useFecharAoClicarFora", () => {
   });
 });
 
-describe("useFecharAoClicarForaDe -- o painel suspenso (07/10: eram 15 cópias)", () => {
+describe("useFecharAoClicarForaDe -- o painel suspenso", () => {
   function montar(aberto: boolean, fechar: () => void) {
     const dentro = document.createElement("div");
     const fora = document.createElement("div");

@@ -1,22 +1,14 @@
-"""Spec 053, fatia B -- o backend de SEGUIR uma tarefa.
+"""Seguir uma tarefa: o backend.
 
 A tela diz "seguir"; o codigo e o banco continuam dizendo `watcher`.
 
-O QUE ESTE ARQUIVO PRENDE:
-  - por/tirar OUTRA pessoa grava historico e avisa quem foi posto/tirado (D13,
-    D17); seguir a si mesmo grava historico e NAO avisa;
-  - tarefa arquivada: seguidores so leitura, 422 `tarefa_arquivada` (D10);
-  - a permissao de por terceiro e perguntada NO TIME DA TAREFA (§6.1);
-  - criar com `watcher_ids` pelo HTTP -- a linha do router (§6.10) -- e o 422
-    atomico;
+  - por/tirar OUTRA pessoa grava historico e avisa quem foi posto/tirado;
+    seguir a si mesmo grava historico e NAO avisa;
+  - tarefa arquivada: seguidores so leitura, 422 `tarefa_arquivada`;
+  - a permissao de por terceiro e perguntada NO TIME DA TAREFA;
+  - criar com `watcher_ids` pelo HTTP (a linha do router) e o 422 atomico;
   - trocar o time (PATCH) ou o projeto (move) tira quem deixou de alcancar,
-    com `lost_access` no historico e SEM aviso (D12, §6.8).
-
-SABOTAGENS (medidas):
-  A. Em `tasks_router.create_task`, apagar a linha `watcher_ids=payload.watcher_ids`.
-     Deve cair `test_http_cria_com_seguidor`.
-  B. Em `TaskService.move`, apagar a chamada a `remove_watchers_without_reach`.
-     Deve cair `test_trocar_projeto_tira_seguidor_da_subarvore`.
+    com `lost_access` no historico e SEM aviso.
 """
 
 from __future__ import annotations
@@ -132,7 +124,7 @@ async def test_por_e_tirar_outra_pessoa_grava_historico_e_avisa(db) -> None:
         {"target_user_id": str(op_a), "by_self": False, "reason": "manual"}
     ]
     # ⚠️ Pos e tirou dentro da janela de 10 minutos, sem ninguem ler: os dois
-    # avisos se ANULAM (Spec 053, D18, fatia C). Cada um sozinho avisa -- ver
+    # avisos se ANULAM. Cada um sozinho avisa -- ver
     # `test_por_outra_pessoa_avisa_quem_foi_posto`.
     assert await _avisos(db, op_a, "TASK_WATCH_ADDED") == 0
     assert await _avisos(db, op_a, "TASK_WATCH_REMOVED") == 0
@@ -210,12 +202,11 @@ async def test_por_terceiro_exige_permissao_no_time_da_tarefa(db) -> None:
     tem o proprio time + a raiz, comando tem o time + descendentes. Entao nao
     ha quem veja um TIME sem ter a permissao nele. O que separa as duas coisas
     e o PROJETO: `task_visible` olha `project.team_id`, e a permissao e
-    perguntada no `task.team_id` (Spec 051). Projeto de A, tarefa de B -> o
+    perguntada no `task.team_id`. Projeto de A, tarefa de B -> o
     operador de A ve pelo projeto e nao tem `task.assign` em B.
 
-    ⚠️ Ate a Spec 053 este 403 vinha da EDICAO (`assert_editable`), nao da
-    permissao -- a pergunta era "tem `task.assign` em algum time". O
-    `required_permission` nos detalhes e o que prova qual portao barrou.
+    O `required_permission` nos detalhes prova que barrou a permissao, e nao a
+    edicao.
     """
     ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
     proj_a = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=a)
@@ -342,11 +333,9 @@ async def test_trocar_time_tira_quem_perdeu_alcance_sem_avisar(db) -> None:
 
 async def test_trocar_projeto_tira_seguidor_da_subarvore(db) -> None:
     ws, r, a, b, gerente, op_a, op_b, forest = await _mundo(db)
-    # ⚠️ DO PROJETO DA RAIZ PARA O DO SUBTIME A, e nao mais "do A para o B"
-    # (auditoria de 16/10): mover tarefa do A para projeto do B passou a ser
-    # recusado (o time da tarefa fica na subarvore do projeto). O que este
-    # teste prende continua igual: o projeto decide quem ve -- no da raiz o
-    # operador do B via a tarefa, no do A deixa de ver, e sai de seguidor.
+    # Do projeto da raiz para o do subtime A (mover do A para projeto do B e
+    # recusado). O projeto decide quem ve: no da raiz o operador do B via a
+    # tarefa, no do A deixa de ver, e sai de seguidor.
     proj_r = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=r)
     proj_a = await f.make_project(db, workspace_id=ws, created_by=gerente, team_id=a)
     mae = await f.make_task(
@@ -371,7 +360,7 @@ async def test_trocar_projeto_tira_seguidor_da_subarvore(db) -> None:
 
 
 # ----------------------------------------------------------
-# Spec 053, fatia D: o cadeado do `+` vem do servidor
+# O cadeado do `+` vem do servidor
 # ----------------------------------------------------------
 async def test_http_can_manage_watchers_segue_a_regra_do_servico(db) -> None:
     """`can_manage_watchers` responde a MESMA pergunta de

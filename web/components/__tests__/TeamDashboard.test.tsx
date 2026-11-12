@@ -1,7 +1,7 @@
-// Spec 058, fatia D -- os cards da tela inicial.
+// Os cards da tela inicial.
 //
 // O QUE ESTE ARQUIVO PRENDE:
-//   - D1: sem a carga na resposta (operador), o card não existe -- a tela não
+//   - sem a carga na resposta (operador), o card não existe -- a tela não
 //     decide permissão, só desenha o que veio;
 //   - a carga mostra até 10 e "Ver todos";
 //   - as tarefas citadas levam ao detalhe (`/tarefa/<id>`);
@@ -47,7 +47,7 @@ function resposta(over: Partial<DashboardResponse> = {}): DashboardResponse {
 }
 
 describe("TeamDashboard", () => {
-  it("operador: sem o card de carga nem o de fila (D1)", () => {
+  it("operador: sem o card de carga nem o de fila", () => {
     render(<TeamDashboard data={resposta()} links={LINKS} />);
     expect(screen.queryByRole("region", { name: "Tarefas abertas por pessoa" })).toBeNull();
     expect(screen.queryByRole("region", { name: "Solicitações pendentes" })).toBeNull();
@@ -123,7 +123,7 @@ describe("TeamDashboard", () => {
       />
     );
     expect(screen.getByRole("region", { name: "Ana para hoje" })).toBeTruthy();
-    // ⚠️ os números de cima também são dela (revisão de 15/10)
+    // ⚠️ os números de cima também são da pessoa escolhida
     expect(screen.getByRole("region", { name: "Atrasadas de Ana" })).toBeTruthy();
     expect(screen.queryByRole("link", { name: "Ver todas as minhas tarefas" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Ana Souza" }));
@@ -134,7 +134,7 @@ describe("TeamDashboard", () => {
     render(
       <TeamDashboard
         data={resposta({
-          workload: [{ user_id: "u9", name: "Juliana", open: 2, overdue: 1, is_active: false }],
+          workload: [{ user_id: "u9", name: "Bia", open: 2, overdue: 1, is_active: false }],
         })}
         links={LINKS}
       />

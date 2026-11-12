@@ -1,14 +1,12 @@
-"""Spec 056, fatia B -- as regras da base e da coluna, pelo servico.
+"""As regras da base e da coluna, pelo servico.
 
 A matriz HTTP prova QUEM pode; este arquivo prova O QUE acontece:
 
-    - a base nasce com a coluna de titulo e a visao padrao (D2);
-    - trocar o tipo zera a coluna em toda linha, e so ela (D18);
+    - a base nasce com a coluna de titulo e a visao padrao;
+    - trocar o tipo zera a coluna em toda linha, e so ela;
     - opcao: renomear nao toca linha; sumir da lista nao apaga (422);
-      apagar marca, e a celula continua guardando o id (D17);
+      apagar marca, e a celula continua guardando o id;
     - a coluna de titulo nao se apaga nem troca de tipo.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -60,7 +58,7 @@ def _como_admin(m: dict):
 
 
 async def test_a_base_nasce_com_titulo_e_visao_padrao(db) -> None:
-    """D2: zerada, mas nunca sem coluna de titulo e sem visao de tabela."""
+    """Zerada, mas nunca sem coluna de titulo e sem visao de tabela."""
     m = await _mundo(db)
     with _como_admin(m):
         detail = await BaseService(db).create(
@@ -78,7 +76,7 @@ async def test_base_em_subtime_e_recusada(db) -> None:
 
 
 async def test_trocar_o_tipo_zera_so_aquela_coluna(db) -> None:
-    """⭐ D18: os valores da coluna somem de toda linha; o titulo fica."""
+    """Os valores da coluna somem de toda linha; o titulo fica."""
     m = await _mundo(db)
     with _como_operador(m):
         coluna = await BaseService(db).update_column(
@@ -107,6 +105,9 @@ async def test_renomear_opcao_nao_toca_a_linha(db) -> None:
     assert [o["label"] for o in vivas] == ["IG", "LinkedIn"]
     assert vivas[0]["id"] == m["opcao"]
     linha = await db.get(BaseRow, m["linha"])
+    # refresh: sem ele a linha vem do identity map, e um UPDATE em massa
+    # (`clear_column`, `synchronize_session=False`) passaria despercebido.
+    await db.refresh(linha)
     assert linha.values[str(m["coluna"])] == m["opcao"]
 
 
@@ -120,8 +121,8 @@ async def test_sumir_da_lista_nao_apaga_opcao(db) -> None:
 
 
 async def test_apagar_opcao_marca_e_a_celula_guarda_o_id(db) -> None:
-    """D17: a celula fica com o id (a tela a mostra vazia); o desfazer da fatia
-    C so tira a marca."""
+    """A celula fica com o id (a tela a mostra vazia); o desfazer so tira a
+    marca."""
     m = await _mundo(db)
     with _como_operador(m):
         svc = BaseService(db)
@@ -130,6 +131,9 @@ async def test_apagar_opcao_marca_e_a_celula_guarda_o_id(db) -> None:
         with pytest.raises(EntityNotFoundError):
             await svc.delete_option(m["base"], m["coluna"], m["opcao"])
     linha = await db.get(BaseRow, m["linha"])
+    # refresh: sem ele a linha vem do identity map, e um UPDATE em massa
+    # (`clear_column`, `synchronize_session=False`) passaria despercebido.
+    await db.refresh(linha)
     assert linha.values[str(m["coluna"])] == m["opcao"]
 
 
@@ -158,6 +162,7 @@ async def test_apagar_coluna_marca_e_some_do_detalhe(db) -> None:
     assert apagada.deleted_at is not None
     # os valores FICAM na linha -- o desfazer precisa deles
     linha = await db.get(BaseRow, m["linha"])
+    await db.refresh(linha)
     assert str(m["coluna"]) in linha.values
 
 

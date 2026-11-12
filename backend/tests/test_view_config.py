@@ -1,4 +1,4 @@
-"""Auditoria de 21/10 -- o `config` da visao da Base tem teto de tamanho."""
+"""O `config` da visao da Base tem teto de tamanho."""
 
 import pytest
 

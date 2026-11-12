@@ -1,18 +1,10 @@
-"""O cabeçalho do formulário deixa de ser fixo (Spec 043, fatia G).
+"""O cabeçalho do formulário é configurável.
 
-⚠️⚠️ CINCO CAMPOS DE IDENTIFICAÇÃO ESTAVAM ESCRITOS NO CÓDIGO do front, todos
-obrigatórios, e três deles são vocabulário da FECAF. A Camila viu ao criar o
-segundo formulário: *"não é todo formulário que chama fazae também e tals,
-muitas variáveis aí"*. "Polo" não significa nada num formulário de TI.
+⚠️ A OBRIGATORIEDADE MORA NO CABEÇALHO do formulário, não no schema: rótulo
+preenchido = pergunta e exige; `NULL` = não pergunta.
 
-⚠️ E A OBRIGATORIEDADE MUDOU DE LUGAR, que é a parte que dá errado se ficar
-pela metade. Ela morava no schema (`min_length`), o que recusava o pedido antes
-de o servidor saber por qual porta ele entrou. Agora quem decide é o CABEÇALHO
-do formulário: rótulo preenchido = pergunta e exige; `NULL` = não pergunta.
-
-⚠️ NOME E E-MAIL CONTINUAM OBRIGATÓRIOS, e não é esquecimento: a fila é
-organizada por quem pediu, e a resposta automática de mudança de status
-(fatia F) só existe se houver endereço. Há teste para que continuem.
+Nome e e-mail ficam fora do cabeçalho configurável e são exigidos pelo schema
+(`tests/test_public_solicitation_schema.py`).
 """
 
 from __future__ import annotations
@@ -31,14 +23,15 @@ from app.modules.solicitations.application.service import (
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, node
-from tests.integration.test_solicitations_db import _make_ws_with_slug
+from tests.integration.test_solicitations_db import _ws_com_formulario
 
 pytestmark = pytest.mark.integration
 
 
 async def _formulario(db, *, rotulos: dict | None = None):
     """Um formulário publicado, com uma seção e uma pergunta."""
-    ws, slug = await _make_ws_with_slug(db)
+    ws, base = await _ws_com_formulario(db)
+    slug = base.slug
     raiz = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
@@ -92,8 +85,8 @@ def _envio(slug, form_id, **over):
 async def test_formulario_sem_POLO_nao_exige_e_nao_grava(db) -> None:
     """⚠️ E DESCARTA O QUE VEIO À TOA.
 
-    Um cliente antigo (ou uma aba aberta desde antes do deploy) continua
-    mandando os cinco campos. Gravar um "Polo: Taboão" que o formulário não
+    Um cliente antigo (ou uma aba aberta desde antes do deploy) pode mandar
+    os cinco campos. Gravar um "Polo: Taboão" que o formulário não
     perguntou poria na fila um dado que ninguém pediu e que a tela não sabe
     rotular.
     """
@@ -123,8 +116,7 @@ async def test_sem_polo_o_envio_passa_mesmo_SEM_o_campo(db) -> None:
 
 
 async def test_formulario_QUE_pergunta_continua_exigindo(db) -> None:
-    """⚠️ A OBRIGATORIEDADE NÃO SUMIU -- ela mudou de dono. Rótulo preenchido
-    significa "pergunta E exige"."""
+    """Rótulo preenchido significa "pergunta E exige"."""
     ws, slug, form, ctx = await _formulario(db)  # rótulos padrão
 
     with pytest.raises(ValidationError) as erro:
@@ -147,25 +139,6 @@ async def test_o_ROTULO_renomeado_aparece_na_recusa(db) -> None:
                 uow, _envio(slug, form.id, requester_polo=None)
             )
     assert "Unidade" in str(erro.value)
-
-
-# ==========================================================
-# O que NÃO é configurável
-# ==========================================================
-async def test_NOME_e_EMAIL_continuam_obrigatorios(db) -> None:
-    """⚠️⚠️ A FILA É ORGANIZADA POR QUEM PEDIU, e a resposta automática de
-    mudança de status (fatia F) só existe se houver endereço. Torná-los
-    opcionais quebraria a funcionalidade seguinte -- por isso eles não entram
-    no cabeçalho configurável, e este teste é o que garante que não entrem
-    depois por descuido."""
-    ws, slug, form, ctx = await _formulario(db)
-    with acting_as(**ctx):
-        svc = SolicitationFormService(db)
-        import inspect
-
-        assinatura = inspect.signature(svc.renomear_formulario).parameters
-    assert "name_label" not in assinatura
-    assert "email_label" not in assinatura
 
 
 # ==========================================================
@@ -211,34 +184,3 @@ async def test_editar_o_TITULO_nao_mexe_nos_rotulos(db) -> None:
     assert editado.phone_label == "Telefone"
     assert editado.department_label == "Área / Departamento"
     assert editado.polo_label == "Polo"
-
-
-async def test_formulario_novo_nasce_pedindo_os_cinco(db) -> None:
-    """⚠️ COMPATIBILIDADE: o comportamento de sempre é o padrão. Quem quiser
-    menos, tira -- e não o contrário."""
-    ws, slug, form, ctx = await _formulario(db)
-    assert form.phone_label == "Telefone"
-    assert form.department_label == "Área / Departamento"
-    assert form.polo_label == "Polo"
-
-
-# ==========================================================
-# O caminho antigo
-# ==========================================================
-async def test_envio_SEM_form_id_continua_exigindo_os_tres(db) -> None:
-    """⚠️ COMPATIBILIDADE DA ABA ABERTA. Sem `form_id` não há cabeçalho para
-    consultar, então vale a regra antiga -- o mesmo ramo da validação de
-    categoria, e ele morre junto com ela."""
-    ws, slug = await _make_ws_with_slug(db)
-    with pytest.raises(ValidationError):
-        async with UnitOfWork(db) as uow:
-            await SolicitationService(db).create_public(
-                uow,
-                _envio(slug, None, requester_polo=None, items=[
-                    SolicitationItem(
-                        category="arte",
-                        summary="Banner",
-                        answers=[{"label": "O quê?", "value": "um banner"}],
-                    )
-                ]),
-            )

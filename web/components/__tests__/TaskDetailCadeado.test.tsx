@@ -1,4 +1,4 @@
-// Spec 051, fatia A -- o "Excluir" da tarefa e a moderação de comentário vêm da
+// O "Excluir" da tarefa e a moderação de comentário vêm da
 // TAREFA (`can_delete`), e não de `me.permissions`.
 //
 // ⚠️ O CASO QUE ESTE ARQUIVO PRENDE: quem é gerente no Marketing e operador no
@@ -23,7 +23,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // Sem isto a busca de links vai à rede, falha, e
     // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
@@ -155,12 +155,12 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TaskDetail -- o cadeado vem da tarefa (Spec 051, fatia A)", () => {
+describe("TaskDetail -- o cadeado vem da tarefa", () => {
   it("⚠️ `can_delete: false`: sem Excluir e sem lixeira no comentário alheio -- com `task.delete` no /auth/me", async () => {
     montar({ can_delete: false });
     // O comentário carregou (e com ele o `me`): a partir daqui a ausência vale.
     expect(await screen.findByText("comentário de outra pessoa")).toBeTruthy();
-    // Excluir mora no "⋯" desde 05/11: abre o menu antes de afirmar a ausencia.
+    // Excluir mora no "⋯": abre o menu antes de afirmar a ausencia.
     fireEvent.click(await screen.findByRole("button", { name: "Mais ações" }));
     expect(await screen.findByRole("menuitem", { name: "Arquivar" })).toBeTruthy();
     expect(screen.queryByRole("menuitem", { name: "Excluir" })).toBeNull();

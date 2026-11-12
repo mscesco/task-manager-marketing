@@ -1,7 +1,6 @@
-"""O aviso de mudança de status ao solicitante (Spec 043, fatia F).
+"""O aviso de mudança de status ao solicitante (webhook do n8n).
 
-⚠️⚠️ **ESTA É A PRIMEIRA CHAMADA DE SAÍDA DO BACKEND.** Tudo o que ele fazia
-até aqui era responder a quem chamou. As quatro regras do §8 existem porque
+⚠️⚠️ **É UMA CHAMADA DE SAÍDA DO BACKEND.** As quatro regras existem porque
 cada uma, sozinha, transforma um serviço externo lento ou fora do ar num
 defeito NOSSO — e são elas que este arquivo prende:
 
@@ -33,7 +32,7 @@ from tests.integration import factories as f
 from tests.integration.conftest import acting_as, node
 from tests.integration.test_solicitations_db import (
     _criar_uma,
-    _make_ws_with_slug,
+    _ws_com_formulario,
 )
 
 pytestmark = pytest.mark.integration
@@ -79,7 +78,7 @@ def n8n(monkeypatch):
 
 
 async def _cena(db):
-    ws, slug = await _make_ws_with_slug(db)
+    ws, slug = await _ws_com_formulario(db)
     raiz = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     await db.flush()
@@ -88,8 +87,8 @@ async def _cena(db):
         workspace_id=ws,
         user_id=user,
         team_tree=(node(raiz),),
-        # ⚠️ Spec 051, fatia B: o pedido desta cena e ORFAO (a rota publica sem
-        # formulario), e orfa passou a ser so de quem administra a ORGANIZACAO.
+        # O usuario nao e membro do time do formulario: aprova como ADMIN de
+        # organizacao.
         org_role="ADMIN",
     )
     return ws, pedido, ctx
@@ -140,6 +139,21 @@ async def test_n8n_FORA_DO_AR_nao_impede_a_aprovacao(db, n8n, monkeypatch) -> No
 async def test_n8n_RESPONDENDO_ERRO_tambem_nao_derruba(db, n8n, monkeypatch) -> None:
     """Workflow desativado responde 404. Isso não pode virar problema nosso --
     mas tem de aparecer no log, senão ninguém descobre que os avisos pararam."""
+    avisos: list[tuple[str, dict]] = []
+
+    class _Log:
+        def warning(self, evento, **kw):
+            avisos.append((evento, kw))
+
+        def info(self, *a, **kw):
+            pass
+
+        def exception(self, *a, **kw):
+            pass
+
+    # `structlog` com cache por logger: trocar o objeto e mais confiavel que
+    # capturar a saida.
+    monkeypatch.setattr(aviso_de_status, "logger", _Log())
 
     class _Recusa:
         def __init__(self, *a, **kw):
@@ -163,6 +177,9 @@ async def test_n8n_RESPONDENDO_ERRO_tambem_nao_derruba(db, n8n, monkeypatch) -> 
     with acting_as(**ctx):
         aprovada = await _aprovar(db, pedido)
     assert aprovada.status == "APPROVED"
+    assert [(e, kw["http_status"]) for e, kw in avisos] == [
+        ("solicitacao.aviso_recusado", 404)
+    ]
 
 
 # ==========================================================
@@ -195,10 +212,10 @@ async def test_SEM_URL_nao_chama_nada_e_nao_e_erro(db, monkeypatch) -> None:
 # O corpo que realmente sai
 # ==========================================================
 async def test_o_corpo_segue_o_contrato_combinado(db, n8n) -> None:
-    """⚠️ O CONTRATO FOI COMBINADO COM A CAMILA EM 27/08, e ela montou o fluxo
-    do n8n contra ele -- os `{{ $json.… }}` dos templates de e-mail apontam
-    para estes nomes. Mudar um campo aqui quebra a mensagem que chega na caixa
-    de alguém, sem erro nenhum no meio do caminho."""
+    """⚠️ O fluxo do n8n foi montado contra este contrato: os `{{ $json.… }}`
+    dos templates de e-mail apontam para estes nomes. Mudar um campo aqui
+    quebra a mensagem que chega na caixa de alguém, sem erro nenhum no meio do
+    caminho."""
     ws, pedido, ctx = await _cena(db)
     with acting_as(**ctx):
         await _aprovar(db, pedido)
@@ -274,7 +291,7 @@ async def test_ANDAR_tambem_avisa_e_diz_de_onde_veio(db, n8n) -> None:
 
 
 async def test_campo_que_o_formulario_NAO_pergunta_vai_nulo(db, n8n) -> None:
-    """⚠️ FATIA G: `telefone`, `área` e `polo` podem não existir. O template do
+    """⚠️ `telefone`, `área` e `polo` podem não ser perguntados. O template do
     n8n precisa poder confiar que `nome` e `email` nunca são nulos, e que os
     outros três podem ser."""
     ws, pedido, ctx = await _cena(db)

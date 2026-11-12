@@ -144,9 +144,8 @@ def decode_token(token: str, *, expected_type: TokenType) -> dict[str, Any]:
 
 
 def token_version_of(payload: dict[str, Any]) -> int:
-    """Le o claim `tv` de um payload ja decodificado.
-
-    Ausente vale 0, nunca erro: tokens antigos sem o claim continuam validos.
-    """
-    valor = payload.get("tv", 0)
-    return valor if isinstance(valor, int) else 0
+    """Le o claim `tv` de um payload ja decodificado; sem ele o token e invalido."""
+    valor = payload.get("tv")
+    if not isinstance(valor, int):
+        raise AuthenticationError("Token invalido.")
+    return valor

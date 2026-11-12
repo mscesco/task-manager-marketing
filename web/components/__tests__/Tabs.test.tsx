@@ -1,4 +1,4 @@
-// Spec 047, revisão de 09/09 -- as abas e o alternador.
+// As abas e o alternador.
 //
 // ⚠️ O QUE ELE **NÃO** COBRE: a animação. O `layoutId` do motion mede
 // posições reais, e o jsdom não tem layout -- toda medida é zero. Testar
@@ -16,22 +16,9 @@
 //     `layoutId`, e as duas quebras possíveis são silenciosas: a animação
 //     simplesmente para, e nada acusa.
 //
-// SABOTAGENS medidas:
-//   A. Trocar `contagem !== undefined` por um ternário sobre a verdade
-//      (`contagem ? … : null`). **Cai 1**: "mostra 0". MEDIDO.
-//   B. Tirar o `aria-selected`. **Cai 2**.
-//   C. Pôr a pastilha do alternador em `absolute` e movê-la com `left` na
-//      mão -- que é a reescrita tentadora, porque "funciona" olhando a tela
-//      parada. **Cai 2**, MEDIDO: ela deixa de ser o filho em fluxo e o
-//      `justify-content` para de mover coisa alguma, então o `layout` do
-//      motion fica sem nada para observar e a pastilha vai de teleporte.
-//
-// ⚠️ E uma que eu previa e NÃO cai, o que vale mais registrar do que as que
-// caem: trocar por `{aba.contagem && …}`. Parece o erro clássico do `0`
-// falsy, mas `0 && x` avalia para `0` e o React RENDERIZA o zero -- solto,
-// sem o `<span>`, e portanto sem o espaçamento e o tom apagado. O texto
-// continua lá, então nenhuma asserção de conteúdo pega. Quem quiser prender
-// a FORMA do número precisa afirmar sobre o elemento, não sobre o texto.
+// Armadilha: `{aba.contagem && …}` NÃO cai aqui. `0 && x` dá `0` e o React
+// renderiza o zero solto, sem o `<span>`; o texto continua lá. Prender a FORMA
+// do número exige afirmar sobre o elemento.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -130,7 +117,7 @@ describe("Toggle", () => {
   });
 
   it("⭐ a pastilha é UM elemento só, montado desde o início", () => {
-    // ⚠️⚠️ É a diferença entre `layout` e `layoutId`, e é o pedido da Camila.
+    // ⚠️⚠️ É a diferença entre `layout` e `layoutId`.
     // Com `layoutId` haveria uma instância por lado, montada e desmontada a
     // cada clique; aqui há UMA, e ela ANDA. O teste prende isso pela via que
     // o jsdom permite: a mesma pastilha existe nos dois estados, e é filha

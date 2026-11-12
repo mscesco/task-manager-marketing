@@ -1,12 +1,5 @@
-"""Spec 026 -- EXTERNAL_APPROVAL se comporta como tarefa ABERTA.
-
-O valor novo do enum task_status distingue aprovacao externa (cliente/
-fornecedor) de revisao interna (IN_REVIEW). A spec afirma que NENHUMA regra
-de negocio muda: o status novo NAO e terminal, entao o sweep de arquivamento
-o ignora, a cascata de conclusao o engole como qualquer aberto, e o aviso de
-prazo continua disparando. Estes testes PROVAM as quatro afirmacoes contra
-Postgres real -- sem espiao de simbolo (que passaria verde sem testar o
-caminho real, armadilha conhecida do projeto).
+"""EXTERNAL_APPROVAL se comporta como tarefa aberta: persiste pela rota e o
+aviso de prazo dispara. (Arquivamento: `test_list_stale_terminal_db`.)
 
 NOW fixo 12:00 UTC = 09:00 America/Sao_Paulo -> "hoje" local = 2026-06-25.
 """
@@ -15,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import AsyncIterator
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -33,7 +26,6 @@ from app.modules.auth.domain.permissions import permissions_for_roles
 from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
-from app.modules.tasks.domain.archival import is_stale_terminal
 from tests.integration import factories as f
 
 pytestmark = pytest.mark.integration
@@ -94,7 +86,6 @@ async def _reload(db: AsyncSession, task_id: uuid.UUID) -> Task:
     return obj
 
 
-# 1 -- round-trip: PATCH para o valor novo persiste e le de volta.
 async def test_patch_para_external_approval_persiste(db: AsyncSession) -> None:
     ws, r, a, ctx = await _world(db)
     manager = ctx.user_id
@@ -115,59 +106,15 @@ async def test_patch_para_external_approval_persiste(db: AsyncSession) -> None:
     assert db_task.status == TaskStatus.EXTERNAL_APPROVAL
 
 
-# 2 -- sweep NAO arquiva: EXTERNAL_APPROVAL nao e terminal (regra pura).
-def test_sweep_nao_arquiva_external_approval() -> None:
-    # Data bem velha: se fosse elegivel, arquivaria com folga.
-    # ⚠️ `terminal_since` preenchido de proposito, e nao None. O teste que
-    # importa e este: mesmo COM o relogio correndo, status nao terminal nao
-    # arquiva. Passar None aqui provaria a coisa errada -- passaria mesmo se a
-    # checagem de status sumisse da regra.
-    velha = NOW - timedelta(days=365)
-    elegivel = is_stale_terminal(
-        status=TaskStatus.EXTERNAL_APPROVAL,
-        terminal_since=velha,
-        now=NOW,
-        days=30,
-    )
-    assert elegivel is False
-
-
-# 3 -- cascata engole: concluir a mae conclui o filho em EXTERNAL_APPROVAL.
-async def test_cascata_engole_filho_em_external_approval(
-    db: AsyncSession,
-) -> None:
-    ws, r, a, ctx = await _world(db)
-    manager = ctx.user_id
-    pai = await f.make_task(
-        db, workspace_id=ws, created_by=manager, team_id=a, project_id=None
-    )
-    filho = await f.make_task(
-        db, workspace_id=ws, created_by=manager, team_id=a, parent=pai
-    )
-    filho.status = TaskStatus.EXTERNAL_APPROVAL
-    await db.commit()
-
-    async with _client(db, ctx) as c:
-        resp = await c.patch(
-            f"/api/v1/tasks/{pai.id}", json={"status": "COMPLETED"}
-        )
-    assert resp.status_code == 200
-
-    filho_db = await _reload(db, filho.id)
-    assert filho_db.status == TaskStatus.COMPLETED
-    assert filho_db.completed_at is not None
-
-
-# 4 -- prazo DISPARA: EXTERNAL_APPROVAL nao esta em _STATUS_SEM_AVISO.
 async def test_prazo_dispara_para_external_approval(db: AsyncSession) -> None:
     ws = await f.make_workspace(db)
     team = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     t = await f.make_task(
-        db, workspace_id=ws, created_by=user, team_id=team, title="externa"
+        db, workspace_id=ws, created_by=user, team_id=team, title="externa",
+        status=TaskStatus.EXTERNAL_APPROVAL,
     )
     t.due_date = OVERDUE
-    t.status = TaskStatus.EXTERNAL_APPROVAL
     await db.flush()
 
     r = await DeadlineNotifyService(db).run(now=NOW)

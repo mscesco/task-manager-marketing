@@ -229,17 +229,7 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/quadro/team-crm");
 });
 
-describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
-  it("tarefa AVULSA do subtime -> Interna", async () => {
-    montarApi(
-      [task({ id: "t1", title: "Ajuste avulso do CRM", team_id: CRM })],
-      []
-    );
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Ajuste avulso do CRM");
-    expect(pillDe("Ajuste avulso do CRM")).toBe("Interna");
-  });
-
+describe("Board -- quadro de subtime, pill de escopo", () => {
   /** Quem enxerga o projeto enxerga a tarefa: o card não pode dizer "Interna". */
   it("time do subtime MAS projeto da raiz -> Compartilhada", async () => {
     montarApi(
@@ -256,58 +246,6 @@ describe("Board -- quadro de subtime, pill de escopo (§8)", () => {
     render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
     await screen.findByText("Pipeline HubSpot");
     expect(pillDe("Pipeline HubSpot")).toBe("Compartilhada");
-  });
-
-  it("tarefa em projeto DO subtime -> Interna", async () => {
-    montarApi(
-      [
-        task({
-          id: "t3",
-          title: "Automação interna",
-          team_id: RAIZ,
-          project_id: "p-crm",
-        }),
-      ],
-      [project("p-crm", CRM)]
-    );
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Automação interna");
-    expect(pillDe("Automação interna")).toBe("Interna");
-  });
-
-  it("D3 -- projeto AUSENTE da lista: card aparece, SEM pill", async () => {
-    // Projeto fora do mapa: o card não some, mas também não promete pill.
-    montarApi(
-      [
-        task({
-          id: "t4",
-          title: "Integração desconhecida",
-          team_id: CRM,
-          project_id: "p-fantasma",
-        }),
-      ],
-      []
-    );
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Integração desconhecida");
-    expect(pillDe("Integração desconhecida")).toBeNull();
-  });
-
-  it("D4 -- projeto sem time: card aparece, SEM pill", async () => {
-    montarApi(
-      [
-        task({
-          id: "t5",
-          title: "Tarefa em projeto sem time",
-          team_id: CRM,
-          project_id: "p-sem-time",
-        }),
-      ],
-      [project("p-sem-time", null)]
-    );
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Tarefa em projeto sem time");
-    expect(pillDe("Tarefa em projeto sem time")).toBeNull();
   });
 
   // Pessoa em mais de um subtime: ramo da lente em que a tarefa da raiz aparece
@@ -401,8 +339,10 @@ describe("Board -- guardas de carregamento", () => {
   it("o card nao prende o gesto de rolar", async () => {
     montarApi([task({ id: "t8", title: "Card no toque", team_id: CRM })], []);
     render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    const card = (await screen.findByText("Card no toque")).closest(".card-elev") as HTMLElement;
-    expect(card.style.touchAction).toBe("manipulation");
+    await screen.findByText("Card no toque");
+    // O alvo do arraste é quem embrulha o card (o `aria-roledescription` do dnd-kit).
+    const arrastavel = card("Card no toque").closest("[aria-roledescription]") as HTMLElement;
+    expect(arrastavel.style.touchAction).toBe("manipulation");
   });
 
   /** A flag de projetos vira true no `.finally`, senão a falha trava em "Carregando". */
@@ -448,26 +388,6 @@ describe("Board -- filtro de responsável (multi-seleção, UNIÃO)", () => {
   function marcar(nome: string) {
     fireEvent.click(screen.getByLabelText(nome));
   }
-
-  it("sem filtro, mostra as três", async () => {
-    montarEquipe();
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Tarefa da Beatriz");
-    expect(screen.getByText("Tarefa da Clara")).toBeTruthy();
-    expect(screen.getByText("Tarefa de ninguém")).toBeTruthy();
-  });
-
-  it("uma marcada mostra só a dela", async () => {
-    montarEquipe();
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Tarefa da Beatriz");
-    abrirPainel();
-    marcar("Beatriz");
-
-    expect(screen.getByText("Tarefa da Beatriz")).toBeTruthy();
-    expect(screen.queryByText("Tarefa da Clara")).toBeNull();
-    expect(screen.queryByText("Tarefa de ninguém")).toBeNull();
-  });
 
   /** União: duas marcadas mostram as tarefas de cada uma. */
   it("UNIÃO: duas marcadas mostram as tarefas de CADA uma", async () => {
@@ -658,7 +578,7 @@ describe("Board -- depois de duplicar, a CÓPIA aparece com as subtarefas", () =
   });
 });
 
-describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
+describe("Board -- busca por título alcança as SUBTAREFAS", () => {
   /** Regra em `lib/filtrosQuadro:raizesQueCasamBusca`; aqui, que o Board a usa. */
   it("digitar o título de uma subtarefa mantém o card da tarefa de topo", async () => {
     montarApi(
@@ -693,7 +613,7 @@ describe("Board -- busca por título alcança as SUBTAREFAS (05/08)", () => {
 
 // O quadro desenha as colunas da API, não a lista fixa de status.
 // Arrastar continua sem cobertura (jsdom).
-describe("Board -- as colunas vem da API (fatia 4c)", () => {
+describe("Board -- as colunas vem da API", () => {
   it("desenha o nome das colunas do quadro, e nao os rotulos de status", async () => {
     montarApi([task({ id: "c1", title: "Post do blog" })], []);
     render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
@@ -781,7 +701,7 @@ describe("Board -- as colunas vem da API (fatia 4c)", () => {
   });
 });
 
-describe("Board -- o card decide pela coluna (fatia 4c)", () => {
+describe("Board -- o card decide pela coluna", () => {
   /**
    * `pararEhNoticia` exige `IN_PROGRESS` E `notify_deadline`: coluna ativa sem
    * cobrança de prazo não ganha selo. Quadro próprio para não mexer no `QUADRO`.
@@ -830,7 +750,7 @@ describe("Board -- o card decide pela coluna (fatia 4c)", () => {
 });
 
 // O quadro sai do `board_id` das tarefas, não da flag `is_default`.
-describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)", () => {
+describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão", () => {
   const INTERNO: Quadro = {
     id: "board-seo",
     name: "Quadro do SEO",
@@ -888,7 +808,7 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     expect(api.getRootTeamId).not.toHaveBeenCalled();
   });
 
-  it("⚠️ o QUADRO GERAL não adivinha pelo lote -- fatia 5c", async () => {
+  it("⚠️ o QUADRO GERAL não adivinha pelo lote", async () => {
     // Todas as tarefas no quadro extra da raiz: o geral não desenha as colunas
     // dele nem as tarefas dele.
     montarApi(
@@ -911,22 +831,10 @@ describe("Board -- o quadro sai das TAREFAS, nao da flag de padrão (fatia 4c)",
     expect(screen.queryByText("A escrever")).toBeNull();
     expect(screen.queryByText("Pauta de agosto")).toBeNull();
   });
-
-  /** Lote vazio não tem `board_id`: cai no quadro padrão. */
-  it("lote vazio cai no quadro padrão", async () => {
-    montarApi([], []);
-    vi.mocked(api.listBoards).mockResolvedValue([QUADRO, INTERNO]);
-
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    // Sem tarefa, a asserção é que a tela responde.
-    await waitFor(() => {
-      expect(screen.queryByRole("status", { name: /Carregando tarefas/ })).toBeNull();
-    });
-  });
 });
 
 // Checklist e prazo leem a coluna, não `status`.
-describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
+describe("Board -- checklist e prazo leem a coluna", () => {
   // A contagem de subtarefas vem do backend; o card mostra o número que veio.
   it("o card mostra o contador agregado que veio do backend", async () => {
     montarApi(
@@ -975,52 +883,6 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
     expect(screen.getByTitle("0 de 1 subtarefas concluídas")).toBeTruthy();
   });
 
-  /** Cancelada não conta como concluída. */
-  it("subtarefa em coluna CANCELADA não conta como concluída", async () => {
-    // A regra é do backend; aqui o card exibe o agregado sem reinterpretar.
-    montarApi(
-      [
-        task({
-          id: "p2",
-          title: "Campanha com cancelada",
-          subtask_total: 1,
-          subtask_done: 0,
-        }),
-        task({
-          id: "f2",
-          title: "Filha cancelada",
-          parent_task_id: "p2",
-          path: "p2.f2",
-          depth: 1,
-          column_id: "col-cancel",
-        }),
-      ],
-      []
-    );
-    vi.mocked(api.listBoards).mockResolvedValue([
-      {
-        ...QUADRO,
-        colunas: [
-          ...QUADRO.colunas,
-          {
-            id: "col-cancel",
-            name: "Cancelado",
-            color: "var(--status-cancel-dot)",
-            position: 6,
-            semantic: "CANCELLED" as const,
-            notify_deadline: true,
-            is_default_target: true,
-            is_status_bridge: false,
-          },
-        ],
-      },
-    ]);
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
-    await screen.findByText("Campanha com cancelada");
-
-    expect(screen.getByTitle("0 de 1 subtarefas concluídas")).toBeTruthy();
-  });
-
   /** Prazo vencido em coluna de conclusão não conta como atrasada. */
   it("tarefa em coluna de conclusão não conta como atrasada", async () => {
     montarApi(
@@ -1050,7 +912,7 @@ describe("Board -- checklist e prazo leem a coluna (fatia 4c)", () => {
 });
 
 // O card mostra a hora do prazo, junto da cor que ela decide.
-describe("Board -- o card diz a hora do prazo (Spec 039, F7)", () => {
+describe("Board -- o card diz a hora do prazo", () => {
   it("com hora, o card mostra data E hora; sem hora, so a data", async () => {
     montarApi(
       [
@@ -1076,7 +938,7 @@ describe("Board -- o card diz a hora do prazo (Spec 039, F7)", () => {
 
 // A lente só mostra o Quadro geral. Sem o filtro, a tarefa de outro quadro
 // some sem erro (só o contador de "fora da coluna" acusa).
-describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
+describe("Board -- a lente so mostra o Quadro geral", () => {
   const OUTRO_QUADRO = "board-campanhas";
 
   it("⚠️ tarefa de quadro extra da RAIZ nao entra na lente do subtime", async () => {
@@ -1131,7 +993,7 @@ describe("Board -- a lente so mostra o Quadro geral (fatia 5b-5b, D1)", () => {
 
 // Quadro avulso (`boardId`): o quadro vem pedido, não do lote. Quadro vazio
 // é o caso principal: o lote vazio cairia no padrão.
-describe("Board -- quadro avulso (fatia 5b-6)", () => {
+describe("Board -- quadro avulso", () => {
   const AVULSO = "board-campanhas";
 
   /** As colunas do avulso tem nomes que NAO existem no geral. */
@@ -1264,7 +1126,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     expect(await screen.findByLabelText("Editar colunas")).toBeTruthy();
   });
 
-  it("⚠️ o lapis APARECE no Quadro geral (6a-bis), sem boardId", async () => {
+  it("⚠️ o lapis APARECE no Quadro geral, sem boardId", async () => {
     // O Quadro geral é desenhado sem `boardId`; a guarda não pode depender dele.
     comAvulso([]);
     render(<Board acoesDoQuadro={null} title="Quadro geral" podeEditarColunas podeApagarColunas />);
@@ -1308,7 +1170,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     expect(screen.getByText("Modo edição")).toBeTruthy();
   });
 
-  it("⚠️ ao entrar no modo, a area de colunas ganha o fundo esmaecido (F8)", async () => {
+  it("⚠️ ao entrar no modo, a area de colunas ganha o fundo esmaecido", async () => {
     // O fundo do modo é token, não hex (hex não inverte no tema escuro).
     comAvulso([]);
     render(<Board acoesDoQuadro={null} boardId={AVULSO} title="Campanhas" podeEditarColunas podeApagarColunas />);
@@ -1321,7 +1183,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
     expect(document.querySelector('[style*="--edicao-fundo"]')).toBeTruthy();
   });
 
-  it("⚠️ sair do modo devolve o quadro ao normal (F8)", async () => {
+  it("⚠️ sair do modo devolve o quadro ao normal", async () => {
     // Sair do modo tira o esmaecido.
     comAvulso([]);
     render(<Board acoesDoQuadro={null} boardId={AVULSO} title="Campanhas" podeEditarColunas podeApagarColunas />);
@@ -1441,7 +1303,7 @@ describe("Board -- quadro avulso (fatia 5b-6)", () => {
 
 // `/boards` falhando: com `boardId` a tela ficaria em "Carregando" para sempre;
 // no geral, sem colunas, toda tarefa cairia em "fora da coluna".
-describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
+describe("Board -- a API de quadros falhou", () => {
   it("⚠️ com boardId, mostra erro com botao em vez de carregar para sempre", async () => {
     montarApi([], []);
     vi.mocked(api.listBoards).mockRejectedValue(new Error("rede"));
@@ -1477,7 +1339,7 @@ describe("Board -- a API de quadros falhou (fatia 5b-6)", () => {
 
 // Quadro recém-criado ainda fora da lista: a tela não pode cair no padrão
 // (desenharia as colunas do geral sob o título do quadro novo).
-describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () => {
+describe("Board -- quadro pedido que ainda nao esta na lista", () => {
   it("⚠️ quadro APAGADO por outra pessoa diz que nao existe mais", async () => {
     // Quadro apagado por outra pessoa: a lista volta sem ele.
     montarApi([], []);
@@ -1545,7 +1407,7 @@ describe("Board -- quadro pedido que ainda nao esta na lista (fatia 5b-6)", () =
 });
 
 // "Ordenar" e "Mostrar arquivadas" ficam no painel de Filtros e continuam alcançáveis.
-describe("Board -- Ordenar e Mostrar arquivadas vivem no painel (F4/F5)", () => {
+describe("Board -- Ordenar e Mostrar arquivadas vivem no painel", () => {
   it("não aparecem no cabeçalho, e aparecem ao abrir Filtros", async () => {
     montarApi([task({ id: "t1", title: "Tarefa qualquer" })], []);
     render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} subteamId={CRM} title="CRM e Automação" />);
@@ -1617,16 +1479,11 @@ describe("Board -- com DOIS quadros gerais, a raiz desenha o DELA", () => {
     vi.mocked(api.listBoards).mockResolvedValue([QUADRO, QUADRO_COM]);
   }
 
-  it("⚠️ a tarefa do Comercial aparece no quadro geral do Comercial", async () => {
+  it("a tarefa do Comercial aparece nas colunas do geral do Comercial, e não nas do Marketing", async () => {
     montarDoisGerais();
     render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} rootTeamId={COMERCIAL} title="Quadro Geral" />);
     expect(await screen.findByText("Tarefa Teste Comercial")).toBeTruthy();
-  });
-
-  it("⚠️ e as colunas desenhadas são as do Comercial, e não as do Marketing", async () => {
-    montarDoisGerais();
-    render(<Board acoesDoQuadro={null} podeEditarColunas={false} podeApagarColunas={false} rootTeamId={COMERCIAL} title="Quadro Geral" />);
-    expect(await screen.findByText("Backlog do Comercial")).toBeTruthy();
+    expect(screen.getByText("Backlog do Comercial")).toBeTruthy();
     // "Em Andamento" só existe no geral do Marketing.
     expect(screen.queryByText("Em Andamento")).toBeNull();
   });

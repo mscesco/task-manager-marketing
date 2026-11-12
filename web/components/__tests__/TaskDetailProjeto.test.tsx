@@ -1,26 +1,11 @@
-// Spec 039, F6-c -- a pílula de PROJETO na linha de pílulas.
-//
-// ⚠️ POR QUE ESTE ARQUIVO EXISTE. Em 22/08 a Camila viu na tela que a cápsula
-// de projeto não estava onde o desenho dela sempre a pôs -- ao lado de Coluna,
-// Prioridade e Datas. Ela morava na faixa de metadados abaixo, com o rótulo
-// "Projeto" ao lado e um lápis separado da pílula.
-//
-// ⚠️⚠️ E O QUE ESTE ARQUIVO REALMENTE REGISTRA É OUTRA COISA: **mover a
-// cápsula inteira de lugar, trocar o rótulo e fundir dois controles em um não
-// derrubou NENHUM dos 895 testes.** A busca por "Sem Projeto", "nenhum" e
-// "Mudar projeto" nos testes de componente voltou vazia. Um controle que
-// escreve no banco (`POST /tasks/{id}/move`) estava sem portão nenhum -- e por
-// isso este arquivo cobre o COMPORTAMENTO, e não a posição.
-//
-// O que ele prende:
+// A pílula de PROJETO na linha de pílulas. Cobre o COMPORTAMENTO, e não a
+// posição:
 //   - a pílula existe SEM projeto, e diz "Sem Projeto" (não "nenhum" solto);
 //   - com projeto, ela diz o NOME dele;
 //   - a pílula É o gatilho -- um alvo, não pílula + lápis;
-//   - ⚠️ SUBTAREFA não edita (herda do pai, Spec 022): selo morto, sem botão;
+//   - ⚠️ SUBTAREFA não edita (herda do pai): selo morto, sem botão;
 //   - escolher manda `moveTask` com `project_id`, e TIRAR manda
 //     `detach_project` -- não `project_id: null`.
-//
-// SABOTAGENS -- ✅ MEDIDAS EM 22/08/2026 (ver o commit).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -35,7 +20,7 @@ vi.mock("@/lib/api", async (importOriginal) => {
   const real = await importOriginal<typeof import("@/lib/api")>();
   return {
     ...real,
-    // Spec 052 (revisão de 16/09): sem isto a busca de links vai à rede, falha, e
+    // Sem isto a busca de links vai à rede, falha, e
     // o aviso "Não consegui carregar os links" (role=alert) entra na tela.
     getTaskLinks: async () => [],
     colunasDoQuadro: vi.fn(),
@@ -98,7 +83,7 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: QUADRO,
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
+    // O cadeado vem do servidor, em toda resposta.
     can_delete: true,
     ...over,
   };
@@ -152,13 +137,10 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("TaskDetail -- a pílula de projeto (Spec 039, F6-c)", () => {
+describe("TaskDetail -- a pílula de projeto", () => {
   it("⚠️ sem projeto, a pílula diz \"Sem Projeto\" -- e não \"nenhum\"", async () => {
-    // ⚠️ O RÓTULO IMPORTA PORQUE O CONTEXTO MUDOU. Na faixa de metadados havia
-    // um "Projeto" escrito ao lado, então "nenhum" bastava. Na linha de
-    // pílulas não há rótulo nenhum: as vizinhas se explicam sozinhas
-    // ("Backlog", "Alta", a data), e um "nenhum" solto ao lado de uma data não
-    // diz de que ele é nenhum. Mesma forma de "Sem datas".
+    // ⚠️ Na linha de pílulas não há rótulo "Projeto": um "nenhum" solto não diz
+    // de que ele é nenhum. Mesma forma de "Sem datas".
     montar();
     expect(await screen.findByText("Sem Projeto")).toBeTruthy();
     expect(screen.queryByText("nenhum")).toBeNull();
@@ -170,9 +152,7 @@ describe("TaskDetail -- a pílula de projeto (Spec 039, F6-c)", () => {
   });
 
   it("⚠️ a PÍLULA é o gatilho -- um alvo, e não pílula + lápis", async () => {
-    // Antes eram dois elementos: um `<span>` com o nome e, ao lado, um botão
-    // de 26px com o lápis. Clicar no nome não fazia nada. É o mesmo defeito
-    // que a F6-a corrigiu na prioridade.
+    // Clicar no nome tem de abrir o seletor, sem um lápis separado ao lado.
     montar();
     const gatilho = await screen.findByTitle("Adicionar a um projeto");
     // O texto está DENTRO do gatilho, e não ao lado dele.
@@ -180,12 +160,9 @@ describe("TaskDetail -- a pílula de projeto (Spec 039, F6-c)", () => {
     expect(gatilho.tagName).toBe("BUTTON");
   });
 
-  it("⚠️ SUBTAREFA não edita o projeto -- herda do pai (Spec 022)", async () => {
-    // ⚠️ E ISTO É DIFERENTE DAS DATAS, de propósito: subtarefa TEM prazo
-    // próprio e o edita. Copiar esta trava para as datas foi um engano real,
-    // pego pela Camila na tela em 18/08 e prendido no `TaskDetailDatas`. Os
-    // dois testes apontam para lados OPOSTOS -- é assim que a diferença
-    // sobrevive a uma refatoração do bloco vizinho.
+  it("⚠️ SUBTAREFA não edita o projeto -- herda do pai", async () => {
+    // ⚠️ DIFERENTE DAS DATAS, de propósito: subtarefa TEM prazo próprio e o
+    // edita (`TaskDetailDatas`). Os dois testes apontam para lados OPOSTOS.
     montar({ parent_task_id: "pai", path: "pai.t1", depth: 1 });
     // O selo continua na tela: a pessoa precisa VER de qual projeto é.
     expect(await screen.findByText("Sem Projeto")).toBeTruthy();
@@ -195,11 +172,8 @@ describe("TaskDetail -- a pílula de projeto (Spec 039, F6-c)", () => {
   });
 
   it("escolher no seletor manda `project_id` -- e é `moveTask`, não `updateTask`", async () => {
-    // ⚠️ EU ESCREVI ESTE TESTE CONTRA `updateTask` E ELE FALHOU. Trocar de
-    // projeto não é um PATCH de campo: é `moveTask`, rota própria, porque
-    // mover arrasta a subárvore junto e o backend valida alcance. Registro o
-    // erro em vez de apagá-lo -- é a mesma suposição que o §8.1 da spec
-    // descreve, agora numa chamada de API em vez de num escopo de fatia.
+    // ⚠️ Trocar de projeto não é um PATCH de campo: é `moveTask`, rota própria,
+    // porque mover arrasta a subárvore junto e o backend valida alcance.
     vi.mocked(api.moveTask).mockResolvedValue(task({ project_id: "p-marca" }));
     const { onTaskMoved } = montar();
 

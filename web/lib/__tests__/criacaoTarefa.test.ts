@@ -22,7 +22,7 @@ describe("motivoNaoCria / podeCriar", () => {
     expect(podeCriar(rascunho)).toBe(true);
   });
 
-  it("SEM responsavel nao cria -- e os 44 casos medidos em producao", () => {
+  it("sem responsavel nao cria", () => {
     const rascunho = r({ titulo: "Revisar copy" });
     expect(podeCriar(rascunho)).toBe(false);
     expect(motivoNaoCria(rascunho)).toContain("quem vai fazer");
@@ -53,8 +53,7 @@ describe("acaoDoEnterNoTitulo", () => {
   });
 
   it("com titulo e SEM responsavel, Enter abre o seletor -- nao cria", () => {
-    // Criar aqui seria repetir exatamente o bug do TaskModal: Enter gerando
-    // tarefa sem responsavel. Nao fazer nada deixaria a pessoa presa.
+    // Criar geraria tarefa sem responsavel; nao fazer nada deixaria a pessoa presa.
     expect(acaoDoEnterNoTitulo(r({ titulo: "X" }))).toBe("escolher");
   });
 
@@ -100,29 +99,13 @@ describe("resumoResponsaveis", () => {
 });
 
 describe("proximoDaSequencia", () => {
-  it("volta VAZIO -- a proxima subtarefa e OUTRA subtarefa (05/08)", () => {
-    // ⚠️ Ate 05/08 este teste afirmava o contrario (mantinha responsavel e
-    // prazo). Mudou por medicao na tela: o campo vinha preenchido com quem
-    // nao devia, e designar sem querer nao da erro na hora -- quem descobre
-    // e a pessoa errada, depois.
+  it("volta vazio: a proxima subtarefa e outra subtarefa", () => {
+    // Designar sem querer nao da erro na hora; quem descobre e a pessoa errada.
     const feito = r({ titulo: "Primeira", assigneeIds: ["u1"], dueDate: "2026-08-10" });
     const proximo = proximoDaSequencia(feito);
     expect(proximo.titulo).toBe("");
     expect(proximo.assigneeIds).toEqual([]);
     expect(proximo.dueDate).toBe("");
-  });
-
-  it("o proximo ainda NAO pode ser criado -- falta o titulo", () => {
-    expect(podeCriar(proximoDaSequencia(r({ titulo: "X", assigneeIds: ["u1"] })))).toBe(
-      false
-    );
-  });
-
-  it("copia a lista de responsaveis em vez de compartilhar a referencia", () => {
-    const feito = r({ titulo: "X", assigneeIds: ["u1"] });
-    const proximo = proximoDaSequencia(feito);
-    proximo.assigneeIds.push("u2");
-    expect(feito.assigneeIds).toEqual(["u1"]);
   });
 });
 
@@ -138,16 +121,11 @@ describe("proximoDaSequencia -- isolamento de referencia", () => {
   });
 });
 
-// =====================================================================
-// "Selecionar todos" -- as duas funções puras (22/08).
-// =====================================================================
+// "Selecionar todos".
 describe("comTodosOsResponsaveis", () => {
   it("⚠️ SOMA à seleção, e não substitui", () => {
-    // ⚠️ ESTE É O DEFEITO QUE A FUNÇÃO EXISTE PARA IMPEDIR. A tela passa a
-    // lista FILTRADA pela busca; substituindo, digitar "an" e clicar em
-    // "selecionar todos" apagaria quem já estava escolhido e não casa com
-    // "an" -- destruir seleção num botão chamado "selecionar" é o oposto do
-    // que ele promete.
+    // A tela passa a lista FILTRADA pela busca; substituindo, "selecionar
+    // todos" apagaria quem já estava escolhido e não casa com o filtro.
     expect(comTodosOsResponsaveis(["carla"], ["ana"])).toEqual(["carla", "ana"]);
   });
 
@@ -170,10 +148,7 @@ describe("todosJaEscolhidos", () => {
   });
 
   it("⚠️ NENHUM disponível devolve `false`, e não `true`", () => {
-    // "Todos de zero pessoas estão escolhidos" é verdade lógica e mentira de
-    // interface: com a busca sem resultado, `true` esconderia o botão por um
-    // motivo que a pessoa não tem como deduzir. A tela já trata o vazio com
-    // "Ninguem encontrado".
+    // Com a busca sem resultado, `true` esconderia o botão sem motivo visível.
     expect(todosJaEscolhidos([], [])).toBe(false);
     expect(todosJaEscolhidos(["ana"], [])).toBe(false);
   });

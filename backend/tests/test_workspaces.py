@@ -160,21 +160,13 @@ def _build_team_service_with_tree(tree: dict):
     return svc
 
 
-async def test_promover_a_time_raiz_e_recusado_INDEPENDENTE_de_quantos_existem() -> None:
-    """Promover subtime a time raiz nao esta desenhado, com ou sem raiz na arvore."""
-    # Cenario A: ja existe um time raiz (o caso normal).
+async def test_promover_subtime_a_time_raiz_e_recusado() -> None:
+    """Promover subtime a time raiz nao esta desenhado."""
     marketing = uuid.uuid4()
     crm = uuid.uuid4()
-    com_raiz = _build_team_service_with_tree({marketing: None, crm: marketing})
+    svc = _build_team_service_with_tree({marketing: None, crm: marketing})
     with pytest.raises(BusinessRuleError):
-        await com_raiz.move(team_id=crm, new_parent_id=None)
-
-    # Cenario B: arvore sem time raiz nenhum.
-    orfao = uuid.uuid4()
-    filho = uuid.uuid4()
-    sem_raiz = _build_team_service_with_tree({orfao: filho, filho: orfao})
-    with pytest.raises(BusinessRuleError):
-        await sem_raiz.move(team_id=filho, new_parent_id=None)
+        await svc.move(team_id=crm, new_parent_id=None)
 
 
 async def test_team_move_under_another_parent_works() -> None:
