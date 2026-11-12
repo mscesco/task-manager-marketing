@@ -76,6 +76,7 @@ function task(over: Partial<Task> = {}): Task {
     depth: 0,
     position: 0,
     completed_at: null,
+    terminal_since: null,
     is_archived: false,
     created_by: "user-1",
     created_at: "2026-08-01T12:00:00Z",

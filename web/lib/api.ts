@@ -289,6 +289,8 @@ export type Task = {
   /** Hora do prazo; `null` = vence no dia. Vem com segundos ("18:00:00"): compare via `lib/prazo.ts`. */
   due_time: string | null;
   completed_at: string | null;
+  /** Quando entrou em coluna terminal (concluída ou cancelada). */
+  terminal_since: string | null;
   created_by: string;
   is_archived: boolean;
   created_at: string;

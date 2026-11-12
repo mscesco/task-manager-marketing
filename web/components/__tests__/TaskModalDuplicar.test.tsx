@@ -82,6 +82,7 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     due_date: "2026-03-10",
     due_time: null,
     completed_at: null,
+    terminal_since: null,
     created_by: ANA,
     is_archived: false,
     created_at: "2026-03-01T12:00:00Z",

@@ -93,6 +93,7 @@ function task(over: Partial<Task> & { id: string; title: string }): Task {
     due_date: null,
     due_time: null,
     completed_at: null,
+    terminal_since: null,
     created_by: ANA,
     is_archived: true,
     created_at: "2026-03-01T12:00:00Z",
@@ -320,5 +321,33 @@ describe("/arquivadas -- o badge sai da coluna", () => {
     await screen.findByText("Do Campanhas");
 
     expect(screen.getByText("Campanhas · Em Revisão")).toBeTruthy();
+  });
+});
+
+describe("/arquivadas -- encerrada em", () => {
+  it("concluída mostra a conclusão; cancelada, a entrada na coluna terminal", async () => {
+    montar([
+      task({
+        id: "c1",
+        title: "Concluída",
+        status: "COMPLETED",
+        completed_at: "2026-03-10T15:00:00Z",
+        terminal_since: "2026-03-12T15:00:00Z",
+      }),
+      task({
+        id: "c2",
+        title: "Cancelada",
+        status: "CANCELLED",
+        terminal_since: "2026-03-20T15:00:00Z",
+      }),
+    ]);
+    render(<Arquivadas />);
+    await screen.findByText("Cancelada");
+
+    expect(screen.getByRole("columnheader", { name: "Encerrada em" })).toBeTruthy();
+    const linha = (titulo: string) => screen.getByText(titulo).closest("tr")!;
+    expect(linha("Concluída").textContent).toContain("10/03/2026");
+    expect(linha("Concluída").textContent).not.toContain("12/03/2026");
+    expect(linha("Cancelada").textContent).toContain("20/03/2026");
   });
 });
