@@ -1,28 +1,8 @@
 "use client";
-// components/DescricaoEditavel.tsx
-// A descrição da tarefa, editável no lugar (Spec 052, fatia D).
-//
-// O gesto é o do Trello, pedido por ela em 16/09: "Descrição" com um botão
-// **Editar** ao lado, que só edita a descrição. O texto vira campo com
-// Salvar e Cancelar; **clicar fora salva**, **Ctrl+Enter salva**, **Esc
-// desiste**.
-//
-// ⚠️ ENTER NÃO SALVA AQUI (ao contrário do título): descrição tem parágrafos,
-// e o Enter é a quebra de linha. O atalho de salvar é o mesmo do resto do
-// produto (`ehAtalhoDeSalvar`).
-//
-// Fatias C e E: o texto é desenhado com formatação (`TextoFormatado`) e o campo
-// é o `EditorDeDescricao`, que já mostra formatado enquanto se escreve. O gesto
-// de abrir, salvar e desistir é desta fatia D e não mudou.
-//
-// ⚠️ "VER MAIS" (pedido dela, 30/09): descrição longa empurrava tudo o que vem
-// depois -- links, subtarefas, checklist -- para fora da vista, e era preciso
-// rolar a coluna inteira para descobrir que a tarefa TEM subtarefas. Agora ela
-// para em `ALTURA_MAXIMA` e o resto abre com um clique.
-//
-// ⚠️ O BOTÃO SÓ APARECE QUANDO EXCEDE, e isso se MEDE (`scrollHeight`), não se
-// adivinha por contagem de caracteres: a altura depende da formatação -- uma
-// lista de dez itens curtos é mais alta que um parágrafo de dez linhas.
+// A descrição da tarefa, editável no lugar: botão Editar, Salvar e Cancelar;
+// clicar fora salva, Ctrl+Enter salva, Esc desiste. Enter é quebra de linha.
+// Descrição longa para em `ALTURA_MAXIMA` com "Ver mais"; o excesso se mede
+// (`scrollHeight`), porque a altura depende da formatação.
 
 import {
   useEffect,
@@ -46,7 +26,7 @@ export default function DescricaoEditavel({
   onSalvar,
 }: {
   valor: string | null;
-  /** Grava a descrição nova. ⚠️ Em erro, LANÇA com a mensagem pronta. */
+  /** Grava a descrição nova. Em erro, lança com a mensagem pronta. */
   onSalvar: (nova: string) => Promise<void>;
 }) {
   const [editando, setEditando] = useState(false);
@@ -105,14 +85,11 @@ export default function DescricaoEditavel({
 
   useSairDoBloco(blocoRef, editando, () => void confirmar());
 
-  // ⚠️ `preventDefault` no `mousedown` dos botões do bloco: o foco fica no
-  // campo. Sem isto, no Safari (onde botão não recebe foco) o clique em
-  // "Cancelar" ainda sairia do campo -- e o que sai do bloco salva.
+  // `preventDefault` no `mousedown` dos botões: o foco fica no campo (no Safari
+  // o clique em "Cancelar" sairia do campo, e sair salva).
   const manterFoco = (e: ReactMouseEvent) => e.preventDefault();
 
-  // ⚠️ MEDE DEPOIS DE DESENHAR, e por isso `useLayoutEffect`: com `useEffect` o
-  // navegador chega a pintar a descrição inteira antes de a trava entrar, e a
-  // tela "pula" a cada tarefa aberta.
+  // `useLayoutEffect`: medir depois da pintura faz a tela pular.
   useLayoutEffect(() => {
     const el = textoRef.current;
     if (!el) {
@@ -122,9 +99,7 @@ export default function DescricaoEditavel({
     setExcede(el.scrollHeight > ALTURA_MAXIMA + 8);
   }, [valor, editando]);
 
-  // ⚠️ A LARGURA MUDA A ALTURA: a mesma descrição ocupa mais linhas numa
-  // janela estreita. Sem isto, quem estreita a janela fica com o texto cortado
-  // e SEM o botão para abrir.
+  // A largura muda a altura: remede ao redimensionar.
   useEffect(() => {
     const el = textoRef.current;
     if (!el || typeof ResizeObserver === "undefined") return;
@@ -135,8 +110,7 @@ export default function DescricaoEditavel({
     return () => observador.disconnect();
   }, [valor, editando]);
 
-  // Trocar de tarefa recolhe de novo: a descrição da PRÓXIMA não herda a
-  // decisão tomada para esta.
+  // Trocar de tarefa recolhe de novo.
   useEffect(() => {
     setExpandida(false);
   }, [valor]);
@@ -165,11 +139,10 @@ export default function DescricaoEditavel({
         <div
           ref={blocoRef}
           style={{ display: "flex", flexDirection: "column", gap: 8 }}
-          // ⚠️ AS TECLAS FICAM NO BLOCO, e não no campo: na aba "Visualizar" o
-          // campo não existe, e o Esc e o Ctrl+Enter precisam continuar valendo.
+          // As teclas ficam no bloco: na aba "Visualizar" o campo não existe.
           onKeyDown={(e) => {
             if (e.key === "Escape") {
-              // ⚠️ Só desiste da descrição -- o Esc do detalhe fecharia o modal.
+              // Só desiste da descrição; o Esc do detalhe fecharia o modal.
               e.preventDefault();
               e.stopPropagation();
               desistir();
@@ -186,8 +159,7 @@ export default function DescricaoEditavel({
             valor={rascunho}
             onChange={setRascunho}
             rotuloId={idDoRotulo}
-            // O cursor vai para o FIM, e não seleciona tudo: na descrição a
-            // pessoa quase sempre acrescenta.
+            // O cursor vai para o fim, sem selecionar: a pessoa quase sempre acrescenta.
             focarAoAbrir
           />
           {erro && (
@@ -242,8 +214,7 @@ export default function DescricaoEditavel({
             <button
               type="button"
               className="btn btn-ghost"
-              // ⚠️ Padding inline: o `.btn` não está em camada e vence o
-              // Tailwind (web/AGENTS.md §11).
+              // Padding inline: o `.btn` vence o Tailwind.
               style={{ padding: "2px 0", fontSize: 13, marginTop: 4 }}
               aria-expanded={expandida}
               onClick={() => setExpandida((v) => !v)}
@@ -253,8 +224,7 @@ export default function DescricaoEditavel({
           )}
         </div>
       ) : (
-        // ⚠️ SEM DESCRIÇÃO, O CONVITE É O ALVO -- não há "Editar" para editar o
-        // nada. Um botão de verdade (Tab, Enter), com cara de área vazia.
+        // Sem descrição, o convite é um botão de verdade com cara de área vazia.
         <button
           type="button"
           onClick={abrir}

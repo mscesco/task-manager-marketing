@@ -6,36 +6,18 @@ import { DUR } from "@/lib/motion";
 import { rotuloDeQuemReagiu, type Reacao } from "@/lib/reacoes";
 
 /**
- * Mesma mola da lista animada da gaveta de subtime (`SubteamDrawer`):
- * criticamente amortecida -- chega e para, sem o tranco de um overshoot.
+ * Mola criticamente amortecida, a mesma da gaveta de subtime.
  */
 const MOLA = { type: "spring", duration: DUR[3], bounce: 0 } as const;
 
 /**
- * A fileira de reacoes de um comentario (Spec 050, §4.7).
+ * A fileira de reações de um comentário: uma pílula por emoji, na ordem do
+ * servidor; a da própria pessoa fica marcada. O estado vem de fora
+ * (`LinhaComentario`).
  *
- * Uma pilula por emoji, na ordem que o servidor mandou (a da reacao mais
- * antiga com aquele emoji). A pilula da propria pessoa fica marcada.
- *
- * ⚠️ O ESTADO VEM DE FORA. Este componente nao chama a API nem guarda
- * reacao: quem faz isso e a `LinhaComentario`, que ja tem o comentario e
- * troca a linha inteira quando o servidor responde.
- *
- * ⭐ ANIMADA -- pedido dela em 16/09: *"quero uma animação para a aparição da
- * reação na parte inferior do comentário"*. A pilula nova cresce no lugar, a
- * que sai encolhe, e as vizinhas DESLIZAM (`layout`) em vez de pular.
- *
- * ⚠️ `initial={false}`: as pilulas que ja existiam quando o comentario abre
- * NAO animam. Animar tudo ao abrir o detalhe seria movimento sem noticia.
- *
- * ⚠️ O CONTEINER EXISTE MESMO VAZIO, e isso e de proposito: com o antigo
- * `return null` sem reacao, a ULTIMA pilula a sair era desmontada junto com
- * a fileira e nunca animava a saida. `empty:hidden` tira o espaco quando nao
- * sobra nada.
- *
- * ⚠️ `useReducedMotion`: o app nao tem `MotionConfig`, e o bloco de
- * `prefers-reduced-motion` do `globals.css` so alcanca animacao de CSS -- nao
- * as do `motion`. Aqui a preferencia do sistema e respeitada na mao.
+ * `initial={false}`: as pílulas existentes não animam ao abrir. O contêiner
+ * existe mesmo vazio para a última pílula animar a saída (`empty:hidden` tira
+ * o espaço). `useReducedMotion` porque o `globals.css` só alcança CSS.
  */
 export default function FileiraDeReacoes({
   reactions,
@@ -78,8 +60,7 @@ export default function FileiraDeReacoes({
               disabled={desabilitado}
               onClick={() => onAlternar(r.emoji)}
               title={quem}
-              /* ⚠️ SINAL REDUNDANTE (web/AGENTS.md §8): a borda diz "e minha"
-                 para quem ve; o rotulo diz para quem ouve. Cor sozinha nao. */
+              /* Sinal redundante: a borda diz "é minha" para quem vê; o rótulo, para quem ouve. */
               aria-label={
                 souEu
                   ? `${r.emoji}, ${r.user_ids.length}: ${quem} — você reagiu, clique para tirar`

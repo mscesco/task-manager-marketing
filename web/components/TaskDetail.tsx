@@ -1,14 +1,6 @@
 "use client";
-// components/TaskDetail.tsx
-// Painel de DETALHE da tarefa (padrao Trello): clicar no card abre isto.
-// Reusa o objeto da lista (sem GET /tasks/{id} -- dodge do bug E6, ADR 0002).
-//
-// Responsaveis: pilulas dos atuais SEMPRE visiveis + gatilho "+" que abre a
-//   lista (busca + checkbox) como POPOVER flutuante (fecha ao clicar fora).
-//   Grava na hora (otimista).
-// Subtarefas: lista os filhos diretos (do quadro); gatilho "+" ao lado do titulo
-//   cria; o checkbox da linha conclui rapido (desmarcar volta pro status
-//   anterior, guardado na sessao); clicar no titulo NAVEGA pra dentro.
+// Painel de detalhe da tarefa: clicar no card abre isto. Reusa o objeto da
+// lista, sem GET /tasks/{id}.
 
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -20,13 +12,7 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  // ⚠️ `FolderOpen`, e a barra lateral usa `FolderKanban` para "Projetos" --
-  // conferido, nao suposto. Dois icones parecidos para coisas diferentes ja
-  // aconteceu aqui (o mesmo `Network` em "Times" e "Time Principal", corrigido
-  // em 21/08); desta vez o par foi olhado antes.
   FolderOpen,
-  // Spec 050: a lixeira do comentario entrou na capsula de acoes, e o emoji
-  // 🗑 que ela era destoava dos icones do lapis e do reagir.
   Trash2,
   Share2,
   Check,
@@ -116,33 +102,21 @@ import Loading from "@/components/Loading";
 import MoverTarefa from "@/components/MoverTarefa";
 import { useAvisar } from "@/components/Toasts";
 import { useLadoALado } from "@/lib/useLadoALado";
-// ⚠️ RESERVA DO BADGE, e so isso (fatia 4c-2). O rotulo do badge passou a sair
-// de `coluna.name`; este mapa responde pelo caso em que a coluna da tarefa nao
-// esta na lista carregada -- quadro sem alcance, coluna apagada na fatia 5, ou
-// as colunas ainda a caminho. Sem ele o badge ficaria vazio nesses casos.
-// ⚠️ ORDEM DO ENUM, e nao `Object.keys(PRIORITY_LABEL)`. Prioridade tem ordem
-// natural (menor -> maior); a ordem de insercao do objeto e um acidente que
-// alguem pode reordenar sem perceber que mexeu na interface. Lista explicita
-// falha alto se um valor novo entrar no enum e ninguem vier aqui.
-/** Eventos por pagina na aba de atividade (Spec 055, §9.2). */
+/** Eventos por pagina na aba de atividade. */
 const ATIVIDADE_POR_PAGINA = 20;
 
+// Ordem natural (menor -> maior), explicita para nao depender da ordem do objeto.
 const PRIORIDADES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
+// Rotulo de reserva do badge quando a coluna da tarefa nao esta carregada.
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
-// Spec 031 (C1a): a cor do BADGE vem de STATUS_TEXT, nao de STATUSES[].color.
-// STATUSES[].color e o token de TRACO (bolinha, borda de coluna) -- como texto
-// ou como fundo sob texto ele reprova AA. Ver Spec 031 §2.2b/§2.2c.
+// Cor do badge vem de STATUS_TEXT: STATUSES[].color e token de traco e reprova
+// AA como texto.
 const STATUS_COLOR: Record<string, string> = STATUS_TEXT;
 
-// Fatia B/C: gatilho compacto redondo -- substitui os botoes-fantasma gordos
-// ("Designar" / "Mudar projeto" / "+ Subtarefa") por um alvo pequeno inline.
-// Spec 031 (C10): os tres estados usavam glifo Unicode ("+", "✎", "×").
-// Viraram icone `lucide-react` -- glifo muda de forma conforme a fonte do
-// sistema e o leitor de tela le o nome do caractere. O `aria-label` de cada
-// botao ja diz a acao, entao o icone vai `aria-hidden`. Reusado nos tres campos.
+// Gatilho compacto redondo, reusado em responsaveis, projeto e subtarefa.
 const GATILHO_STYLE: CSSProperties = {
   width: 26,
   height: 26,
@@ -160,8 +134,6 @@ const GATILHO_STYLE: CSSProperties = {
   padding: 0,
 };
 
-// ⚠️ O `quando` local virou `dataHoraCurta` em `lib/prazo.ts` (Spec 055): o
-// painel de atividade mostra o mesmo carimbo, e duas copias divergiriam.
 const quando = dataHoraCurta;
 
 export default function TaskDetail({
@@ -185,108 +157,32 @@ export default function TaskDetail({
 }: {
   task: Task | null; // tarefa focada; null => fechado
   members: Map<string, { name: string }>;
-  projects: Map<string, string>; // id do projeto -> titulo (Spec 022)
-  // ⚠️ `filhos` DEIXOU DE SER PROP na Spec 042 (B1). O painel busca as
-  // proprias filhas -- ver o `useEffect` no corpo. A remocao e o que permite
-  // ao QUADRO parar de carregar a subarvore: 917 tarefas baixadas para
-  // desenhar 170 cards (medido em 19/08).
-  //
-  // ⚠️ A PROP FOI REMOVIDA, E NAO TORNADA OPCIONAL, de proposito. Este arquivo
-  // ja registra (nas tres props abaixo) que prop opcional e onde "esqueci um
-  // chamador" vira silencio. Removendo, o `tsc` aponta os QUATRO chamadores.
+  projects: Map<string, string>; // id do projeto -> titulo
   pai?: Task | null; // pai DIRETO (topo da pilha), pra rotular "Subtarefa de X"
   temVoltar: boolean;
   onVoltar: () => void;
   onClose: () => void;
-  // Spec 033. ⚠️ OBRIGATORIA, pelo mesmo motivo das tres props abaixo: o
-  // TaskDetail tem QUATRO chamadores, e prop opcional e onde "esqueci um
-  // chamador" vira silencio -- o botao simplesmente nao apareceria em tres
-  // telas e nenhum portao reclamaria. `tsc` faz a pergunta.
   onDuplicar: (task: Task) => void;
   onAssigneesChange: (taskId: string, userIds: string[]) => void;
   onAbrirSubtarefa: (sub: Task) => void;
   onSubtaskUpsert: (sub: Task) => void; // criar OU concluir rapido
-  onTaskMoved: (task: Task) => void; // Spec 022: task mudou de projeto/avulsa
+  onTaskMoved: (task: Task) => void; // task mudou de projeto/avulsa
   onExcluir: (task: Task, cascadeCount: number) => void; // soft-delete cascateado
-  // ⚠️ AS TRES PROPS ABAIXO SAO OBRIGATORIAS DE PROPOSITO. Elas eram
-  // opcionais, e o resultado foi que a C13, a C14 e a C15 chegaram em UM dos
-  // quatro chamadores (`Board`) e ficaram de fora dos outros tres -- sem
-  // nenhum portao reclamar, porque prop opcional ausente e codigo valido. O
-  // `?` era o que transformava "esqueci um chamador" em silencio.
-  //
-  // Custo aceito: quem montar o quinto chamador PRECISA decidir os tres
-  // valores. E o ponto -- `tsc` passa a fazer a pergunta que o handoff vinha
-  // fazendo em texto, quatro entregas seguidas.
-  //
-  // Quem nao busca arquivada (a rota /tarefa/[id]) passa `false` explicito;
-  // quem nao tem o dado a mao passa `new Set()`, e isso fica VISIVEL na
-  // chamada em vez de escondido no default.
-  //
-  // Espelha a caixa "Mostrar arquivadas" da tela de fora. Sem ela, a checklist
-  // esconde a subtarefa arquivada (Spec 031, C11); com ela, a subtarefa volta
-  // APAGADA -- mesmo tratamento que o card arquivado ja recebe no quadro.
-  // ⚠️ O quadro so BUSCA arquivada quando a caixa esta marcada
-  // (`include_archived: mostrarArquivadas`), entao sem esta prop o componente
-  // nao teria como distinguir "nao ha arquivada" de "ha, mas escondida".
+  // Espelha "Mostrar arquivadas" da tela de fora: com ela, a subtarefa
+  // arquivada aparece apagada na checklist; sem ela, some.
   mostrarArquivadas: boolean;
-  // Ids de projeto PESSOAL. Eles continuam em `projects` -- o mapa resolve
-  // ⚠️ AQUI HAVIA `projetosPessoais`, um conjunto que tirava os projetos
-  // pessoais do SELETOR de "mudar projeto" -- mover uma tarefa de time para um
-  // pessoal a fazia sumir do quadro dos outros. Saiu em 10/09 com o projeto
-  // pessoal; hoje todo projeto tem time e nenhum destino esconde a tarefa.
-  //
-  // Ids de membro DESATIVADO. Mesmo desenho que aquele conjunto tinha: `members`
-  // continua completo (a tarefa que ja tem um inativo designado precisa
-  // resolver o NOME dele), e o conjunto so tira do SELETOR.
-  //
-  // ⚠️ Quem JA esta designado continua na lista, mesmo inativo -- senao nao
-  // haveria como DESIGNAR DE VOLTA pra ninguem: a unica forma de tirar a
-  // pessoa e desmarcando a caixa dela. `TaskModal` ja filtrava assim desde
-  // sempre (linha 131); o detalhe e que ficou de fora.
+  // Ids de membro desativado: saem do seletor, mas quem ja esta designado fica
+  // (senao nao haveria como tira-lo).
   membrosInativos: Set<string>;
-  // ⚠️ AQUI MORAVAM `subtimePorMembro` e `rootTeamId`, e as duas eram PROP
-  // MORTA -- desestruturadas, tipadas e nunca lidas. A Spec 034 (03/08)
-  // removeu o `foraDoEscopo` que as consumia e passou a perguntar quem
-  // alcanca ao BACKEND (`listMembers(taskId)`, ver `alcancamAqui` abaixo);
-  // as props ficaram para tras, e com elas o mapa que TRES telas montavam
-  // so para preencher o argumento.
-  //
-  // Removidas na Spec 044 (fatia 1), quando `Member.team_id` virou
-  // `team_ids` e o `tsc` apontou para ca. ⚠️ NAO REINTRODUZIR: reconstruir
-  // escopo no front a partir de `team_id` foi exatamente o erro que a 034
-  // desfez -- `GET /members` nunca devolveu PAPEL, e gestor e admin sumiam
-  // do seletor em tarefa interna de subtime.
-  // Como renderizar o container externo:
-  //   "modal"  (padrao) -> overlay fixo com scrim, clique fora e Esc fecham.
-  //                        Comportamento historico; quadro e minhas-tarefas
-  //                        NAO passam esta prop e seguem identicos.
-  //   "pagina"          -> card no fluxo normal, sem scrim e sem Esc. Usado
-  //                        pela rota /tarefa/[id], onde um scrim escuro por
-  //                        cima de uma pagina vazia pareceria bug e Esc
-  //                        "fechando" (= navegar pra outra rota) surpreende.
+  // "modal" (padrao): overlay com scrim; clique fora e Esc fecham.
+  // "pagina": card no fluxo normal, sem scrim nem Esc (rota /tarefa/[id]).
   modo?: "modal" | "pagina";
-  // Comentário que a notificação apontou (`/tarefa/<id>?comentario=<id>`):
-  // a aba abre nele, desdobra a thread e o destaca. Opcional porque só a rota
-  // canônica recebe link de notificação; os outros três chamadores não têm o
-  // que passar.
+  // Comentário apontado pela notificação (`?comentario=<id>`): a aba abre nele
+  // e o destaca.
   comentarioEmFoco?: string | null;
 }) {
-  // ⚠️ SPEC 042 (B1) -- AS FILHAS SAO BUSCADAS AQUI, e nao mais recebidas.
-  // Ate aqui os quatro chamadores derivavam `filhos` da lista que ja tinham
-  // em memoria, e era exatamente isso que obrigava o quadro a baixar a
-  // subarvore inteira.
-  //
-  // ⚠️ LIMPA ANTES DE BUSCAR. Sem o `setFilhos([])`, navegar para uma
-  // subtarefa mostra por um instante a checklist da tarefa ANTERIOR -- e
-  // navegar entre tarefas e o gesto comum desta tela.
-  //
-  // ⚠️ `cancelado` guarda contra resposta fora de ordem: abrir A, ir para B, e
-  // a resposta de A chegar depois pintaria a checklist de B com as filhas de A.
-  //
-  // ⚠️ ERRO NAO VIRA LISTA VAZIA EM SILENCIO. Checklist vazia se le como "esta
-  // tarefa nao tem subtarefa" -- foi essa leitura falsa que a duplicacao
-  // produziu em 05/08 ("duplicou sem as subtarefas", e elas estavam no banco).
-  // Por isso `erroFilhos` existe e a tela o mostra.
+  // As filhas sao buscadas aqui. Limpa antes de buscar (senao mostra as da
+  // tarefa anterior); falha vira `erroFilhos`, e nao lista vazia.
   const [filhos, setFilhos] = useState<Task[]>([]);
   const [carregandoFilhos, setCarregandoFilhos] = useState(false);
   const [erroFilhos, setErroFilhos] = useState(false);
@@ -302,26 +198,14 @@ export default function TaskDetail({
     }
   }
 
-  // ⚠️ O UPSERT PRECISA BATER NOS DOIS ESTADOS, e este e o ponto mais facil de
-  // errar na B1. Antes dela quem guardava `filhos` era o chamador, e o
-  // `onSubtaskUpsert` sozinho ja atualizava a checklist -- o teste
-  // `TaskDetailChecklist` provava isso com um `Pai` que mexia no proprio
-  // estado. Agora a lista mora AQUI: sem esta funcao, marcar a caixinha manda
-  // o PATCH, avisa o quadro, e NAO muda nada na tela em que a pessoa clicou.
-  //
-  // ⚠️ NAO SERVE PARA A PROPRIA TAREFA FOCADA. Em `alternarArquivo` o
-  // `onSubtaskUpsert` recebe a tarefa aberta (nao uma filha) -- chamar isto
-  // la a inseriria na lista de filhas dela mesma.
+  // Atualiza a checklist local. Nao serve para a propria tarefa focada: a
+  // inseriria na lista das filhas dela.
   function upsertFilhaLocal(sub: Task) {
     setFilhos((atual) => {
       const i = atual.findIndex((f) => f.id === sub.id);
       if (i === -1) return [...atual, sub];
       const copia = [...atual];
-      // ⚠️ PRESERVAR O QUE A MUTACAO NAO DEVOLVE (ADR 0025). Foi a ausencia
-      // disto que fez a bolinha do responsavel SUMIR ao marcar a caixinha,
-      // relatado na tela em 21/08/2026. A guarda mora num lugar so desde o
-      // review da Spec 042 -- ver `lib/mesclaTarefa.ts`, que lista as quatro
-      // vezes em que o mesmo defeito apareceu.
+      // Preserva o que a mutacao nao devolve (ver lib/mesclaTarefa).
       copia[i] = mesclaTarefa(sub, atual[i]);
       return copia;
     });
@@ -356,55 +240,37 @@ export default function TaskDetail({
   const [abertoResp, setAbertoResp] = useState(false);
   const [busca, setBusca] = useState("");
   const [saving, setSaving] = useState<Set<string>>(new Set());
-  // ⚠️ ERA `const [erro, setErro]`, e nada o desenhava desde 30/07: a caixa
-  // saiu num redesenho e as falhas de responsavel, prioridade, coluna,
-  // arquivar e excluir passaram a acontecer em silencio. Agora e a mesma
-  // pilha de avisos do app (`components/Toasts.tsx`, montada no AppShell).
   const avisar = useAvisar();
   // Onde moram as acoes do topo (`acoes`, logo antes do `return`).
   const ladoALado = useLadoALado();
 
-  // Projeto (Spec 022): eco local do project_id exibido -- atualiza no sucesso
-  // do move sem depender do round-trip do pai. abertoProj abre o seletor;
-  // movendoProj bloqueia (nao-otimista, aplica so no sucesso).
+  // Projeto: eco local do project_id, aplicado so no sucesso do move.
   const [projetoAtual, setProjetoAtual] = useState<string | null>(null);
   const [abertoProj, setAbertoProj] = useState(false);
   const [movendoProj, setMovendoProj] = useState(false);
   const [erroProj, setErroProj] = useState<string | null>(null);
 
-  // Datas (Spec 038, fatia A): a cápsula com início e entrega.
-  //
-  // ⚠️ ECO LOCAL DOS DOIS, pelo mesmo motivo do `projetoAtual`: o painel fecha
-  // no sucesso e a linha precisa mostrar o valor novo sem esperar o pai
-  // refetchar. Sem isto a pessoa salva, o painel fecha, e a data continua a
-  // antiga por um instante -- que é indistinguível de "não salvou".
+  // Datas: eco local, para a linha mostrar o valor novo sem esperar o pai.
   const [inicioAtual, setInicioAtual] = useState<string | null>(null);
   const [prazoAtual, setPrazoAtual] = useState<string | null>(null);
-  // ⚠️ Spec 038, fatia B. `null` = "vence no dia". Guardado separado do prazo
-  // porque sao dois estados de produto: apagar a hora NAO apaga a data.
+  // `null` = vence no dia. Apagar a hora nao apaga a data.
   const [horaAtual, setHoraAtual] = useState<string | null>(null);
   const [abertoDatas, setAbertoDatas] = useState(false);
-  // Spec 039 (F6): a pilula de PRIORIDADE vira gatilho, como a de datas.
   const [abertoPrio, setAbertoPrio] = useState(false);
   const [salvandoPrio, setSalvandoPrio] = useState(false);
-  // Spec 039 (F6-b): a pilula de COLUNA vira gatilho.
   const [abertoCol, setAbertoCol] = useState(false);
   const [salvandoCol, setSalvandoCol] = useState(false);
   const [salvandoDatas, setSalvandoDatas] = useState(false);
   const [erroDatas, setErroDatas] = useState<string | null>(null);
-  // ⚠️ RASCUNHO SEPARADO DO ECO. O painel tem DOIS campos e um botão de
-  // salvar: editar direto o eco mandaria uma requisição por tecla, e pior,
-  // deixaria a tela mostrando um estado que o servidor recusou (o backend
-  // recusa `start_date > due_date` com 422). O rascunho só vira eco no sucesso.
+  // Rascunho do painel de datas: so vira eco no sucesso (o backend pode
+  // recusar com 422).
   const [rascunhoInicio, setRascunhoInicio] = useState("");
   const [rascunhoPrazo, setRascunhoPrazo] = useState("");
   const [rascunhoHora, setRascunhoHora] = useState("");
 
   const [criandoSub, setCriandoSub] = useState(false);
   const [novoTitulo, setNovoTitulo] = useState("");
-  // Criacao rapida de subtarefa (29/07): responsavel OBRIGATORIO, prazo
-  // opcional. 44 das 50 tarefas ativas sem responsavel eram subtarefas --
-  // porque este campo aceitava so o titulo. Regras em lib/criacaoSubtarefa.
+  // Criacao rapida de subtarefa: responsavel obrigatorio, prazo opcional.
   const [subAssignees, setSubAssignees] = useState<string[]>([]);
   const [subPrazo, setSubPrazo] = useState("");
   const [subPickerAberto, setSubPickerAberto] = useState(false);
@@ -413,51 +279,38 @@ export default function TaskDetail({
   const [salvandoSub, setSalvandoSub] = useState(false);
   const [erroSub, setErroSub] = useState<string | null>(null);
   const [subSaving, setSubSaving] = useState<Set<string>>(new Set());
-  // Status de antes de concluir, pra desmarcar voltar pra ele (sessao).
-  // ⚠️ Fatia 4c-2: a checklist e a caixinha decidem pela COLUNA, entao o
-  // detalhe precisa das colunas do quadro DA TAREFA. `null` = ainda chegando.
-  // Carregado AQUI, e nao recebido por prop, porque o `TaskDetail` e usado por
-  // QUATRO telas (quadro, /minhas-tarefas, /arquivadas, /tarefa/[id]) e duas
-  // delas nao carregam quadro nenhum. Uma requisicao a mais ao abrir o
-  // detalhe; ⚠️ NAO MEDIDA (o item de desempenho do handoff continua aberto).
+  // Colunas do quadro da tarefa (a checklist decide pela coluna). `null` =
+  // ainda chegando.
   const [colunas, setColunas] = useState<Coluna[] | null>(null);
   const [arquivando, setArquivando] = useState(false);
   // Feedback do botao "Copiar link" (volta pro texto normal sozinho).
   const [copiado, setCopiado] = useState(false);
-  // Falha de copia tem estado PROPRIO em vez de reusar `erro`: a caixa de
-  // `erro` renderiza no meio do card e o botao fica no rodape -- num card com
-  // rolagem a mensagem cairia fora da vista de quem acabou de clicar.
+  // Estado proprio para a mensagem aparecer junto do botao, no rodape.
   const [copiaErro, setCopiaErro] = useState<string | null>(null);
   // Exclusao (soft-delete cascateado). Confirmacao inline mostra o estrago.
   const [confirmandoExcluir, setConfirmandoExcluir] = useState(false);
-  // Spec 062: o modal "Mover…".
+  // Modal "Mover…".
   const [movendoTarefa, setMovendoTarefa] = useState(false);
   const [excluindo, setExcluindo] = useState(false);
 
-  // ---- Comentarios (Entrega 14, Fatia 2) ----
+  // ---- Comentarios ----
   const [comentarios, setComentarios] = useState<Comment[] | null>(null);
   const [erroCom, setErroCom] = useState<string | null>(null);
   const [novoComent, setNovoComent] = useState("");
   const [enviandoComent, setEnviandoComent] = useState(false);
   const [respondendoId, setRespondendoId] = useState<string | null>(null);
   const [textoResposta, setTextoResposta] = useState("");
-  // Pedido de 26/10: a seta de cada comentário recolhe as respostas dele. É
-  // por comentário (nem o "Comentários ›" que a 055 tirou, nem um botão para a
-  // aba toda), e o padrão é aberto.
+  // Threads com as respostas recolhidas (padrao: abertas).
   const [respostasRecolhidas, setRespostasRecolhidas] = useState<Set<string>>(new Set());
   const [comentarioDestacado, setComentarioDestacado] = useState<string | null>(null);
   const focoConsumido = useRef<string | null>(null);
-  // ⚠️ O COLAPSO DA THREAD SAIU NA SPEC 055: com as abas, ele virou um segundo
-  // jeito de esconder a mesma coisa. O que sobrou dele e a ideia de nivel de
-  // SESSAO -- a aba escolhida nao volta ao padrao a cada tarefa aberta (§9.4).
+  // A aba escolhida dura a sessao; nao volta ao padrao a cada tarefa.
   const [abaLateral, setAbaLateral] = useState<"comentarios" | "atividade">(
     "comentarios",
   );
 
-  // ---- Atividade (Spec 055) ----
-  // ⚠️ A PRIMEIRA PAGINA E BUSCADA AO ABRIR, e nao ao clicar na aba: o
-  // contador do alternador precisa do `total`, e um numero que so aparece
-  // depois do primeiro clique nao serve para decidir se vale clicar.
+  // ---- Atividade ----
+  // A primeira pagina vem ao abrir: o contador da aba precisa do `total`.
   const [atividade, setAtividade] = useState<TaskHistoryEvent[]>([]);
   const [totalAtividade, setTotalAtividade] = useState(0);
   const [paginaAtividade, setPaginaAtividade] = useState(1);
@@ -465,21 +318,13 @@ export default function TaskDetail({
   const [erroAtividade, setErroAtividade] = useState<string | null>(null);
   const [erroMaisAtividade, setErroMaisAtividade] = useState<string | null>(null);
 
-  // Spec 052, fatia B: os links com nome da tarefa, logo abaixo da descrição.
-  // ⚠️ ZERA ao trocar de tarefa, antes da resposta: sem isso, a tarefa nova
-  // mostraria por um instante os links da anterior.
-  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). A busca
-  // falhava em silêncio e a lista ficava `[]`: "Adicionar link" mandava só o
-  // link novo e APAGAVA os que existiam. Agora a falha aparece, com "Tentar de
-  // novo", e não há edição sem a lista salva.
+  // Links da tarefa. `null` = ainda não sei (e não "sem links"): sem a lista
+  // salva não há edição, senão salvar apagaria os existentes.
   const [links, setLinks] = useState<LinkItem[] | null>(null);
   const [falhouLinks, setFalhouLinks] = useState(false);
   const [tentativaLinks, setTentativaLinks] = useState(0);
   const idDaTarefa = task?.id ?? null;
-  // ⚠️ A TAREFA QUE ESTÁ NA TELA AGORA, e não a do closure (revisão de 16/09).
-  // `salvarLinks` compara com ela depois do `await`: salvar os links de A e
-  // navegar para B no mesmo clique fazia a resposta de A pintar os links de A
-  // no detalhe de B.
+  // A tarefa na tela agora: `salvarLinks` confere depois do `await`.
   const idNaTela = useRef<string | null>(idDaTarefa);
   idNaTela.current = idDaTarefa;
   useEffect(() => {
@@ -509,14 +354,8 @@ export default function TaskDetail({
     };
   }, [idDaTarefa, tentativaLinks]);
 
-  // Spec 052, fatia D: o título e a descrição salvos NO LUGAR.
-  // ⚠️ POR QUE O DETALHE GUARDA O QUE SALVOU, em vez de só avisar o pai: os
-  // quatro chamadores aplicam `onSubtaskUpsert` de jeitos diferentes -- o
-  // quadro troca a tarefa na lista, mas `/tarefa/[id]` só atualiza as FILHAS e
-  // `/arquivadas` recarrega a página sem tocar no `detalhe`. Sem isto, nesses
-  // dois o título voltaria ao antigo logo depois do Enter.
-  // ⚠️ E ZERA QUANDO A `task` MUDA: se o pai aplicou a resposta, a prop já
-  // traz o valor novo e a cópia daqui não pode mascarar edições posteriores.
+  // Título e descrição salvos no lugar: guardados aqui porque nem todo
+  // chamador aplica `onSubtaskUpsert` no `task`. Zera quando a `task` muda.
   const [salvoNoLugar, setSalvoNoLugar] = useState<{
     id: string;
     title?: string;
@@ -533,10 +372,6 @@ export default function TaskDetail({
   const [enviandoResp, setEnviandoResp] = useState(false);
   const topComentRef = useRef<HTMLTextAreaElement>(null);
   const respostaRef = useRef<HTMLTextAreaElement>(null);
-  // Fatia B: wrapper do popover de responsaveis (ancora + deteccao de clique-fora).
-  // Spec 031 (C8): o seletor de projeto virou painel flutuante e ganhou a
-  // mesma ancora + fechar-ao-clicar-fora. Antes era um <select> inline: nao
-  // precisava fechar sozinho porque nao flutuava sobre nada.
 
   // Insere um trecho (emoji) na posicao do cursor do textarea e mantem foco.
   function inserirNoCursor(
@@ -573,9 +408,6 @@ export default function TaskDetail({
     setAbertoProj(false);
     setMovendoProj(false);
     setErroProj(null);
-    // ⚠️ AS DATAS ENTRAM NO MESMO RESET, e esquecer isto seria o defeito mais
-    // provável desta fatia: navegar de uma tarefa para outra deixaria o eco da
-    // ANTERIOR na tela. O `projetoAtual` já ensinou isso três linhas acima.
     setInicioAtual(task?.start_date ?? null);
     setPrazoAtual(task?.due_date ?? null);
     setHoraAtual(task?.due_time ?? null);
@@ -587,8 +419,6 @@ export default function TaskDetail({
     setErroSub(null);
     setSubSaving(new Set());
     setArquivando(false);
-    // Estado de exclusao: ANTES nao era zerado aqui -> a confirmacao (e o
-    // "excluindo") ficavam grudados e reapareciam travados ao reabrir/trocar.
     setConfirmandoExcluir(false);
     setExcluindo(false);
     setComentarios(null);
@@ -609,9 +439,7 @@ export default function TaskDetail({
     setGifsResp([]);
   }, [respondendoId]);
 
-  // --- Saida animada (Spec 027, D4) ------------------------------------
-  // A maquina de estados vive em `lib/useSaidaAnimada.ts`, coberta por teste.
-  // Aqui fica so o consumo: este componente desenha, nao decide.
+  // Saida animada: a maquina de estados vive em `lib/useSaidaAnimada.ts`.
   const { saindo, fecharSuave } = useSaidaAnimada({
     idAtual: task?.id ?? null,
     animar: modo === "modal", // modo pagina nao tem scrim nem animacao
@@ -622,51 +450,31 @@ export default function TaskDetail({
   const scrimProps = useFecharAoClicarFora(fecharSuave);
 
   useEffect(() => {
-    // Esc so faz sentido no modo modal. Na rota /tarefa/[id] "fechar" e
-    // navegar pra outra pagina -- disparar isso com Esc seria surpresa.
+    // Esc so fecha no modo modal.
     if (!task || modo !== "modal") return;
     function onKey(e: KeyboardEvent) {
-      // ⚠️ `defaultPrevented` = um elemento de DENTRO já usou este Esc (a
-      // lista de @menção, um menu ancorado, o campo de nova subtarefa).
-      // Antes o Esc que fechava a listinha fechava o detalhe inteiro -- e o
-      // comentário que estava sendo escrito sumia (auditoria de 16/10).
+      // `defaultPrevented`: um elemento de dentro (lista de @menção, menu,
+      // campo de subtarefa) já usou este Esc.
       if (e.key === "Escape" && !e.defaultPrevented) fecharSuave();
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [task, fecharSuave, modo]);
 
-  // Fatia B: fecha o popover de responsaveis ao clicar fora (mesmo padrao do
-  // EmojiPicker: mousedown no documento, ignora cliques dentro do wrapper).
+  // Paineis ancorados: fecham ao clicar fora.
   const painelResp = useAnchoredPanel<HTMLButtonElement>(abertoResp, () => setAbertoResp(false), {
     larguraPainel: 300,
   });
 
-  // Fecha o painel de projeto ao clicar fora (mesmo padrao do de responsaveis).
   const painelProj = useAnchoredPanel<HTMLButtonElement>(abertoProj, () => setAbertoProj(false), {
     larguraPainel: 280,
   });
 
-  // Fecha o painel de datas ao clicar fora -- MESMO padrao dos dois acima.
-  //
-  // ⚠️ E NAO O `useFecharAoClicarFora`, que resolve outro problema: aquele
-  // pareia `mousedown` com `mouseup` porque em MODAL, selecionar texto dentro
-  // e soltar fora fechava e apagava formulario. Painel suspenso usa este.
-  //
-  // ⚠️ FECHAR DESCARTA O RASCUNHO, e isso e deliberado: o painel tem botao de
-  // salvar, entao clicar fora e o cancelar. Salvar no fechamento mandaria
-  // requisicao por engano toda vez que a pessoa clicasse ao lado.
+  // Fechar o painel de datas descarta o rascunho: clicar fora e o cancelar.
   const painelDatas = useAnchoredPanel<HTMLButtonElement>(abertoDatas, () => setAbertoDatas(false), {
     larguraPainel: 240,
   });
 
-  // ⚠️ MESMO PADRAO DO PAINEL DE DATAS, e nao o `useFecharAoClicarFora`: aquele
-  // e do SCRIM do modal (compara `e.target === e.currentTarget`). Painel
-  // suspenso precisa de `contains`, senao clicar DENTRO da lista fecharia.
-  //
-  // ⚠️ DIFERENCA PARA O DE DATAS: aqui fechar NAO descarta nada. O de datas
-  // tem rascunho e botao de salvar, entao clicar fora e o cancelar; este grava
-  // no clique da opcao, entao nao ha o que perder.
   const painelPrio = useAnchoredPanel<HTMLButtonElement>(abertoPrio, () => setAbertoPrio(false), {
     larguraPainel: 150,
   });
@@ -703,8 +511,8 @@ export default function TaskDetail({
   }, [task?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Veio de notificação: abre a aba, desdobra a thread e destaca o comentário.
-  // ⚠️ UMA VEZ por (tarefa, comentário): sem a marca, todo comentário novo
-  // (que troca `comentarios`) roubaria a rolagem de volta para o antigo.
+  // Uma vez por (tarefa, comentário): sem a marca, todo comentário novo
+  // roubaria a rolagem de volta para o antigo.
   useEffect(() => {
     if (!task || !comentarioEmFoco || !comentarios) return;
     const chave = `${task.id}:${comentarioEmFoco}`;
@@ -744,19 +552,8 @@ export default function TaskDetail({
     });
   }
 
-  // Atividade da tarefa focada, primeira pagina (Spec 055).
-  //
-  // ⚠️ TRES CONSERTOS DA REVISAO DE 08/10:
-  // - RESPOSTA DE OUTRA TAREFA: o "Mostrar mais" nao tinha a guarda do
-  //   primeiro carregamento, e trocar de tarefa (abrir uma subtarefa) no meio
-  //   dele pendurava a pagina 2 da ANTERIOR na lista da nova. Toda resposta
-  //   confere `atividadeDe` antes de entrar.
-  // - A ABA ENVELHECIA: so carregava ao abrir a tarefa; mudar a coluna ou o
-  //   responsavel com o detalhe aberto nao aparecia ate reabrir. Agora relê a
-  //   primeira pagina ao voltar para a aba e quando a tarefa muda
-  //   (`updated_at`) -- sem limpar a lista, para nao piscar.
-  // - O ERRO DO "MOSTRAR MAIS" APAGAVA A LISTA: tem o seu proprio estado
-  //   (`erroMaisAtividade`), e o que ja estava carregado fica.
+  // Atividade, primeira pagina. Toda resposta confere `atividadeDe` (pode ter
+  // trocado de tarefa no meio).
   const atividadeDe = useRef<string | null>(null);
   const recarregarAtividade = useCallback(
     async (limpar: boolean) => {
@@ -778,8 +575,7 @@ export default function TaskDetail({
         setPaginaAtividade(1);
         setErroAtividade(null);
       } catch {
-        // ⚠️ Falhar aqui NAO pode derrubar o detalhe: a atividade e o lado
-        // acessorio da tela, e a tarefa em si ja esta carregada.
+        // Falha aqui nao derruba o detalhe.
         if (atividadeDe.current === id && limpar) {
           setErroAtividade("Não consegui carregar a atividade.");
         }
@@ -815,10 +611,8 @@ export default function TaskDetail({
         size: ATIVIDADE_POR_PAGINA,
       });
       if (atividadeDe.current !== id) return;
-      // ⚠️ `total` REGRAVADO a cada pagina: alguem pode ter mexido na tarefa
-      // enquanto esta lista estava aberta, e o botao "Mostrar mais" some pela
-      // conta `total - itens`. E pelo mesmo motivo a pagina pode repetir
-      // eventos que ja estavam (a lista anda para baixo) -- saem pelo id.
+      // `total` regravado a cada pagina; eventos repetidos (a lista anda) saem
+      // pelo id.
       setAtividade((atual) => {
         const ja = new Set(atual.map((e) => e.id));
         return [...atual, ...r.items.filter((e) => !ja.has(e.id))];
@@ -857,14 +651,8 @@ export default function TaskDetail({
     larguraPainel: 260,
   });
 
-  // Spec 034: quem alcanca ESTA tarefa vem do BACKEND, pela mesma regra que o
-  // POST de designacao usa (`user_can_view_task`). Ate 03/08 isto era
-  // reconstruido aqui com `foraDoEscopo(subtimePorMembro, ...)`, e a regra do
-  // front so tinha `team_id` -- nunca papel. Consequencia reportada: gestor e
-  // admin sumiam do seletor de tarefa interna de subtime, embora a API
-  // aceitasse os dois.
-  //
-  // `null` = ainda carregando (ou a chamada falhou).
+  // Quem alcanca esta tarefa vem do backend (mesma regra do POST de
+  // designacao). `null` = ainda carregando (ou a chamada falhou).
   const [alcancamAqui, setAlcancamAqui] = useState<Set<string> | null>(null);
 
   useEffect(() => {
@@ -877,16 +665,11 @@ export default function TaskDetail({
     setAlcancamAqui(null);
     listMembers(id)
       .then((ms) => {
-        // ⚠️ Guarda de corrida: trocar de tarefa rapido pode fazer a resposta
-        // da ANTERIOR chegar depois e pintar o seletor da atual com a lista
-        // errada. Nenhum portao pega isso.
+        // Guarda contra resposta da tarefa anterior.
         if (vivo) setAlcancamAqui(new Set(ms.map((m) => m.id)));
       })
       .catch(() => {
-        // Falha => segue `null` => nao esconde ninguem. Mesma filosofia do
-        // `foraDoEscopo`: errar oferecendo demais devolve o comportamento
-        // anterior, com o 422 do backend ainda de pe; errar escondendo demais
-        // tira gente do trabalho sem explicar por que.
+        // Falha: segue `null` e nao esconde ninguem (o backend ainda recusa).
         if (vivo) setAlcancamAqui(null);
       });
     return () => {
@@ -894,8 +677,7 @@ export default function TaskDetail({
     };
   }, [task?.id]);
 
-  // Spec 053, fatia D: quem segue. UM estado para o botao do topo e para a
-  // linha "Seguidores" -- ver `components/SeguidoresDaTarefa.tsx`.
+  // Quem segue: um estado para o botao do topo e a linha "Seguidores".
   const seguidores = useSeguidores(task?.id ?? null, avisar);
 
   // Quem NAO alcanca. Vazio enquanto a lista nao chegou (ver acima).
@@ -908,18 +690,14 @@ export default function TaskDetail({
     return fora;
   }, [alcancamAqui, members]);
 
-  // Nao entra no autocompletar de @: desativado (nao le mais) + fora do
-  // escopo (recebe notificacao de tarefa que nao consegue abrir). Aqui NAO
-  // ha a excecao do "ja designado" do seletor: mencionar quem nao ve a
-  // tarefa e sempre escrever pra ninguem.
+  // Fora do autocompletar de @: desativados e quem nao alcanca a tarefa (sem
+  // a excecao do "ja designado").
   const foraDoAutocompletar = useMemo(
     () => new Set<string>([...membrosInativos, ...foraDoEscopoAqui]),
     [membrosInativos, foraDoEscopoAqui]
   );
 
-  // Lista do picker da subtarefa. Separada de `filtrados` (que serve ao
-  // picker da tarefa mae) porque as buscas sao independentes -- compartilhar
-  // o termo faria digitar num lugar filtrar o outro.
+  // Picker da subtarefa: busca separada da do picker da tarefa mae.
   const membrosParaSub = useMemo(() => {
     const q = subBusca.trim().toLowerCase();
     return Array.from(members.entries())
@@ -937,9 +715,7 @@ export default function TaskDetail({
       .map(([id, m]) => ({ id, name: m.name, inativo: membrosInativos.has(id) }))
       // Inativo sai, MENOS quem ja esta designado -- ver `membrosInativos`.
       .filter((e) => !e.inativo || assignees.includes(e.id))
-      // Fora do escopo sai pela MESMA excecao: quem ja esta designado fica,
-      // senao a unica forma de tirar a pessoa (desmarcar a caixa dela)
-      // desapareceria junto.
+      // Fora do escopo sai pela mesma excecao.
       .filter((e) => !foraDoEscopoAqui.has(e.id) || assignees.includes(e.id))
       .filter((e) => (q ? e.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -948,41 +724,22 @@ export default function TaskDetail({
   if (!task) return null;
   const tid = task.id;
   const tidProjeto = task.project_id ?? null; // pai e subtarefa no mesmo projeto
-  // Spec 022: task de topo pode trocar/tirar projeto; subtarefa herda do pai
-  // (read-only). Nome do projeto atual resolve do Map (null/ausente => avulsa).
+  // Subtarefa herda o projeto do pai (read-only).
   const ehTopo = !task.parent_task_id;
 
-  // Os ids que o historico guarda viram nome com o que a tela JA tem em maos
-  // (Spec 055, fatia B). Quem nao resolve vira frase generica, nunca uuid.
+  // Ids do historico viram nome com o que a tela ja tem; sem nome, frase
+  // generica, nunca uuid.
   const nomesDoHistorico = {
     pessoa: (id: string) => members.get(id)?.name ?? null,
     coluna: (id: string) => colunas?.find((c) => c.id === id)?.name ?? null,
   };
   const nomeProjetoAtual = projetoAtual ? projects.get(projetoAtual) ?? null : null;
-  // ⚠️ SOBRE O ECO, e nao sobre `task.due_date` (Spec 038, fatia A). Depois de
-  // salvar uma data nova, o `task` do pai ainda e o antigo por um instante --
-  // ler dele deixaria a cor de atraso discordando da data ao lado dela.
+  // Sobre o eco, e nao `task.due_date`, que fica velho por um instante apos
+  // salvar.
   const dueTone = deadlineTone(prazoAtual, task.status, task.is_archived, horaAtual);
-  // ⚠️ ARQUIVADA SAI DA CHECKLIST (Spec 031, C11). O quadro entrega `filhos`
-  // sem filtrar -- a lista dele nao sabe que esta alimentando um checklist.
-  // Filtrar AQUI conserta os tres chamadores de uma vez (quadro, minhas
-  // tarefas, arquivadas) e evita a regra em triplicata.
-  //
-  // Por que a checklist e diferente do resto: ela responde "o que falta
-  // fazer", e arquivar E dizer "isto saiu do fluxo". A subtarefa continua no
-  // banco e no quadro com "Mostrar arquivadas" -- so nao conta mais aqui, nem
-  // na barra de progresso, nem no "(2/5)" do titulo.
-  //
-  // ⚠️ UMA chamada so, de proposito. As LINHAS e a CONTA vinham de duas
-  // chamadas separadas e divergiram: o numerador era o trabalho vivo e o
-  // denominador era `linhas.length`, que INCLUI arquivada quando a caixa esta
-  // marcada. Dava "(1/3)" com a barra em 50%. Ver `lib/subtarefas.ts`.
-  //   linhasSub -> o que DESENHA (arquivada entra apagada)
-  //   totalSub  -> o denominador do rotulo E da barra (so trabalho vivo)
-  // ⚠️ `?? []` e nao `!`: enquanto as colunas nao chegam, o mapa e VAZIO e a
-  // conta da 0 -- por isso o rotulo e a barra so aparecem depois (ver o
-  // `colunas &&` no render). Numero errado por meio segundo e o defeito que a
-  // conferencia manual de 10/08 pegou; numero ausente por meio segundo, nao.
+  // Arquivada nao conta na checklist (aparece apagada so com
+  // `mostrarArquivadas`). Linhas e conta saem da mesma chamada, senao divergem.
+  // Sem colunas a conta da 0; o render espera `colunas`.
   const colunaPorId = new Map((colunas ?? []).map((c) => [c.id, c]));
   const {
     linhas: linhasSub,
@@ -998,8 +755,7 @@ export default function TaskDetail({
 
   async function toggle(userId: string) {
     const jaEra = assignees.includes(userId);
-    // Tirar o ULTIMO responsavel: o servidor recusaria (ADR 0031). Diz antes,
-    // em vez de sumir com a pilula e trazer de volta.
+    // Tirar o ultimo responsavel o servidor recusaria: avisa antes.
     const bloqueio = jaEra ? bloqueioAoTirar(assignees, userId) : null;
     if (bloqueio) {
       avisar(bloqueio);
@@ -1023,8 +779,6 @@ export default function TaskDetail({
     } catch (e) {
       setAssignees(anterior);
       onAssigneesChange(tid, anterior);
-      // ⚠️ Todo 422 virava "nao alcanca" -- inclusive o do ultimo
-      // responsavel. Ver `lib/responsaveis.ts`.
       avisar(mensagemDeFalhaDoResponsavel(e as ApiError));
     } finally {
       setSaving((s) => {
@@ -1035,19 +789,11 @@ export default function TaskDetail({
     }
   }
 
-  // Spec 022: move a task pra outro projeto (destino) OU tira de projeto
-  // (destino === null -> detach). NAO otimista: o move reparenta a subtree e
-  // pode ser recusado (visibilidade, 422), entao so aplica no sucesso. So faz
-  // sentido em task de topo -- a UI abaixo esconde o controle em subtarefa.
   function abrirDatas() {
-    // ⚠️ O RASCUNHO NASCE DO ECO, e nao do `task`. Depois de um salvamento o
-    // `task` do pai pode ainda ser o antigo (ele refetcha depois), e reabrir o
-    // painel mostraria a data velha por cima da nova.
+    // O rascunho nasce do eco: o `task` do pai pode ainda ser o antigo.
     setRascunhoInicio(inicioAtual ?? "");
     setRascunhoPrazo(prazoAtual ?? "");
-    // ⚠️ `HH:MM` NO INPUT, e o backend devolve `HH:MM:SS`. Um `<input
-    // type="time">` com valor de 8 caracteres fica VAZIO no navegador -- e a
-    // hora sumiria ao reabrir o painel, parecendo que nao salvou.
+    // `<input type="time">` com `HH:MM:SS` fica vazio; o backend devolve segundos.
     setRascunhoHora((horaAtual ?? "").slice(0, 5));
     setErroDatas(null);
     setAbertoDatas(true);
@@ -1055,16 +801,12 @@ export default function TaskDetail({
 
   async function salvarDatas() {
     if (salvandoDatas) return;
-    // ⚠️ `""` VIRA `null`, E NAO VIAJA COMO STRING VAZIA. O backend usa
-    // `fields_set`: `null` apaga a data, `""` nao e data e volta 422.
+    // `""` vira `null`: `null` apaga a data, `""` volta 422.
     const inicio = rascunhoInicio || null;
     const prazo = rascunhoPrazo || null;
-    // ⚠️ HORA SEM DATA E RECUSADA PELO BACKEND (422). Limpar a data e deixar a
-    // hora produziria esse par, e o erro falaria de um campo que a pessoa nao
-    // tocou -- entao a tela DESFAZ a combinacao antes de mandar.
+    // Hora sem data o backend recusa (422): limpar a data limpa a hora.
     const hora = prazo ? rascunhoHora || null : null;
-    // No-op: nada mudou. Sem isto, abrir e salvar sem tocar gravaria uma
-    // entrada de historico que nao aconteceu do ponto de vista de quem usa.
+    // Nada mudou: nao grava historico a toa.
     if (
       inicio === (inicioAtual ?? null) &&
       prazo === (prazoAtual ?? null) &&
@@ -1076,11 +818,8 @@ export default function TaskDetail({
     setErroDatas(null);
     setSalvandoDatas(true);
     try {
-      // ⚠️ MANDA OS DOIS SEMPRE, e nao so o que mudou. O backend valida
-      // `start_date <= due_date` sobre o estado FINAL da tarefa
-      // (`_validate_dates`), entao mandar so um campo pode montar um par
-      // invalido com o valor que ficou no banco -- e a recusa apareceria
-      // falando de um campo que a pessoa nao tocou.
+      // Manda os dois sempre: o backend valida `start_date <= due_date` sobre o
+      // estado final da tarefa.
       const t = await updateTask(tid, {
         start_date: inicio,
         due_date: prazo,
@@ -1090,16 +829,11 @@ export default function TaskDetail({
       setPrazoAtual(t.due_date ?? null);
       setHoraAtual(t.due_time ?? null);
       setAbertoDatas(false);
-      // ⚠️ O PAI PRECISA SABER. Prazo muda a COR do card e o filtro
-      // "Atrasadas" do quadro -- sem avisar, a tarefa fica com data nova no
-      // detalhe e cor velha atras dele. `onTaskMoved` e o canal que ja
-      // significa "mexeu em mais do que esta tarefa, reaja".
+      // O pai precisa saber: prazo muda a cor do card e o filtro "Atrasadas".
       onTaskMoved(t);
     } catch (e) {
       const err = e as ApiError;
-      // ⚠️ A MENSAGEM DO BACKEND VEM PRIMEIRO no 422: e ela que diz "Data de
-      // inicio nao pode ser posterior a data limite", que e a unica recusa
-      // que a pessoa consegue consertar sozinha.
+      // No 422 a mensagem do backend diz o que consertar.
       setErroDatas(
         err.status === 422
           ? err.message || "Datas inválidas."
@@ -1113,13 +847,8 @@ export default function TaskDetail({
   }
 
   /**
-   * Grava título ou descrição editados no lugar (Spec 052, fatia D).
-   *
-   * ⚠️ LANÇA COM A MENSAGEM PRONTA: quem chama é o componente do campo, que
-   * reabre com o texto da pessoa e mostra a mensagem embaixo.
-   *
-   * ⚠️ `onSubtaskUpsert`, e não `onTaskMoved`: mesmo motivo da prioridade --
-   * o título muda o que o card mostra, não onde a tarefa mora.
+   * Grava título ou descrição editados no lugar. Lança com a mensagem pronta:
+   * o campo reabre com o texto da pessoa e a mostra embaixo.
    */
   async function salvarNoLugar(campo: { title: string } | { description: string }) {
     if (!task) return;
@@ -1164,25 +893,10 @@ export default function TaskDetail({
   }
 
   /**
-   * Troca a prioridade direto pela pilula (Spec 039, F6).
-   *
-   * ⚠️ A PILULA E O CONTROLE, e nao ganhou um controle ao lado -- e a licao da
-   * C8 escrita na propria linha da pilula de coluna, e a mesma que a de datas
-   * ja aplica. Ate aqui, mudar prioridade exigia abrir o modal INTEIRO pelo
-   * "Editar", para trocar um enum de quatro valores.
-   *
-   * ⚠️ SEM OTIMISMO, de proposito. O PATCH de prioridade e um campo so e a
-   * lista fecha na hora; pintar antes e reverter no erro daria pisca-pisca num
-   * gesto que ja e instantaneo. A checkbox da subtarefa e otimista porque ela
-   * mexe em COLUNA e o contador do card depende disso.
-   *
-   * ⚠️ `onSubtaskUpsert` E NAO `onTaskMoved`: prioridade nao muda onde a tarefa
-   * MORA, so o que ela mostra. `onTaskMoved` faz o quadro recarregar (ver o
-   * `mudarProjeto` abaixo) -- seria uma varredura inteira para trocar um selo.
+   * Troca a prioridade pela pilula, sem otimismo. `onSubtaskUpsert` (e nao
+   * `onTaskMoved`, que recarrega o quadro): prioridade so muda o que o card mostra.
    */
   async function mudarPrioridade(destino: string) {
-    // `task` e `Task | null` (null = painel fechado). As outras acoes deste
-    // arquivo usam `task!`; aqui a guarda explicita evita o `!`.
     if (!task || salvandoPrio) return;
     if (task.priority === destino) {
       setAbertoPrio(false);
@@ -1206,28 +920,9 @@ export default function TaskDetail({
   }
 
   /**
-   * Troca a COLUNA direto pela pilula (Spec 039, F6-b).
-   *
-   * ⚠️ MANDA SO `column_id`, e NUNCA `status`. Mandar os dois e 422 (ADR 0041,
-   * D3) e mandar `status` no lugar e a regra velha. O status certo vem NA
-   * RESPOSTA -- por isso o upsert usa `t`, e nao um objeto remendado aqui.
-   *
-   * ⚠️ MOVER PARA COLUNA `DONE` CASCATEIA NO BACKEND: o
-   * `complete_descendants` conclui a subarvore inteira. Duas consequencias que
-   * esta funcao TEM de tratar, e que a de prioridade nao tinha:
-   *
-   *   1. o contador do card (`subtask_done`) muda -- quem cuida disso e o
-   *      `aoUpsert` do quadro, que ja deriva `done = total` quando a tarefa
-   *      VIRA concluida. Por isso o canal e `onSubtaskUpsert`: ele passa por
-   *      la. `onTaskMoved` recarregaria o quadro inteiro, o que tambem
-   *      funcionaria -- e seria uma varredura de 254 linhas para mover um card.
-   *
-   *   2. as filhas na checklist DESTE painel ficam velhas: elas mudaram no
-   *      banco e nenhuma veio na resposta. Mesma situacao da cascata de
-   *      arquivamento, e mesmo conserto -- `recarregarFilhos()`.
-   *
-   * ⚠️ RECARREGA SO QUANDO HA FILHA. Sem isso, mover uma tarefa sem subtarefa
-   * gastaria uma requisicao para receber lista vazia.
+   * Troca a coluna pela pilula. Manda so `column_id` (com `status` junto e
+   * 422); o status certo vem na resposta. Ir para coluna `DONE` conclui a
+   * subarvore no backend, entao as filhas desta checklist sao relidas.
    */
   async function mudarColuna(destino: string) {
     if (!task || salvandoCol) return;
@@ -1243,7 +938,6 @@ export default function TaskDetail({
       const t = await updateTask(tid, { column_id: destino });
       setAbertoCol(false);
       onSubtaskUpsert(t);
-      // O confete sai do seletor (pedido dela, 21/10).
       if (viraConcluida) soltarConfete(painelCol.anchorRef.current);
       if (viraConcluida && filhos.length > 0) void recarregarFilhos();
     } catch (e) {
@@ -1260,6 +954,8 @@ export default function TaskDetail({
     }
   }
 
+  // Move para outro projeto (ou tira, com `null`). Nao otimista: o move pode
+  // ser recusado, entao so aplica no sucesso.
   async function mudarProjeto(destino: string | null) {
     if (movendoProj) return;
     // No-op: ja esta no destino.
@@ -1307,8 +1003,7 @@ export default function TaskDetail({
     const rascunho = { titulo: novoTitulo, assigneeIds: subAssignees, dueDate: subPrazo };
     const impedimento = motivoNaoCria(rascunho);
     if (impedimento) {
-      // Trava de UI. O backend segue aceitando subtarefa sem responsavel de
-      // proposito (n8n, triagem de solicitacao) -- a exigencia e daqui.
+      // Trava de UI: o backend aceita subtarefa sem responsavel (n8n, triagem).
       setErroSub(impedimento);
       return;
     }
@@ -1321,9 +1016,7 @@ export default function TaskDetail({
       });
       upsertFilhaLocal(nova);
       onSubtaskUpsert(nova);
-      // Fica ABERTO para a proxima: decompor trabalho vem em rajada, e fechar
-      // a cada criacao custava uma ida ao "+" por subtarefa. Responsavel e
-      // prazo ficam; o titulo limpa e recebe o foco de volta.
+      // Fica aberto para a proxima: responsavel e prazo ficam, o titulo limpa.
       const proximo = proximoDaSequencia({
         titulo: novoTitulo,
         assigneeIds: subAssignees,
@@ -1342,53 +1035,22 @@ export default function TaskDetail({
   }
 
   /**
-   * A caixinha da subtarefa (fatia 4c-2) -- agora escreve COLUNA.
-   *
-   * ⚠️ MARCAR e "mover para a coluna de conclusao", nao "gravar COMPLETED". O
-   * status vem derivado dela pelo servidor (ADR 0041), e o front NAO o
-   * adivinha: quem le status na resposta e a linha do `onSubtaskUpsert` logo
-   * depois do `await`.
-   *
-   * ⚠️ DESMARCAR MANDA SEMPRE PARA A COLUNA ABERTA PADRAO. Decisao de
-   * 10/08, e ela substitui uma tentativa de ser esperto que a conferencia
-   * manual reprovou.
-   *
-   * A versao anterior (herdada do codigo por `status`) guardava em estado do
-   * componente de onde a subtarefa tinha saido e devolvia para la. O efeito
-   * real: **funcionava na primeira vez e depois nao.** A memoria vive
-   * enquanto o detalhe esta aberto; fechar para conferir no quadro e reabrir
-   * apaga tudo, e o desmarcar seguinte caia num fallback silencioso. Duas
-   * respostas diferentes para o mesmo clique, sem nada na tela explicando a
-   * diferenca.
-   *
-   * ⚠️ REGRA QUE FUNCIONA AS VEZES E PIOR QUE REGRA BURRA, porque ninguem
-   * consegue criar habito em cima dela. O preco aceito: desmarcar sem querer
-   * uma subtarefa que estava em `Em Andamento` a joga para `Backlog`, e
-   * arrastar de volta e trabalho manual.
-   *
-   * A saida boa esta registrada e NAO e esta: o `task_history` passou a
-   * gravar movimentacao de coluna na fatia 5a (ADR 0041, D5), entao existe o
-   * dado para descobrir a coluna real de antes. Ler o historico e entrega
-   * propria.
+   * A caixinha da subtarefa: marcar move para a coluna de conclusao; desmarcar
+   * sempre manda para a coluna aberta padrao. O status vem da resposta.
    */
   async function alternarConclusao(f: Task, caixa?: HTMLElement | null) {
     if (!colunas) return; // colunas ainda chegando: a caixa nem esta desenhada
     const concluida = colunaPorId.get(f.column_id)?.semantic === "DONE";
 
-    // ⚠️ `is_default_target` PRIMEIRO, e este e o primeiro leitor que essa flag
-    // ganha no front. Ela responde exatamente "para onde vai a tarefa desta
-    // semantica neste quadro". Sem ela, um quadro com duas colunas de
-    // conclusao mandaria a tarefa para a primeira da lista, que e a ordem de
-    // `position` -- ou seja, arbitraria.
+    // `is_default_target` primeiro: com duas colunas da mesma semantica, a
+    // primeira da lista seria arbitraria.
     const alvo = (semantic: Coluna["semantic"]) =>
       colunas.find((c) => c.semantic === semantic && c.is_default_target) ??
       colunas.find((c) => c.semantic === semantic);
 
     const destino = concluida ? alvo("OPEN")?.id : alvo("DONE")?.id;
 
-    // ⚠️ QUADRO SEM COLUNA DE CONCLUSAO E ESTADO POSSIVEL na fatia 5, quando o
-    // CRUD deixar apagar coluna. Erro visivel e melhor que caixa que nao faz
-    // nada.
+    // Quadro sem coluna de conclusao: erro visivel em vez de caixa que nao faz nada.
     if (!destino) {
       setErroSub(
         concluida
@@ -1400,15 +1062,8 @@ export default function TaskDetail({
 
     setErroSub(null);
     setSubSaving((s) => new Set(s).add(f.id));
-    // ⚠️ Otimista nos DOIS campos. A coluna e o que a checklist le; o `status`
-    // anda junto para nao deixar os dois discordando na memoria -- mesma
-    // divida registrada no `onDragEnd`, e ela morre quando o ultimo leitor de
-    // `status` do front morrer.
-    // ⚠️ `"BACKLOG"` ao reabrir NAO e chute: o destino e a coluna aberta
-    // padrao, e ela devolve `BACKLOG` nos dois caminhos da ADR 0041 -- pela
-    // ponte (a coluna `Backlog` padrao tem `legacy_status = BACKLOG`) e pela
-    // semantica (o mapa manda `OPEN -> BACKLOG`). Fora deste caso o front
-    // continua NAO adivinhando status: le da resposta.
+    // Otimista na coluna e no status, para os dois nao discordarem. A coluna
+    // aberta padrao devolve `BACKLOG`.
     const otimista = {
       ...f,
       column_id: destino,
@@ -1420,7 +1075,7 @@ export default function TaskDetail({
       const atualizada = await updateTask(f.id, { column_id: destino });
       upsertFilhaLocal(atualizada);
       onSubtaskUpsert(atualizada);
-      // O confete sai da caixinha (pedido dela, 21/10); reabrir não solta.
+      // Reabrir não solta confete.
       if (!concluida) soltarConfete(caixa);
     } catch (e) {
       upsertFilhaLocal(f); // revert
@@ -1435,15 +1090,8 @@ export default function TaskDetail({
     }
   }
 
-  // Copia o link canonico da tarefa (/tarefa/<id>) pra area de transferencia.
-  // A rota /tarefa/[id] e o endereco ESTAVEL: nao depende de qual quadro,
-  // projeto ou lista a pessoa estava olhando quando copiou.
-  //
-  // navigator.clipboard so existe em contexto seguro (https ou localhost). O
-  // prod e https, mas testar por IP na rede local cai no fallback do
-  // execCommand (obsoleto, porem e o unico caminho fora de contexto seguro).
-  // Se os dois falharem, mostra a URL pra pessoa copiar na mao -- nunca fica
-  // um clique que aparentemente nao fez nada.
+  // Copia o link canonico (/tarefa/<id>). Fora de contexto seguro (IP na rede
+  // local) cai no execCommand; se os dois falharem, mostra a URL para copiar.
   async function copiarLink() {
     if (!task) return;
     const url = `${window.location.origin}/tarefa/${task.id}`;
@@ -1485,22 +1133,12 @@ export default function TaskDetail({
       const desarquivando = task!.is_archived;
       const r = desarquivando ? await unarchiveTask(tid) : await archiveTask(tid);
       onSubtaskUpsert(r); // upsert generico: o quadro reflete is_archived
-      // ⚠️ CASCATA (05/08): a subarvore inteira mudou no banco e NENHUMA
-      // dessas filhas veio na resposta -- o estado do chamador esta velho.
-      // `onTaskMoved` e o canal que ja significa "mexeu em mais do que esta
-      // tarefa, reaja": no quadro ele recarrega, em minhas-tarefas faz upsert
-      // com os filhos. Sem isto a checklist continuaria mostrando subtarefa
-      // ativa que ja esta arquivada -- a mesma stale de estado que a
-      // duplicacao tinha.
+      // Cascata: as filhas mudaram no banco e nenhuma veio na resposta, entao o
+      // chamador e a checklist local precisam reler.
       if (r.cascade_count > 0) {
         onTaskMoved(r);
-        // ⚠️ B1: a cascata mudou as filhas no banco e NENHUMA veio na
-        // resposta. Antes bastava `onTaskMoved` (o quadro recarregava e
-        // `filhos` era derivado dele); agora a lista e daqui e precisa ser
-        // relida, senao a checklist segue mostrando ativa o que ja arquivou.
         void recarregarFilhos();
-        // Avisar nao e opcional: a operacao mexeu em tarefas que a pessoa nao
-        // citou. Em silencio, ela so descobriria pela ausencia delas.
+        // Avisa: a operacao mexeu em tarefas que a pessoa nao citou.
         const n = r.cascade_count;
         const plural = n === 1 ? "subtarefa foi" : "subtarefas foram";
         avisar(
@@ -1514,11 +1152,7 @@ export default function TaskDetail({
       avisar(
         a.status === 403
           ? "Você não pode arquivar esta tarefa."
-          : // ⚠️ `a.message` no 422: e aqui que chega a mensagem que NOMEIA o
-            // pai arquivado ("Desarquive a tarefa pai primeiro…", 04/08).
-            // Trocada por um texto generico, aquela instrucao -- que existe
-            // justamente porque a pessoa nao tem como adivinhar o pai --
-            // nunca aparecia nesta tela. A /arquivadas ja mostrava.
+          : // No 422 a mensagem nomeia o pai arquivado.
             a.message || "Não consegui arquivar a tarefa."
       );
     } finally {
@@ -1594,9 +1228,7 @@ export default function TaskDetail({
     );
   }
 
-  // Apagar e 204 (sem corpo) e o resultado depende de ter replica viva
-  // (some) ou nao (tombstone). Em vez de reimplementar a regra D5 aqui,
-  // recarrego o thread -- o backend decide.
+  // Apagar decide entre sumir e tombstone no backend: so recarrega o thread.
   async function recarregarComentarios() {
     try {
       setComentarios(await todasAsPaginas((page, size) => listComments(tid, { page, size })));
@@ -1605,21 +1237,15 @@ export default function TaskDetail({
     }
   }
 
-  // As acoes do topo (Seguir, compartilhar, "⋯", fechar). ⚠️ MORAM EM DOIS
-  // LUGARES, um de cada vez (pedido dela, 11/11): lado a lado, no topo da
-  // LATERAL, para que o titulo de duas linhas cresca so na coluna da esquerda e
-  // nao empurre os comentarios; empilhado, no cabecalho, porque a lateral
-  // fica la embaixo. Uma copia so no DOM: duas dariam dois "Fechar".
+  // Acoes do topo (Seguir, compartilhar, "⋯", fechar). Lado a lado ficam no
+  // topo da lateral; empilhado, no cabecalho. Uma copia so no DOM.
   const acoes = (
     <span className="flex shrink-0 items-center gap-1 max-[899px]:ml-auto">
-      {/* Spec 053 (D5): o gesto de um clique, no topo. */}
       <BotaoSeguir
         estado={seguidores}
         meuId={me?.id ?? null}
         arquivada={task.is_archived}
       />
-      {/* Pedido dela (05/11): o "Copiar link" virou o icone de
-          compartilhar, e as outras acoes foram para o "⋯". */}
       <button
         type="button" className="btn btn-ghost" onClick={() => void copiarLink()}
         style={{ padding: "4px 8px", flexShrink: 0 }}
@@ -1636,21 +1262,18 @@ export default function TaskDetail({
         arquivada={task.is_archived}
         arquivando={arquivando}
         onAlternarArquivo={() => void alternarArquivo()}
-        // Spec 062. A porta do servidor e `task.update` (editar a
-        // origem); arquivada nao se move.
+        // Arquivada nao se move.
         onMover={
           (me?.permissions.includes("task.update") ?? false) && !task.is_archived
             ? () => setMovendoTarefa(true)
             : undefined
         }
-        // Spec 033. Exige `task.create`: duplicar E criar.
         onDuplicar={
           (me?.permissions.includes("task.create") ?? false)
             ? () => onDuplicar(task)
             : undefined
         }
-        // Spec 051, fatia A: o cadeado vem da TAREFA (`task.delete` no
-        // time dela), e nao de `me.permissions`.
+        // A permissao vem da tarefa (`task.delete` no time dela).
         onExcluir={task.can_delete ? () => setConfirmandoExcluir(true) : undefined}
       />
       <button
@@ -1664,9 +1287,7 @@ export default function TaskDetail({
 
   return (
     <div
-      // Modo modal: o scrim inteiro e clicavel pra fechar -- mas so no CLIQUE,
-      // nao no arraste que termina aqui (`lib/useCliqueFora.ts`). Modo pagina:
-      // nao ha scrim nem "fora" pra clicar -- o container vira um bloco comum.
+      // Modo modal: o scrim fecha no clique, nao no arraste (`lib/useCliqueFora.ts`).
       {...(modo === "modal" ? scrimProps : {})}
       className={modo === "modal" ? "modal-scrim" : undefined}
       data-saindo={saindo ? "true" : undefined}
@@ -1685,39 +1306,24 @@ export default function TaskDetail({
         onClick={(e) => e.stopPropagation()}
         className={[
           modo === "modal" ? "modal-card" : "",
-          // ⚠️⚠️ AS DUAS COLUNAS ROLAM SOZINHAS a partir de 900px (pedido dela,
-          // 30/09), e por isso o CARTAO para de rolar: com o cartao rolando E
-          // as colunas rolando, a barra de fora movia as duas juntas e a de
-          // dentro só uma -- duas barras para a mesma area.
-          // ⚠️ Empilhado (abaixo de 900px) quem rola volta a ser o cartao: uma
-          // area rolavel dentro de outra, num celular, e rolagem aninhada.
+          // A partir de 900px as colunas rolam sozinhas e o cartao nao; empilhado,
+          // rola o cartao (sem rolagem aninhada).
           modo === "modal" ? "overflow-y-auto min-[900px]:overflow-hidden" : "",
         ].filter(Boolean).join(" ") || undefined}
         data-saindo={saindo ? "true" : undefined}
         style={{
-          // ⚠️ 1160 (redesign 19/10; era 1040 na Spec 055): a lateral passou
-          // a 420. `maxWidth: 100%` continua mandando em tela estreita.
           width: 1160, maxWidth: "100%",
           background: "var(--surface)",
           border: "1px solid var(--border)", borderRadius: 16,
-          // ⚠️ SEM MOLDURA NO CARTAO (redesign 19/10): a lateral tem fundo
-          // proprio e encosta nas bordas; cada coluna poe o seu respiro.
           padding: 0, overflow: "hidden",
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column",
-          // Modal: altura travada e rolagem POR DENTRO do card (a pagina atras
-          // nao rola). Pagina: sem trava -- quem rola e a propria pagina, senao
-          // o card ganharia uma segunda barra de rolagem aninhada.
-          // ⚠️ `overflowY` saiu daqui para a `className` acima: ele precisa
-          // mudar com a largura da tela, e estilo inline nao tem media query.
+          // Modal: altura travada e rolagem por dentro; pagina: quem rola e a
+          // propria pagina. O `overflowY` mora na `className` (muda com a largura).
           ...(modo === "modal" ? { maxHeight: "88dvh" } : { margin: "0 auto" }),
         }}
       >
-        {/* ⚠️⚠️ DUAS COLUNAS (Spec 055): a esquerda e o que a tarefa E, a
-            direita e o que ACONTECEU com ela. Empilham abaixo de 900px --
-            lado a lado num notebook pequeno, a direita esmagaria a
-            esquerda, e a descricao e a checklist vivem la.
-            Redesign 19/10: grade `minmax(0,1fr) 420px`, lateral com fundo
-            `--bg` e borda a esquerda. */}
+        {/* Duas colunas: a esquerda e a tarefa, a direita (comentarios e
+            atividade) o que aconteceu com ela. Empilham abaixo de 900px. */}
         <div
           className={
             modo === "modal"
@@ -1725,32 +1331,23 @@ export default function TaskDetail({
               : "flex flex-col min-[900px]:grid min-[900px]:grid-cols-[minmax(0,1fr)_420px]"
           }
         >
-          {/* A coluna principal: o conteudo rola por dentro e o rodape de
-              acoes fica fixo embaixo, fora da area que rola (ajuste dela,
-              19/10). */}
+          {/* Coluna principal: o conteudo rola por dentro e o rodape de acoes
+              fica fixo embaixo. */}
           <div className="flex min-w-0 min-h-0 flex-col">
-        {/* Cabecalho (redesign 19/10; pedido dela 11/11): voltar, titulo e
-            selos. ⚠️ MORA NA COLUNA DA ESQUERDA desde 11/11: o titulo quebra
-            em ate duas linhas, e cresce so desta coluna -- a lateral comeca
-            no topo e a divisoria vai ate em cima. */}
+        {/* Cabecalho: voltar, titulo e selos. Fica na coluna da esquerda para o
+            titulo de duas linhas nao empurrar a lateral. */}
         <div className="flex shrink-0 flex-col items-start gap-1 border-b border-border px-5 py-3">
-          {/* O "Voltar" numa linha SO DELE, acima do titulo (11/11): na mesma
-              linha, os dois disputavam a largura e, em 1000px, o titulo
-              ficava com 150px. */}
+          {/* O "Voltar" numa linha so dele, para nao disputar largura com o titulo. */}
           {temVoltar && (
             <button
               type="button" className="btn btn-ghost" onClick={onVoltar}
               style={{
                 padding: "2px 8px", fontSize: 13,
-                // ⚠️ TETO DE LARGURA (pedido dela, 11/11): com a mae de titulo
-                // longo, o "Voltar para..." comia a linha e o titulo virava
-                // "Aplicar ...". O nome inteiro continua no `title`.
+                // Teto de largura; o nome inteiro continua no `title`.
                 maxWidth: "min(360px, 100%)", overflow: "hidden", whiteSpace: "nowrap",
                 display: "inline-flex", alignItems: "center", gap: 4,
-                // `overflow: hidden` zera o min-height automatico deste flex item
-                // (CSS Flexbox 4.5). Sem flexShrink 0, o botao encolhe na vertical
-                // quando o conteudo do modal estoura 88vh e o texto sai cortado
-                // pela metade. NAO remover junto com o overflow.
+                // `overflow: hidden` zera o min-height automatico deste flex item:
+                // sem flexShrink 0 o botao encolhe na vertical e o texto sai cortado.
                 flexShrink: 0,
                 lineHeight: 1.6,
               }}
@@ -1763,16 +1360,12 @@ export default function TaskDetail({
             </button>
           )}
           <div className="flex w-full flex-wrap items-center gap-2">
-          {/* O titulo mora na barra (ajuste dela, 19/10): 22/700, ate DUAS
-              linhas com reticencias (pedido dela, 11/11; era uma); "Criada
-              em" logo abaixo. Spec 052, fatia D: clicar edita; Enter ou clicar fora salva, Esc desiste. `key`
-              pelo id: trocar de tarefa com o campo aberto nao pode levar o
-              rascunho para a outra. */}
+          {/* Clicar edita; Enter ou clicar fora salva, Esc desiste. `key` pelo
+              id: trocar de tarefa com o campo aberto nao leva o rascunho junto. */}
           <div className="flex min-w-0 flex-1 flex-col max-md:basis-full">
             <TituloEditavel
               key={task.id}
-              // ⚠️ `h1` SÓ NA ROTA `/tarefa/[id]`, onde a tarefa É a página. No
-              // quadro e em "Minhas tarefas" ela mora embaixo do `<h1>` da tela.
+              // `h1` só na rota `/tarefa/[id]`; nas outras telas o `<h1>` é da tela.
               level={modo === "pagina" ? "h1" : "h2"}
               compacto
               valor={salvoNoLugar?.id === task.id && salvoNoLugar.title !== undefined ? salvoNoLugar.title : task.title}
@@ -1798,27 +1391,13 @@ export default function TaskDetail({
             }
           >
 
-        {/* ---- Propriedades (redesign 19/10): lista rotulo/valor em duas
-            colunas. Cada valor continua sendo o MESMO controle de antes --
-            so o lugar mudou. ---- */}
+        {/* ---- Propriedades: lista rotulo/valor ---- */}
         <section aria-label="Propriedades" className="prop-list">
           <div className="prop">
           <span className="prop-lbl">Coluna</span>
-          {/* ⚠️ O ROTULO SAI DA COLUNA (fatia 4c-2) -- e o nome que a pessoa
-              ve no kanban e que a fatia 5 vai deixar editar. A COR continua
-              vindo de `STATUS_TEXT`, e isso NAO e esquecimento: `coluna.color`
-              e token de TRACO (bolinha, borda), e como fundo sob texto ele
-              reprova AA (Spec 031 §2.2b). A cor acessivel de uma coluna
-              arbitraria tem de sair da luminancia, e essa derivacao nunca foi
-              feita. Ate la, cor por status e rotulo por coluna. */}
-          {/* ⚠️ A PILULA VIROU O CONTROLE (Spec 039, F6-b). Ela era rotulo
-              morto, e o comentario acima ja anunciava "que a fatia 5 vai
-              deixar editar" -- ficou pendente desde la. Mudar de coluna exigia
-              abrir o modal inteiro pelo "Editar", ou arrastar o card no quadro.
-
-              ⚠️ DESABILITADA ENQUANTO AS COLUNAS NAO CHEGAM. Sem `colunas` o
-              rotulo cai na reserva por `status`, e abrir uma lista vazia
-              deixaria a pessoa clicando no nada. */}
+          {/* Rotulo pela coluna, cor pelo status: `coluna.color` e token de traco
+              e reprova AA como fundo sob texto. Desabilitada ate as colunas
+              chegarem. */}
           <div style={{ position: "relative", display: "inline-flex" }}>
             <button
               type="button"
@@ -1843,9 +1422,7 @@ export default function TaskDetail({
             {abertoCol && colunas && painelCol.box && (
               <AnchoredPanel box={painelCol.box} panelRef={painelCol.panelRef} role="listbox" aria-label="Coluna" minWidth={190}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-                {/* ⚠️ ORDEM POR `position`, que e a MESMA do quadro. Listar na
-                    ordem de chegada da API poria "Concluído" antes de
-                    "Backlog" e obrigaria a ler cada linha. */}
+                {/* Mesma ordem do quadro (`position`). */}
                 {[...colunas]
                   .sort((a, b) => a.position - b.position)
                   .map((c) => (
@@ -1865,10 +1442,7 @@ export default function TaskDetail({
                         fontWeight: task.column_id === c.id ? 600 : 400,
                       }}
                     >
-                      {/* A bolinha usa `c.color`, que e token de TRACO -- este
-                          e o uso legitimo dele. Como FUNDO sob texto ele
-                          reprova AA (Spec 031 §2.2b), e por isso o selo acima
-                          segue colorido por `status`. */}
+                      {/* `c.color` e token de traco: serve para a bolinha, nao para fundo sob texto. */}
                       <span
                         aria-hidden
                         style={{
@@ -1888,15 +1462,6 @@ export default function TaskDetail({
           </div>
           <div className="prop">
           <span className="prop-lbl">Prioridade</span>
-          {/* ---- Prioridade (Spec 039, F6) --------------------------------
-              ⚠️ A PILULA VIROU O CONTROLE. Ate aqui ela era rotulo morto: para
-              trocar um enum de QUATRO valores a pessoa abria o modal inteiro
-              pelo "Editar". E a mesma licao da C8, escrita na linha da pilula
-              de coluna logo acima e ja aplicada na de datas.
-
-              ⚠️ ORDEM DA LISTA = ordem do enum (Baixa -> Urgente), e nao a
-              alfabetica que o `Object.keys` daria. Prioridade tem ordem
-              natural; embaralhar obriga a LER cada linha em vez de mirar. */}
           <div style={{ position: "relative", display: "inline-flex" }}>
             <button
               type="button"
@@ -1953,46 +1518,15 @@ export default function TaskDetail({
           </div>
           <div className="prop">
           <span className="prop-lbl">Prazo</span>
-          {/* Spec 031 (C8): a pilula de projeto SAIU daqui. Ela era read-only e
-              o controle de projeto ficava 200px abaixo, dizendo a mesma coisa --
-              duas representacoes do mesmo dado na mesma tela. Agora ha UMA, na
-              faixa de metadados logo abaixo, e ela e o proprio controle. */}
-          {/* ---- Datas (Spec 038, fatia A) --------------------------------
-              ⚠️ ESTA PILULA VIROU O CONTROLE, e nao ganhou um controle ao lado.
-              É a lição da C8 escrita três linhas acima, aplicada: a de projeto
-              era read-only aqui e o controle ficava 200px abaixo, dizendo a
-              mesma coisa. Repetir isso com data daria o mesmo defeito.
-
-              ⚠️ E POR ISSO ELA APARECE MESMO SEM DATA. Antes era
-              `{task.due_date && …}`: sem prazo não havia pílula, e sem pílula
-              não haveria onde clicar para PÔR um. O vazio se distingue por
-              borda tracejada e tom, igual ao "nenhum" do projeto -- mesma
-              caixa, mesma altura.
-
-              ⚠️ `T00:00:00` NA LEITURA, SEMPRE. `new Date("2026-08-19")` é
-              interpretado como UTC e escorrega um dia em fuso negativo -- é o
-              mesmo aviso que o `hojeISO()` do `Board.tsx` carrega. */}
+          {/* A pilula e o controle, e aparece mesmo sem data (senao nao haveria
+              onde clicar). `T00:00:00` na leitura: `new Date("2026-08-19")` e UTC
+              e escorrega um dia em fuso negativo. */}
           <div
             style={{ position: "relative", display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0 }}
           >
-            {/* ⚠️ A PILULA E O PROPRIO GATILHO (decisao da Camila, 18/08).
-                A primeira versao punha um botao redondo AO LADO do texto, como
-                o de projeto -- e o desenho dela e outro: a data e uma PILULA
-                irma de "Coluna" e "Prioridade", e clicar nela abre a edicao.
-                Um alvo, e nao dois.
-
-                ⚠️ E POR ISSO O TEXTO VAZIO E "Sem datas", no PLURAL. Antes era
-                "sem prazo", que nomeia so metade do que a capsula edita -- a
-                pessoa clicaria esperando mexer no prazo e encontraria dois
-                campos. Mesma forma de "Sem Projeto".
-
-                ⚠️ inline-flex + flexShrink 0 + nowrap, NAO verticalAlign. Este
-                elemento e filho de um flex com flexWrap: sem flexShrink 0 ele
-                encolhe ate o minimo e QUEBRA entre o icone e a data -- foi o
-                que aconteceu na entrega da C10.
-
-                ⚠️ A COR DE ATRASO SOBREVIVEU a virada para botao, e nao e
-                enfeite: e o unico sinal de que a tarefa venceu nesta linha. */}
+            {/* inline-flex + flexShrink 0 + nowrap: o pai e flex com wrap, e sem
+                isso a pilula quebra entre o icone e a data. A cor de atraso e o
+                unico sinal de que a tarefa venceu. */}
             <button
               type="button"
               ref={painelDatas.anchorRef}
@@ -2007,24 +1541,10 @@ export default function TaskDetail({
                 display: "inline-flex", alignItems: "center", gap: 5,
                 flexShrink: 0, whiteSpace: "nowrap",
                 height: 24, borderRadius: 999, padding: "0 10px",
-                // ⚠️ AQUI HAVIA UM `font: "inherit"` DEPOIS DO `fontSize`, E
-                // ELE MATAVA O TAMANHO. `font` e ATALHO: ele redefine
-                // font-size junto com a familia, e como vinha por ultimo, o
-                // `fontSize: 12.5` era codigo morto -- a pilula herdava o
-                // tamanho do `body`.
-                //
-                // Ficou invisivel enquanto o body era 14px (a pilula so
-                // parecia um pouco maior que os selos de 12). A F1 subiu o
-                // body para 15 e a diferenca virou 3px: a Camila viu na tela
-                // que "Sem datas" estava maior que o resto, e era isto.
-                //
-                // ⚠️ O atalho era redundante de qualquer forma: o
-                // `globals.css` ja tem `button { font-family: inherit }`.
-                // Por isso ele SAIU, em vez de so mudar de lugar.
+                // Sem `font: "inherit"` aqui: o atalho sobrescreveria o `fontSize`.
                 fontSize: 12, cursor: "pointer",
                 fontWeight: dueTone ? 600 : 400,
-                // Cheia e vazia usam a MESMA caixa -- o vazio se distingue por
-                // borda tracejada e tom, igual ao "nenhum" do projeto.
+                // Cheia e vazia usam a mesma caixa; o vazio tem borda tracejada.
                 background: prazoAtual || inicioAtual ? "var(--surface-2)" : "transparent",
                 border:
                   prazoAtual || inicioAtual
@@ -2039,20 +1559,13 @@ export default function TaskDetail({
               }}
             >
               <Calendar size={13} strokeWidth={2} aria-hidden />
-              {/* O `slice(0, 5)` que morava aqui virou `dataHoraBR` (F7):
-                  ele ia ser copiado no card e na linha de subtarefa. */}
               {prazoAtual ? dataHoraBR(prazoAtual, horaAtual) : "Sem datas"}
-              {/* ⚠️ O INICIO SO APARECE QUANDO EXISTE. Desenhar "sem inicio" ao
-                  lado poria duas ausencias na linha mais disputada da tela. */}
               {inicioAtual && (
                 <span className="muted" style={{ fontSize: 11, fontWeight: 400 }}>
                   · início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
               )}
-              {/* ⚠️ SEM `ehTopo`, E A DIFERENCA PARA O PROJETO E REAL (Camila,
-                  18/08): subtarefa HERDA projeto do pai (Spec 022) e por isso
-                  nao o edita, mas tem prazo PROPRIO -- este mesmo arquivo ja o
-                  desenha na checklist. Copiar a trava foi engano meu. */}
+              {/* Sem `ehTopo`: subtarefa herda o projeto, mas tem prazo proprio. */}
               {abertoDatas ? (
                 <X size={11} strokeWidth={2.2} aria-hidden />
               ) : (
@@ -2063,11 +1576,6 @@ export default function TaskDetail({
             {abertoDatas && painelDatas.box && (
               <AnchoredPanel box={painelDatas.box} panelRef={painelDatas.panelRef} role="dialog" aria-label="Datas" minWidth={240}>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 4 }}>
-                {/* ⚠️ O RÓTULO "Datas" ESTAVA NO DESENHO E EU O OMITI. A
-                    cápsula da Camila é um cartão TITULADO, e sem o título o
-                    painel não diz do que ele é -- só mostra dois campos soltos
-                    ancorados num "+". Não é enfeite: é o que faz a cápsula
-                    ser uma cápsula. */}
                 <strong style={{ fontSize: 13 }}>Datas</strong>
                 <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
                   Data de início
@@ -2092,14 +1600,7 @@ export default function TaskDetail({
                     onChange={(e) => setRascunhoPrazo(e.target.value)}
                   />
                 </label>
-                {/* ⚠️ A HORA SO APARECE COM DATA, e nao e enfeite: hora sem
-                    data e recusada com 422 pelo backend (`_validate_hora`).
-                    Esconder o campo e mais forte que aceitar e recusar depois
-                    -- a pessoa nao chega a digitar algo que nao pode existir.
-
-                    ⚠️ E LIMPAR A DATA LIMPA A HORA (ver `salvarDatas`). Sem
-                    isso, apagar so a data mandaria o par proibido e o erro
-                    falaria de um campo que ela nao tocou. */}
+                {/* A hora so aparece com data: hora sem data o backend recusa (422). */}
                 {rascunhoPrazo && (
                   <label style={{ fontSize: 12, color: "var(--text-soft)" }}>
                     Hora{" "}
@@ -2123,15 +1624,8 @@ export default function TaskDetail({
                       <span className="muted" style={{ fontSize: 11 }}>
                         Sem hora, vence no fim do dia.
                       </span>
-                      {/* ⚠️ LIMPAR PRECISA DE BOTAO PROPRIO (pedido da Camila,
-                          18/08, na tela). O `<input type="time">` tem um "x"
-                          nativo em alguns navegadores e nenhum em outros, e
-                          apagar com o teclado exige selecionar o campo inteiro
-                          -- ou seja, "tirar a hora" dependia do navegador. Um
-                          botao explicito nao depende.
-
-                          ⚠️ E ELE SO APARECE COM HORA PREENCHIDA: um "limpar"
-                          sobre campo vazio e afordancia que nao faz nada. */}
+                      {/* Botao proprio: o "x" nativo do `<input type="time">`
+                          nao existe em todo navegador. */}
                       {rascunhoHora && (
                         <button
                           type="button"
@@ -2193,8 +1687,7 @@ export default function TaskDetail({
                 return (
                   <span
                     key={id}
-                    // Responsavel desativado precisa ser VISIVEL como tal: a
-                    // tarefa esta designada pra quem nao entra mais no sistema.
+                    // Responsavel desativado aparece como tal.
                     title={inativo ? `${nome} (desativado)` : nome}
                     style={{
                       display: "inline-flex", alignItems: "center", gap: 6,
@@ -2295,32 +1788,7 @@ export default function TaskDetail({
 
           <div className="prop">
           <span className="prop-lbl">Projeto</span>
-          {/* ---- Projeto (Spec 039, F6-c) ------------------------------
-              ⚠️ ELE MORAVA NA FAIXA DE METADADOS, com o rotulo "Projeto" ao
-              lado e um lapis separado da pilula. Subiu para ca a pedido da
-              Camila (22/08): o lugar dele sempre foi a linha de pilulas, junto
-              de Coluna, Prioridade e Datas -- quatro coisas do mesmo tipo,
-              editaveis do mesmo jeito, num lugar so.
-
-              Duas mudancas vieram junto, e nenhuma e enfeite:
-
-              1. O ROTULO "Projeto" SUMIU e o vazio virou "Sem Projeto". Aqui a
-                 pilula tem de se explicar sozinha -- as vizinhas se explicam
-                 ("Backlog", "Alta", a data). "nenhum" solto ao lado de uma
-                 data nao diz de que ele e nenhum. Mesma forma de "Sem datas".
-              2. A PILULA E O LAPIS VIRARAM UM ALVO SO, como nas outras tres.
-                 Dois alvos para a mesma coisa foi exatamente o que a F6-a
-                 corrigiu na prioridade.
-
-              ⚠️ `flexShrink: 0` e `whiteSpace: nowrap` pelo mesmo motivo
-              escrito na pilula de datas: esta linha e `flexWrap`, e sem eles o
-              item encolhe ate quebrar no meio do proprio texto.
-
-              ⚠️ SUBTAREFA HERDA O PROJETO DO PAI (Spec 022) e por isso NAO
-              edita -- vira selo morto, sem gatilho. E a mesma trava que eu ja
-              copiei errado para as datas uma vez: la a subtarefa TEM prazo
-              proprio, aqui ela nao tem projeto proprio. A diferenca e real e
-              nao deve ser "uniformizada". ---- */}
+          {/* Subtarefa herda o projeto do pai: vira selo sem gatilho. */}
           <div
             style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}
           >
@@ -2341,8 +1809,7 @@ export default function TaskDetail({
                   </span>
                 </>
               );
-              // Cheia e vazia usam a MESMA caixa; o vazio se distingue por
-              // borda tracejada e tom, como nas outras pilulas desta linha.
+              // Cheia e vazia usam a mesma caixa; o vazio tem borda tracejada.
               const caixa = {
                 display: "inline-flex" as const,
                 alignItems: "center" as const,
@@ -2360,8 +1827,7 @@ export default function TaskDetail({
                 color: projetoAtual ? "var(--text)" : "var(--text-faint)",
               };
               if (!ehTopo) {
-                // Selo morto: sem cursor de clique e sem `title` de acao --
-                // prometer edicao que nao existe e pior que nao prometer.
+                // Selo morto: sem cursor nem `title` de acao.
                 return <span style={caixa}>{conteudo}</span>;
               }
               return (
@@ -2409,8 +1875,7 @@ export default function TaskDetail({
               </span>
             )}
 
-            {/* O seletor e PAINEL FLUTUANTE: empurrar o layout deslocaria a
-                linha inteira a cada abertura. */}
+            {/* Painel flutuante, para nao deslocar a linha a cada abertura. */}
             {abertoProj && painelProj.box && (
               <AnchoredPanel box={painelProj.box} panelRef={painelProj.panelRef} role="dialog" aria-label="Projeto" minWidth={280}>
                 <select
@@ -2435,9 +1900,8 @@ export default function TaskDetail({
           </div>
           </div>
 
-          {/* -- Seguidores (Spec 053, D5): mesmo desenho dos responsaveis.
-              O `+` so aparece para quem pode por OUTRA pessoa
-              (`can_manage_watchers`, do servidor); arquivada e so leitura. -- */}
+          {/* -- Seguidores: o `+` so aparece para quem pode por outra pessoa
+              (`can_manage_watchers`); arquivada e so leitura. -- */}
           <div className="prop">
           <span className="prop-lbl">Seguidores</span>
           <LinhaDeSeguidores
@@ -2451,23 +1915,17 @@ export default function TaskDetail({
           />
           </div>
 
-          {/* Criacao: data + quem criou (nome resolvido; sem nome -> so a
-              data). Texto corrido no fim da lista, sem rotulo (pedido dela,
-              19/10). */}
+          {/* Criacao: data + quem criou (sem nome -> so a data). */}
           <div className="muted pt-1" style={{ fontSize: 12 }}>
             Criada em {criadoEm}
             {criador ? ` por ${criador}` : ""}
           </div>
         </section>
 
-        {/* Erro do move fica FORA da faixa: dentro dela a caixa de erro
-            espremeria os controles e sumiria junto com o painel. */}
+        {/* Erro do move fica fora da lista: dentro ela some junto com o painel. */}
         {erroProj && <div className="error-box">{erroProj}</div>}
 
-        {/* Spec 052, fatia D: a descrição e os links se editam AQUI. O
-            "Editar" do rodapé, que abria o modal inteiro, saiu -- o resto
-            (coluna, prioridade, datas, projeto, responsáveis) já era das
-            pílulas. `key` pelo id pelo mesmo motivo do título. */}
+        {/* Descrição e links se editam aqui. `key` pelo id pelo mesmo motivo do título. */}
         <DescricaoEditavel
           key={`desc-${task.id}`}
           valor={salvoNoLugar?.id === task.id && salvoNoLugar.description !== undefined ? salvoNoLugar.description : task.description}
@@ -2485,17 +1943,11 @@ export default function TaskDetail({
         <div className="field">
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span className="label">
-              {/* ⚠️ SEM COLUNA, SEM NUMERO. `colunas &&` de proposito: com o
-                  mapa vazio a conta daria "(0/2)" -- que foi exatamente o
-                  numero errado que a conferencia manual de 10/08 pegou. */}
+              {/* `colunas &&`: com o mapa vazio a conta daria "(0/2)". */}
               Subtarefas
               {colunas && totalSub > 0 ? ` (${concluidas}/${totalSub})` : ""}
             </span>
-            {/* ⚠️ B1: checklist vazia NAO pode significar duas coisas. Desde
-                que o painel busca as proprias filhas, "ainda carregando" e
-                "falhou" precisam se distinguir de "nao tem subtarefa" -- foi a
-                leitura falsa "duplicou sem as subtarefas" (05/08) que provou
-                que o vazio silencioso engana. */}
+            {/* "Carregando" e "falhou" precisam se distinguir de "nao tem subtarefa". */}
             {carregandoFilhos && (
               <span className="muted" style={{ fontSize: 12 }}>
                 carregando…
@@ -2530,10 +1982,8 @@ export default function TaskDetail({
             )}
           </div>
 
-          {/* Barra de progresso das subtarefas. Anima sozinha: `concluidas`
-              recomputa quando alternarConclusao faz o upsert OTIMISTA no estado
-              do pai (a caixa marca -> a barra enche na hora, sem esperar a API;
-              reverte se o PATCH falhar). Proporcao = concluidas / filhos ATIVOS. */}
+          {/* Barra de progresso: acompanha o upsert otimista da caixinha.
+              Proporcao = concluidas / filhas ativas. */}
           {colunas && totalSub > 0 && (
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <div
@@ -2573,23 +2023,15 @@ export default function TaskDetail({
           {linhasSub.length > 0 && (
             <div style={{ border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               {linhasSub.map((f, i) => {
-                // ⚠️ A MARCA SAI DA COLUNA (fatia 4c-2), igual a conta logo
-                // acima. Se sair de `status`, a caixa fica desmarcada com a
-                // barra em 100% -- os dois numeros discordando de novo, so que
-                // agora dentro da MESMA tela.
+                // A marca sai da coluna, como a conta acima.
                 const colunaDela = colunaPorId.get(f.column_id);
                 const concluida = colunaDela?.semantic === "DONE";
-                // ⚠️ Enquanto as colunas nao chegam a caixa fica DESABILITADA,
-                // e nao so desmarcada: clicar antes disso nao teria coluna de
-                // destino para onde mandar.
+                // Sem colunas a caixa fica desabilitada: nao haveria destino.
                 const ocupado = subSaving.has(f.id) || !colunas;
-                // Mesmo 0.55 do card arquivado no quadro -- arquivada le como
-                // "fora do fluxo" pelo tom, nao por um rotulo so.
+                // Mesmo 0.55 do card arquivado no quadro.
                 const apagada = f.is_archived;
                 // Mesma regra do card do quadro: concluida/arquivada nao alerta.
-                // ⚠️ `null` e nao `"none"`: o tipo `DeadlineTone` usa `null`
-                // para "sem alerta", e e o que o render logo abaixo testa.
-                // Coluna desconhecida = sem alerta, e nao alerta cinza.
+                // Coluna desconhecida = sem alerta (`null`, como `DeadlineTone` espera).
                 const tone = colunaDela
                   ? deadlineTonePorColuna(colunaDela, f.due_date, f.is_archived, f.due_time)
                   : null;
@@ -2639,13 +2081,8 @@ export default function TaskDetail({
                         >
                           {f.title}
                         </span>
-                        {/* Prazo e urgencia da subtarefa (pedido da equipe,
-                            29/07). Os dados JA vinham no objeto -- a linha so
-                            nao os desenhava. Mesma regra de cor do card do
-                            quadro (deadlineTone), pra atrasada nao ser
-                            vermelha la e cinza aqui, e a prioridade com o
-                            mesmo selo e fallback que o card usa: TODAS
-                            aparecem (decisao da Camila, 29/07). */}
+                        {/* Prazo, prioridade e coluna da subtarefa, com a mesma
+                            regra de cor do card do quadro. */}
                         {(f.due_date || rotuloPrio || apagada) && (
                           <span
                             style={{
@@ -2667,48 +2104,11 @@ export default function TaskDetail({
                                 {rotuloPrio}
                               </Badge>
                             )}
-                            {/* ---- A COLUNA DA SUBTAREFA (pedido da Camila, 24/08)
-                                ⚠️ ELA DESFAZ UMA AMBIGUIDADE REAL, e nao e so
-                                informacao a mais: a caixinha marca por
-                                semantica `DONE`, entao uma subtarefa CANCELADA
-                                e uma em BACKLOG apareciam as duas DESMARCADAS,
-                                sem nada que as distinguisse. Quem olhava a
-                                checklist lia "falta fazer" nas duas.
-
-                                ⚠️⚠️ A COR E A DO STATUS, E NAO A DA COLUNA --
-                                e a troca importa. A Camila pediu a capsula
-                                "igual a prioridade", e a de prioridade e um
-                                `Badge tone="soft"`: fundo com 12% da cor e
-                                texto por cima. `coluna.color` e token de
-                                TRACO, e como FUNDO SOB TEXTO ele reprova AA
-                                (Spec 031 §2.2b -- o `Badge soft` ja foi
-                                publicado reprovando por medir sobre
-                                `--surface` puro em vez de com a tinta
-                                aplicada).
-
-                                `STATUS_COLOR` sao as 15 familias cromaticas
-                                que TEM par `-dot`/`-text` medido, e e por isso
-                                que a pilula de Coluna do painel ja usa ela.
-                                Esta linha passa a usar a mesma, e as duas
-                                capsulas do detalhe ficam coerentes entre si.
-
-                                ⚠️ O PRECO, DITO POR EXTENSO: numa coluna
-                                criada por gente, o quadro desenha a cor
-                                ESCOLHIDA e esta capsula desenha a da familia
-                                do status. Sao tons diferentes para a mesma
-                                coluna. A alternativa era manter a cor certa e
-                                reprovar contraste -- e o painel ja tinha
-                                escolhido este mesmo lado.
-
-                                ⚠️ COLUNA DESCONHECIDA NAO DESENHA NADA, pela
-                                mesma razao do `tone` acima: subtarefa de outro
-                                quadro nao esta neste mapa. */}
-                            {/* ⚠️ O `title` VAI NO WRAPPER, e nao no `Badge`:
-                                o primitivo nao aceita `title`, e acrescentar a
-                                prop nele para um chamador so seria mexer em
-                                componente compartilhado por causa de um
-                                tooltip. O `<span>` custa nada e mantem o
-                                Badge como ele e. */}
+                            {/* A coluna distingue cancelada de backlog (as duas
+                                ficam desmarcadas). Cor pelo status, como a pilula
+                                de Coluna: `coluna.color` reprova AA como fundo.
+                                O `title` fica no wrapper porque o `Badge` nao o
+                                aceita. Coluna desconhecida nao desenha nada. */}
                             {colunaDela && (
                               <span
                                 title={`Coluna: ${colunaDela.name}`}
@@ -2726,14 +2126,7 @@ export default function TaskDetail({
                             {f.due_date && (
                               <span
                                 className={tone ? undefined : "muted"}
-                                /* ⚠️ A HORA VAI NO `title`, E NAO NO TEXTO
-                                   (F7). O visivel aqui e dd/mm de proposito --
-                                   a linha e estreita e ja carrega selo de
-                                   prioridade, avatares e chevron. Mas o tom
-                                   dela le `f.due_time`, entao sem a hora em
-                                   lugar NENHUM a linha ficava vermelha sem
-                                   explicacao. O `title` ja existia; so nao
-                                   dizia a hora. */
+                                /* A hora vai no `title`: o texto e so dd/mm, mas o tom le `f.due_time`. */
                                 title={dataHoraBR(f.due_date, f.due_time)}
                                 style={{
                                   display: "inline-flex", alignItems: "center",
@@ -2804,9 +2197,7 @@ export default function TaskDetail({
                   }
                   if (e.key !== "Enter") return;
                   e.preventDefault();
-                  // Enter com titulo e SEM responsavel abre o seletor em vez
-                  // de criar. Criar aqui repetiria o bug do TaskModal, onde o
-                  // Enter gerava tarefa sem ninguem designado.
+                  // Enter com titulo e sem responsavel abre o seletor em vez de criar.
                   const acao = acaoDoEnterNoTitulo({
                     titulo: novoTitulo,
                     assigneeIds: subAssignees,
@@ -2818,9 +2209,7 @@ export default function TaskDetail({
               />
 
               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {/* Responsavel: obrigatorio. O botao carrega o estado no
-                    proprio rotulo, para a exigencia ficar visivel antes do
-                    erro aparecer. */}
+                {/* Responsavel: obrigatorio; o rotulo do botao mostra o estado. */}
                 <div style={{ position: "relative" }}>
                   <button
                     type="button"
@@ -2903,7 +2292,7 @@ export default function TaskDetail({
                   )}
                 </div>
 
-                {/* Prazo: opcional. "Faz quando der" e decisao legitima. */}
+                {/* Prazo: opcional. */}
                 <input
                   type="date"
                   className="input"
@@ -2958,9 +2347,8 @@ export default function TaskDetail({
         </div>
           </div>
 
-          {/* As acoes moraram aqui ate 05/11; foram para o "⋯" do cabecalho.
-              O rodape so aparece para confirmar a exclusao ou mostrar o link
-              que a copia nao conseguiu pôr na area de transferencia. */}
+          {/* O rodape so aparece para confirmar a exclusao ou mostrar o link que
+              a copia nao conseguiu pôr na area de transferencia. */}
           {(confirmandoExcluir || copiaErro) && (
             <RodapeDaTarefa
               task={task}
@@ -2977,8 +2365,7 @@ export default function TaskDetail({
               task={task}
               onFechar={() => setMovendoTarefa(false)}
               onMovida={(t) => {
-                // O quadro recarrega pelo canal de sempre (`onTaskMoved`):
-                // a tarefa pode ter saido dele, e as subtarefas foram junto.
+                // A tarefa pode ter saido do quadro, com as subtarefas.
                 onTaskMoved(t);
                 avisar("Tarefa movida.");
               }}
@@ -2986,13 +2373,8 @@ export default function TaskDetail({
           )}
           </div>
 
-          {/* A coluna lateral. `aside`: e conteudo relacionado, e nao a
-              tarefa em si. */}
-          {/* ⚠️ A DIVISÓRIA (pedido dela, 30/09): borda À ESQUERDA quando as
-              colunas estão lado a lado, e EM CIMA quando empilham -- na
-              vertical, uma borda lateral não separaria nada.
-              Redesign 19/10: fundo `--bg`, abas em cima, lista rolando no
-              meio e o campo de escrever fixo embaixo sobre `--surface`. */}
+          {/* Coluna lateral. A divisoria fica a esquerda lado a lado e em cima
+              quando empilha. */}
           <aside
             aria-label="Comentários e atividade"
             className="flex w-full min-h-0 shrink-0 flex-col border-t border-border bg-canvas min-[900px]:border-l min-[900px]:border-t-0"
@@ -3000,8 +2382,6 @@ export default function TaskDetail({
             {ladoALado && (
               <div className="flex shrink-0 justify-end px-3 pt-3">{acoes}</div>
             )}
-            {/* Redesign 19/10: as abas (`Tabs`, indicador que desliza) no
-                lugar do `Toggle` de 30/09. */}
             <div className="shrink-0 px-4 pt-3">
               <Tabs
                 group="lateral"
@@ -3023,19 +2403,10 @@ export default function TaskDetail({
               />
             </div>
 
-            {/* ⚠️⚠️ A LATERAL ROLA POR DENTRO, e esta é a correção do que ela
-                viu em 30/09: com 18 eventos, a aba de atividade esticava o
-                cartão até os 88vh enquanto a de comentários o deixava curto --
-                trocar de aba mudava o tamanho da janela debaixo do cursor.
-                Agora o limite é da COLUNA, e o cartão não se mexe.
-
-                ⚠️ SÓ a partir de 900px. Empilhado (celular), uma área rolável
-                DENTRO de um cartão que já rola dá rolagem aninhada, que é pior
-                do que a página crescer. */}
+            {/* A partir de 900px a lateral rola por dentro, para trocar de aba
+                nao mudar o tamanho do cartao. Empilhado, nao (rolagem aninhada). */}
             <div
-              // ⚠️ A MARCA EXISTE PARA O TESTE poder afirmar que o campo de
-              // escrever esta FORA desta area -- e a classe arbitraria do
-              // Tailwind (`min-[900px]:...`) nao e seletor CSS valido.
+              // Marca para o teste: a classe arbitraria do Tailwind nao e seletor CSS valido.
               data-rolagem="lateral"
               className={
                 modo === "modal"
@@ -3054,11 +2425,8 @@ export default function TaskDetail({
                 onCarregarMais={() => void carregarMaisAtividade()}
               />
             ) : (
-              /* ---- Comentarios (Entrega 14; movidos para a lateral na 055) ---- */
+              /* ---- Comentarios ---- */
               <div className="field">
-              {/* ⚠️ SEM O COLAPSO que morava aqui: o alternador acima ja escolhe o
-                  que a coluna mostra, e um "Comentários ›" dentro da aba de
-                  comentários seria um segundo jeito de esconder a mesma coisa. */}
               {comentarios === null ? (
                 <Loading tamanho="linha" rotulo="Carregando os comentários" />
               ) : comentarios.length === 0 ? (
@@ -3067,10 +2435,8 @@ export default function TaskDetail({
                 </span>
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {/* ⚠️ O MAIS NOVO PRIMEIRO (pedido dela, 21/10). A API manda em
-                      ordem crescente e o comentário novo entra no fim da lista,
-                      então inverter aqui serve aos dois casos. As respostas
-                      também, desde 26/10: a mais nova logo abaixo da seta. */}
+                  {/* O mais novo primeiro (a API manda em ordem crescente), e as
+                      respostas tambem. */}
                   {comentarios
                     .filter((c) => !c.parent_comment_id)
                     .reverse()
@@ -3142,16 +2508,13 @@ export default function TaskDetail({
                           </div>
                         )}
 
-                        {/* A linha à esquerda (o desenho que a usuária mandou)
-                            é o que separa resposta de comentário novo: antes
-                            só o recuo de 30px dizia isso, e não bastava. */}
+                        {/* A linha a esquerda separa resposta de comentario novo. */}
                         {aberto && (respostas.length > 0 || respondendo) && (
                           <div
                             id={idThread}
                             className="ml-[14px] flex flex-col gap-1.5 border-l-2 border-border pl-3"
                           >
-                        {/* O campo fica no topo porque a resposta nova entra
-                            em cima (pedido dela, 26/10). */}
+                        {/* O campo fica no topo porque a resposta nova entra em cima. */}
                         {respondendo && (
                           <div className="flex flex-col gap-1.5">
                             <MentionTextarea
@@ -3245,13 +2608,9 @@ export default function TaskDetail({
             )}
             </div>
 
-            {/* ⚠️⚠️ O CAMPO DE ESCREVER FICA FORA DA AREA QUE ROLA (pedido dela,
-                30/09): com ele no fim da lista, comentar numa tarefa com vinte
-                comentarios exigia rolar ate o fim primeiro. Agora a lista rola
-                por baixo e a caixa fica onde a mao ja esta. */}
+            {/* O campo de escrever fica fora da area que rola: a caixa fica onde a
+                mao ja esta. */}
             {abaLateral === "comentarios" && (
-              // Redesign 19/10: o campo de escrever e um rodape fixo sobre
-              // `--surface`, separado da lista pela borda.
               <div className="shrink-0 border-t border-border bg-surface px-4 pb-4 pt-3">
                 {/* caixa de novo comentario (quem ve a tarefa pode comentar) */}
                 <MentionTextarea
@@ -3304,9 +2663,7 @@ export default function TaskDetail({
   );
 }
 
-/* O rodape da coluna principal: confirmacao de exclusao, fallback do copiar e
-   a fileira de acoes. Redesign 19/10: mora no fim da coluna esquerda, e nao
-   mais no cartao inteiro (a lateral agora vai ate o chao). */
+/* Rodape da coluna principal: confirmacao de exclusao e fallback do copiar. */
 function RodapeDaTarefa({
   task, filhos, confirmandoExcluir, setConfirmandoExcluir, excluindo, excluir,
   copiaErro,
@@ -3332,8 +2689,8 @@ function RodapeDaTarefa({
           >
             <span style={{ fontSize: 12.5, flex: 1, minWidth: 220 }}>
               Excluir <strong>{task.title}</strong>? Isto apaga a tarefa e todos os comentários.
-              {/* ⚠️ `filhos`, NAO `linhasSub`: a cascata (ADR 0005) leva a
-                  subarvore inteira, arquivada ou nao. Ver lib/subtarefas.ts. */}
+              {/* `filhos`, e nao `linhasSub`: a cascata leva a subarvore inteira,
+                  arquivada ou nao. */}
               {filhos.length > 0 && (
                 <> Também apaga as <strong>{filhos.length}</strong> subtarefa(s) diretas e as subtarefas delas.</>
               )}{" "}
@@ -3355,9 +2712,7 @@ function RodapeDaTarefa({
         )}
 
         {copiaErro && (
-          // Fallback visivel: a copia automatica falhou, entao mostra o
-          // endereco pra pessoa selecionar e copiar na mao. Fica coladinho no
-          // botao que ela acabou de clicar.
+          // A copia automatica falhou: mostra o endereco para copiar na mao.
           <div
             className="error-box"
             style={{ marginTop: 8, fontSize: 13, wordBreak: "break-all" }}
@@ -3387,27 +2742,11 @@ function LinhaComentario({
 }: {
   c: Comment;
   members: Map<string, { name: string }>;
-  /**
-   * Spec 032: ids que NAO entram no autocompletar de `@` da caixa de EDICAO --
-   * desativados + quem nao alcanca a tarefa. Mesmo conjunto que as caixas de
-   * criar e responder ja usavam.
-   *
-   * ⚠️ OBRIGATORIA de proposito, sem `?`. Prop opcional e onde "esqueci um
-   * chamador" vira silencio: o `tsc` aceita a ausencia e o segundo chamador
-   * (a REPLICA) sairia sem filtro nenhum, sem ninguem notar. Foi assim que
-   * C13/C14/C15 chegou em um dos quatro chamadores do TaskDetail em 31/07.
-   */
+  /** Ids fora do autocompletar de `@`: desativados e quem nao alcanca a tarefa. */
   excluidos: Set<string>;
   me: CurrentUser | null;
   taskId: string;
-  /**
-   * Spec 051, fatia A: quem pergunta modera comentario alheio NESTA tarefa --
-   * `task.can_delete`, a mesma pergunta que o servidor faz ao apagar.
-   *
-   * ⚠️ OBRIGATORIA, pelo motivo de `excluidos`: com `?`, a replica esquecida
-   * sairia sem lixeira nenhuma (ou com a de `me.permissions`, que diz "o que"
-   * e nunca "onde") e nenhum portao reclamaria.
-   */
+  /** Modera comentario alheio nesta tarefa (`task.can_delete`). */
   podeModerar: boolean;
   onEditado: (atualizado: Comment) => void;
   onApagado: () => void;
@@ -3425,18 +2764,12 @@ function LinhaComentario({
   const temAcao = !c.is_deleted && me != null;
   const podeEditar = temAcao && souAutor;
   const podeApagar = temAcao && (souAutor || podeModerar);
-  // Spec 050: quem VE reage -- sem permissao, como comentar. Tombstone nao.
+  // Quem ve reage, sem permissao propria. Tombstone nao.
   const podeReagir = temAcao;
 
   /**
-   * Poe, troca ou tira a minha reacao (Spec 050).
-   *
-   * ⚠️ QUEM DECIDE POR-OU-TIRAR E `lib/reacoes`, e nao este componente: a
-   * regra e a mesma do clique na pilula e do clique no seletor.
-   *
-   * ⚠️ A RESPOSTA DO SERVIDOR E QUE MANDA. Ele devolve o comentario inteiro,
-   * com a fileira nova, e a linha troca com `onEditado` -- a tela nao remonta
-   * a fileira por conta, e por isso nao precisa saber a regra de ordem.
+   * Poe, troca ou tira a minha reacao (a regra mora em `lib/reacoes`). A linha
+   * troca pelo comentario que o servidor devolve.
    */
   async function alternarReacao(emoji: string) {
     if (!me) return;
@@ -3498,8 +2831,7 @@ function LinhaComentario({
   }
 
   return (
-    /* ⚠️ `group`: e o que faz a bolinha de reagir aparecer com o mouse em cima
-       da LINHA (e com o foco de teclado dentro dela) -- ver SeletorDeReacao. */
+    /* `group`: a bolinha de reagir aparece com o mouse ou o foco na linha. */
     <div
       className="group"
       style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
@@ -3521,15 +2853,12 @@ function LinhaComentario({
             <span className="muted" style={{ fontSize: 11.5 }}>(editado)</span>
           )}
 
-          {/* acoes inline (reagir / lapis / lixeira), numa capsula -- Spec 050.
-              ⚠️ Elas aparecem com o mouse em cima da linha, ou com o foco de
-              teclado dentro dela: ver CapsulaDeAcoes. */}
+          {/* Acoes inline (reagir / lapis / lixeira): aparecem com o mouse em
+              cima da linha ou o foco dentro dela. */}
           {!editando &&
             !confirmando &&
             (podeReagir || podeEditar || podeApagar) && (
             <CapsulaDeAcoes>
-              {/* Reagir vem PRIMEIRO -- e a acao que todo mundo que ve o
-                  comentario tem; editar e apagar sao de poucos. */}
               {podeReagir && <SeletorDeReacao onEscolher={alternarReacao} />}
               {podeEditar && (
                 <button
@@ -3587,15 +2916,7 @@ function LinhaComentario({
 
         {editando ? (
           <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 4 }}>
-            {/* Spec 032: era um <textarea> cru -- digitar `@` na edicao nao
-                abria lista nenhuma. As caixas de criar e responder ja usavam
-                o MentionTextarea; esta ficou de fora.
-                ⚠️ `onChange` do MentionTextarea entrega a STRING, nao o
-                evento. Manter `(e) => setTexto(e.target.value)` compila e
-                quebra em runtime.
-                ⚠️ O token cru (`@[Nome](uuid)`) CONTINUA aparecendo aqui --
-                a caixa de criar tambem mostra, e sempre mostrou. Medido em
-                03/08; render de nome e entrega propria. */}
+            {/* `onChange` do MentionTextarea entrega a string, nao o evento. */}
             <MentionTextarea
               value={texto}
               onChange={setTexto}
@@ -3631,8 +2952,7 @@ function LinhaComentario({
           </div>
         ) : (
           <div
-            // Redesign 19/10: o balao -- borda, fundo `--surface` e raio
-            // 0 12 12 12 (o canto reto aponta para o avatar).
+            // O canto reto do balao aponta para o avatar.
             className="comment-bubble"
             style={{
               fontSize: 13.5, lineHeight: 1.45, whiteSpace: "pre-wrap",
@@ -3645,8 +2965,7 @@ function LinhaComentario({
           </div>
         )}
 
-        {/* Spec 050: a fileira. Comentario apagado nao tem -- o servidor
-            devolve vazia, e esta condicao evita até o espaço em branco. */}
+        {/* Comentario apagado nao tem fileira (evita ate o espaco em branco). */}
         {!c.is_deleted && (
           <FileiraDeReacoes
             reactions={c.reactions}

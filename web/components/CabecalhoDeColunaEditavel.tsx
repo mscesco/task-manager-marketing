@@ -8,16 +8,9 @@ import { ROTULO_DA_SEMANTICA } from "@/lib/edicaoDeColunas";
 import { semanticaTerminal } from "@/lib/coluna";
 
 /**
- * O cabeçalho de uma coluna com o modo de edição LIGADO (Spec 036, fatia 6c-2).
- *
- * ⚠️ MESMA ANATOMIA DO CABEÇALHO NORMAL -- ponto colorido, nome, borda inferior
- * na cor da coluna --, com os controles no lugar da contagem. Desenhar outra
- * coisa faria o modo de edição parecer outra tela, e a pessoa perderia a
- * referência de qual coluna é qual justamente quando está movendo colunas.
- *
- * ⚠️ NADA AQUI FALA COM O SERVIDOR. O modo é de LOTE: tudo o que acontece nesta
- * tela vive no rascunho até a pessoa concluir. Este componente só reporta
- * intenções para cima.
+ * O cabeçalho de uma coluna no modo de edição: mesma anatomia do normal, com
+ * os controles no lugar da contagem. Não fala com o servidor; só reporta
+ * intenções para o rascunho do lote.
  */
 export default function CabecalhoDeColunaEditavel({
   linha,
@@ -41,34 +34,24 @@ export default function CabecalhoDeColunaEditavel({
   onRenomear: (nome: string) => void;
   onMarcar: () => void;
   /**
-   * Se a pessoa pode APAGAR coluna (Spec 049, fatia D).
-   *
-   * ⚠️ OBRIGATÓRIA. O GESTOR edita coluna e não apaga; com o "x" sempre
-   * presente, ele marcava, concluía, e o lote inteiro voltava 403. Coluna que
-   * ainda nem foi salva (`tmp:`) é outra coisa: tirá-la é desfazer o próprio
-   * rascunho, e não apagar -- ver a condição do botão.
+   * Se a pessoa pode apagar coluna (o gestor edita e não apaga). Coluna ainda
+   * não salva (`tmp:`) sai mesmo sem isto: é desfazer o rascunho.
    */
   podeApagar: boolean;
   /**
-   * Torna esta coluna o ALVO da semântica dela (Spec 036, fatia 12).
-   *
-   * ⚠️ NÃO EXISTE "DESMARCAR", e a ausência é a trava: sem alvo, `OPEN` e
-   * `DONE` fazem toda criação de tarefa naquele quadro devolver 422 -- dias
-   * depois, para outra pessoa. Trocar é trocar.
+   * Torna esta coluna o alvo da semântica dela. Não há "desmarcar": sem alvo,
+   * criar tarefa no quadro devolve 422.
    */
   onTornarAlvo: () => void;
   /** Desfaz um "tornar padrão" deste rascunho (ver `semAlvo`). */
   onDesfazerAlvo?: () => void;
   /**
-   * Liga ou desliga a cobrança de prazo desta coluna (Spec 039, §7.3).
-   *
-   * ⚠️ RECEBE O VALOR NOVO, e não é um "alternar" sem argumento. Quem sabe o
-   * valor atual é a `linha`, e mandar o destino explícito evita o clássico de
-   * dois cliques rápidos lerem o mesmo estado velho.
+   * Liga ou desliga a cobrança de prazo desta coluna. Recebe o valor novo, para
+   * dois cliques rápidos não lerem o mesmo estado velho.
    */
   onAvisar: (valor: boolean) => void;
   onMover: (direcao: "esquerda" | "direita") => void;
-  /** Vem do `useSortable`. Ausente nos testes -- ver o comentário da alça. */
+  /** Vem do `useSortable`. Ausente nos testes. */
   arrasteRef?: (no: HTMLElement | null) => void;
   arrasteProps?: Record<string, unknown>;
 }) {
@@ -76,23 +59,15 @@ export default function CabecalhoDeColunaEditavel({
   const [rascunhoNome, setRascunhoNome] = useState(linha.nome);
   const campoRef = useRef<HTMLInputElement | null>(null);
 
-  // ⚠️ O FOCO VAI PARA O CAMPO AO ABRIR. Sem isto a pessoa clica no nome, o
-  // campo aparece, e ela precisa clicar de novo -- e quem usa leitor de tela
-  // não é avisado de que o modo de digitação começou.
+  // O foco vai para o campo ao abrir.
   useEffect(() => {
     if (!editandoNome) return;
-    // ⚠️ `focus()` E DEPOIS `select()`, e nao so o segundo. Medido em 13/08:
-    // `select()` sozinho seleciona o texto mas NAO move o foco no jsdom -- e o
-    // teste do foco caiu apontando para o `<body>`. Em navegador ele costuma
-    // focar de tabela, o que faria o defeito passar despercebido ate alguem
-    // usar teclado.
+    // `focus()` e depois `select()`: no jsdom `select()` sozinho não move o foco.
     campoRef.current?.focus();
     campoRef.current?.select();
   }, [editandoNome]);
 
-  // ⚠️ RESSINCRONIZA QUANDO O NOME MUDA POR FORA. Acontece ao descartar a
-  // edição: o rascunho volta ao original e este campo ficaria com o texto
-  // velho, mentindo sobre o estado.
+  // Ressincroniza quando o nome muda por fora (ex.: ao descartar a edição).
   useEffect(() => {
     if (!editandoNome) setRascunhoNome(linha.nome);
   }, [linha.nome, editandoNome]);
@@ -100,19 +75,14 @@ export default function CabecalhoDeColunaEditavel({
   function confirmarNome() {
     const limpo = rascunhoNome.trim();
     setEditandoNome(false);
-    // ⚠️ NOME VAZIO NÃO VIRA RENOMEAÇÃO. O backend recusaria com 422, e no lote
-    // isso derruba a edição inteira -- por um campo que a pessoa só limpou sem
-    // querer antes de desistir.
+    // Nome vazio não vira renomeação: o 422 derrubaria o lote inteiro.
     if (limpo && limpo !== linha.nome) onRenomear(limpo);
     else setRascunhoNome(linha.nome);
   }
 
   return (
     <div
-      // ⚠️ `flexWrap` (08/10, print dela): o cabeçalho tem ~250px e carrega
-      // alça, nome, selo, sino, duas setas e o apagar. Sem quebrar, numa
-      // coluna de nome comprido os itens passavam por cima uns dos outros e
-      // da coluna vizinha. Agora o que não cabe desce para uma segunda linha.
+      // `flexWrap`: num cabeçalho de ~250px o que não cabe desce de linha.
       style={{
         display: "flex",
         flexWrap: "wrap",
@@ -123,16 +93,12 @@ export default function CabecalhoDeColunaEditavel({
         paddingBottom: 8,
         borderBottom: `2px solid ${cor}`,
         flexShrink: 0,
-        // ⚠️ A COLUNA MARCADA FICA APAGADA, MAS LEGÍVEL. Ela continua na tela
-        // porque o modelo é de lote: enquanto não concluir, nada aconteceu, e a
-        // pessoa precisa poder desmarcar.
+        // A coluna marcada para apagar fica esmaecida, mas legível: ainda dá para desmarcar.
         opacity: linha.apagada ? 0.45 : 1,
       }}
       data-apagada={linha.apagada ? "sim" : "nao"}
     >
-      {/* ⚠️ A ALÇA É O ÚNICO PONTO DE ARRASTE, e não o cabeçalho inteiro:
-          clicar no nome renomeia, e as duas coisas no mesmo alvo fariam um
-          clique curto virar arraste de 2px e vice-versa. */}
+      {/* A alça é o único ponto de arraste: clicar no nome renomeia. */}
       <span
         ref={arrasteRef}
         {...(arrasteProps ?? {})}
@@ -157,23 +123,13 @@ export default function CabecalhoDeColunaEditavel({
           className="input"
           value={rascunhoNome}
           aria-label={`Nome da coluna ${linha.nome}`}
-          // ⚠️ FALTAVA ATE 18/08, e criar coluna sempre teve. Sem isto, um nome
-          // acima do teto viajava no LOTE e voltava 422 -- e no lote a recusa
-          // perde a edicao INTEIRA: renomear tres colunas, uma passar do teto,
-          // e perder as tres. Mesmo motivo do `nomeDeQuadroValido` existir no
-          // front: nao gastar requisicao que ja se sabe que volta recusada.
-          //
-          // ⚠️ NOME QUE JA ESTA LONGO NO BANCO NAO FICA PRESO. `maxLength` nao
-          // trunca valor que veio do servidor -- ele barra DIGITACAO nova. A
-          // pessoa apaga e escreve um menor; era o caso das 15 colunas acima de
-          // 60 que existiam em producao quando este limite entrou.
+          // Mesmo teto do backend: um nome longo derrubaria o lote inteiro.
+          // `maxLength` não trunca valor vindo do servidor, só barra digitação.
           maxLength={60}
           onChange={(e) => setRascunhoNome(e.target.value)}
           onBlur={confirmarNome}
           onKeyDown={(e) => {
-            // ⚠️ `stopPropagation` NOS DOIS: `Esc` fecharia o modo de edição
-            // inteiro e `Enter` poderia disparar o botão de concluir. Aqui as
-            // duas teclas pertencem ao campo.
+            // `stopPropagation`: Esc fecharia o modo de edição e Enter concluiria.
             e.stopPropagation();
             if (e.key === "Enter") confirmarNome();
             if (e.key === "Escape") {
@@ -211,11 +167,7 @@ export default function CabecalhoDeColunaEditavel({
         </button>
       )}
 
-      {/* ⚠️ A COLUNA NOVA É DESENHADA NO QUADRO DESDE 17/08, para poder ser
-          posicionada no mesmo gesto em que nasce. Sem este selo ela fica
-          indistinguível de uma coluna vazia de verdade -- e a diferença
-          importa: esta ainda não existe no servidor, sair sem concluir a
-          descarta, e a cor dela vai mudar (quem escolhe é o backend). */}
+      {/* Coluna nova: ainda não existe no servidor e a cor vai mudar. */}
       {linha.nova && (
         <span
           className="muted"
@@ -226,26 +178,8 @@ export default function CabecalhoDeColunaEditavel({
         </span>
       )}
 
-      {/* ⚠️ O SELO DE ALVO EXISTE PORQUE REORDENAR TORNA A CONFUSÃO PROVÁVEL.
-          O destino da cascata é `is_default_target` e NÃO a primeira pela ordem
-          (ADR 0030). Sem o selo, alguém põe "Entregue" antes de "Concluído" e
-          espera que as tarefas passem a cair lá -- e não vão, sem nada avisar.
-
-          ⚠️ E ELE NUNCA APARECE NUMA COLUNA NOVA: `is_default_target` nasce
-          `false` no backend. É aqui que a ausência de "trocar o alvo de uma
-          semântica" fica visível para quem usa. */}
-      {/* ⚠️ O SELO VIROU O CONTROLE NA FATIA 12 (decisão da Camila, 18/08), e
-          não ganhou um botão ao lado. É a mesma lição da fatia 10, onde a
-          pílula de datas virou o gatilho: o rótulo que anuncia a escolha é o
-          lugar natural de trocá-la.
-
-          ⚠️ ATÉ AQUI ELE ERA SÓ TEXTO, e isso tinha um custo escrito no
-          `plan.md`: o selo "anuncia que existe uma coluna escolhida e não
-          oferece como trocá-la". Rótulo visível convida à pergunta, e a
-          resposta era "apague o quadro e recomece".
-
-          ⚠️ NA COLUNA QUE JÁ É O ALVO ELE NÃO É BOTÃO. Não existe desmarcar --
-          um clique que não faz nada é pior que um texto que não clica. */}
+      {/* Selo do alvo da cascata (`is_default_target`, não a primeira pela
+          ordem). Na coluna que já é o alvo não é botão: não existe desmarcar. */}
       {linha.alvo && !linha.apagada && (
         <span
           className="muted"
@@ -255,9 +189,7 @@ export default function CabecalhoDeColunaEditavel({
           padrão
         </span>
       )}
-      {/* ⚠️ O "×" SÓ NO PADRÃO PEDIDO AGORA, e não no salvo (08/10, pedido
-          dela). O salvo não se desmarca -- cada semântica precisa de um --, mas
-          o clique errado de "tornar padrão" volta atrás antes de concluir. */}
+      {/* O "×" desfaz só o padrão pedido neste rascunho, não o salvo. */}
       {linha.alvo && linha.alvoPedido && !linha.apagada && onDesfazerAlvo && (
         <button
           type="button"
@@ -271,14 +203,8 @@ export default function CabecalhoDeColunaEditavel({
         </button>
       )}
 
-      {/* ⚠️ E NA QUE NÃO É, O CONVITE -- apagado, e só fora da lista de
-          apagar. Oferecer "tornar padrão" numa coluna riscada pediria dois
-          gestos contraditórios no mesmo lote; o `comAlvo` até desfaz a
-          exclusão, mas oferecer isso na tela seria confuso.
-
-          ⚠️ E NUNCA NA COLUNA NOVA: ela não tem id, e o backend aplica o alvo
-          numa etapa que roda antes de criar. A pessoa cria, conclui, e marca
-          depois -- `comAlvo` recusa `tmp:`. */}
+      {/* O convite "tornar padrão": nunca na coluna apagada nem na nova (sem
+          id; `comAlvo` recusa `tmp:`). */}
       {!linha.alvo && !linha.apagada && !linha.nova && (
         <button
           type="button"
@@ -296,24 +222,10 @@ export default function CabecalhoDeColunaEditavel({
         </button>
       )}
 
-      {/* ---- Cobrar prazo (Spec 039, F9 e §7.3, item 2) ---------------
-          ⚠️ ESTE BOTÃO EXISTE PARA AS 8 COLUNAS DE PRODUÇÃO. Elas nasceram
-          antes de o campo ter escritor, e até 22/08 a única forma de mudar era
-          SQL no Adminer. O modo de edição já salva em lote com desfazer, então
-          a caixa pega isso de graça.
-
-          ⚠️ É ÍCONE, E NÃO CAIXA COM RÓTULO -- e a diferença é deliberada. O
-          §7.3 pede o texto "Cobrar prazo nesta coluna" com as consequências ao
-          lado, e ele está por extenso no FORMULÁRIO DE CRIAR, onde há espaço.
-          Aqui o cabeçalho tem ~250px e já carrega alça, nome, selo, duas setas
-          e o "x": a mesma frase empurraria tudo. O texto vive no `title` e no
-          `aria-label`, e o estado é dito pelo `aria-pressed` -- não pela cor
-          do sino, que sozinha não diz nada a quem não vê cor.
-
-          ⚠️ NUNCA EM COLUNA TERMINAL (§7.3, item 3): lá o backend ignora a
-          flag, e um controle inerte é mentira de interface. E nunca na
-          apagada: mexer numa coluna que sai no mesmo lote é gesto sem efeito
-          -- o `paraLote` inclusive filtra. */}
+      {/* ---- Cobrar prazo ----
+          Ícone por falta de espaço: o texto vai no `title`/`aria-label` e o
+          estado no `aria-pressed`. Nunca em coluna terminal (o backend ignora
+          a flag) nem na apagada. */}
       {!linha.apagada && !semanticaTerminal(linha.semantic) && (
         <button
           type="button"
@@ -358,19 +270,10 @@ export default function CabecalhoDeColunaEditavel({
           <ChevronRight size={14} />
         </button>
 
-        {/* ⚠️ COM IMPEDIMENTO, O BOTÃO NÃO EXISTE -- e o motivo aparece no
-            lugar. Desabilitado seria pior: a pessoa clica, nada acontece, e ela
-            não sabe se o produto travou ou se ela não pode.
-
-            ⚠️ E SEM O VERBO NÃO HÁ NEM O BOTÃO NEM O MOTIVO (Spec 049, fatia
-            D): para quem não apaga coluna, "não pode ser apagada" explicaria
-            uma trava que nunca foi dela. A exceção é a coluna NOVA -- tirá-la é
-            desfazer o próprio rascunho, e não apagar nada. */}
+        {/* Com impedimento, o botão dá lugar ao motivo. Sem permissão de
+            apagar, nenhum dos dois, salvo na coluna nova (desfazer o rascunho). */}
         {(podeApagar || linha.nova) && (linha.impedimento ? (
-          // ⚠️ CADEADO, e não o texto por extenso (08/10): "não pode ser
-          // apagada" em 10px quebrava em quatro linhas e invadia a coluna ao
-          // lado. O motivo continua na dica, e a frase continua para o leitor
-          // de tela.
+          // Cadeado em vez do texto, que não cabe; o motivo vai na dica e no leitor de tela.
           <span
             className="muted"
             style={{ display: "inline-flex", padding: 2, lineHeight: 0 }}

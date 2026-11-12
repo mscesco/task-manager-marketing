@@ -36,12 +36,7 @@ type Props = {
   value: string;
   onChange: (v: string) => void;
   members: MembersMap;
-  /**
-   * Ids que NAO entram no autocompletar de @: desativados (C15) e quem nao
-   * alcanca a tarefa (`lib/escopoTarefa.ts`). Chamava-se `inativos` -- virou
-   * `excluidos` quando passou a carregar os dois motivos, porque o nome
-   * antigo faria o segundo passar despercebido em revisao.
-   */
+  /** Ids fora do autocompletar de @: desativados e quem nao alcanca a tarefa. */
   excluidos?: Set<string>;
   placeholder?: string;
   disabled?: boolean;
@@ -77,11 +72,8 @@ const MentionTextarea = forwardRef<HTMLTextAreaElement, Props>(
     const [query, setQuery] = useState("");
     const [hi, setHi] = useState(0);
 
-    // Desativado (C15) e quem nao alcanca a tarefa nao entram aqui. Mencao
-    // vira notificacao, e notificar quem nao entra mais no sistema -- ou quem
-    // abre a tarefa e leva 404 -- e escrever pra ninguem, com o agravante de
-    // quem escreveu achar que avisou alguem.
-    // `members` continua completo: ele resolve NOME de mencao ja existente.
+    // Mencao vira notificacao: os excluidos nao a receberiam. `members` segue
+    // completo porque resolve o nome de mencao ja existente.
     const lista = open
       ? Array.from(members.entries())
           .filter(([id]) => !excluidos?.has(id))

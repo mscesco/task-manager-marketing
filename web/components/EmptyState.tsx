@@ -1,16 +1,13 @@
 import type { ReactNode } from "react";
 
 /**
- * Estado vazio reutilizável (Spec 018 / Fatia A1).
- * Substitui os 6 empty states inline que existiam em Board, membros,
- * projetos, arquivadas e minhas-tarefas.
+ * Estado vazio reutilizável.
  *
  * - `title`        sempre presente
  * - `description`  opcional (texto ou nó)
  * - `action`       opcional (ex.: botão "Limpar filtros" / "+ Nova tarefa")
  *
- * Visual herdado do padrão antigo: borda tracejada, raio 12 (rounded-lg),
- * padding 40 (p-10), centralizado, largura máx. 480.
+ * Borda tracejada, raio 12, padding 40, centralizado, largura máx. 480.
  */
 export default function EmptyState({
   title,

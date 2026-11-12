@@ -1,14 +1,7 @@
 "use client";
-// components/FilterPicker.tsx
-// O seletor dos filtros da tela inicial (Spec 058, 14/10).
-//
-// ⚠️ NO PADRÃO DO SELETOR DE RESPONSÁVEIS do detalhe, e não `<select>` nativo
-// (pedido dela, 14/10): botão que abre um painel com BUSCA e a lista, cada
-// pessoa com o avatar dela. O painel é o `AnchoredPanel` (fecha ao clicar
-// fora, no Esc e ao rolar; abre para cima quando falta espaço).
-//
-// ⚠️ ESCOLHA ÚNICA, com "Todos" no topo: escolher fecha o painel. O de
-// responsáveis é múltiplo (caixinhas); aqui um filtro é um valor só.
+// O seletor dos filtros da tela inicial: botão que abre um `AnchoredPanel` com
+// busca e a lista (com avatar, se for de pessoas). Escolha única, com "Todos"
+// no topo; escolher fecha o painel.
 
 import { useCallback, useMemo, useState } from "react";
 import { Check, ChevronDown, Users } from "lucide-react";
@@ -39,8 +32,7 @@ export default function FilterPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const panel = useAnchoredPanel<HTMLButtonElement>(open, () => close(), { larguraPainel: 280 });
-  // ⚠️ O foco VOLTA ao botão (revisão de 15/10): a busca focada some com o
-  // painel, e sem isto o teclado caía no `<body>`.
+  // O foco volta ao botão: a busca focada some com o painel.
   const anchor = panel.anchorRef;
   const close = useCallback(() => {
     setOpen(false);
@@ -107,10 +99,8 @@ export default function FilterPicker({
           />
           <ul
             className="m-0 mt-1.5 list-none overflow-y-auto rounded-md border border-border p-0"
-            // ⚠️ CABE NO PAINEL: o `AnchoredPanel` tem teto de
-            // `min(50vh, 320px)` e rola sozinho. Com a lista mais alta que o
-            // que sobra dele (busca + respiro), apareciam DUAS barras de
-            // rolagem (14/10). 84px = a busca, o espaço e o padding do painel.
+            // Cabe no teto do `AnchoredPanel` (`min(50vh, 320px)`) para não
+            // haver duas barras de rolagem; 84px = busca, espaço e padding.
             style={{ maxHeight: "min(calc(50vh - 84px), 236px)" }}
             aria-label={label}
           >

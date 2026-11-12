@@ -1,21 +1,9 @@
 "use client";
-// components/bases/useAoVivo.ts
-// Mantém aberto o canal ao vivo de uma base e chama `aoMudar` quando OUTRA
-// pessoa mexe nela (Spec 056, fatia G, §10).
-//
-// ⚠️ O AVISO NÃO TRAZ OS DADOS -- ele diz "mudou", e quem recebe recarrega
-// (`aoMudar`). Vários avisos em sequência viram UMA recarga (300 ms).
-//
-// ⚠️ O CANAL VENCE EM 60 s (o servidor manda `end`), e reabrir é o normal,
-// não o erro: cada reabertura confere de novo se a pessoa ainda lê a base.
-// Ao reabrir, recarrega -- o que mudou na troca não se perde.
-//
-// ⚠️ CAIU (rede, 401, servidor fora): espera 1, 2, 4… até 30 s e tenta de novo.
-// Enquanto não está conectado, a página volta à recarga de 10 s -- o canal é
-// um atalho, nunca o único caminho.
-//
-// O eco: aviso de uma ação DA PRÓPRIA pessoa não recarrega -- a tela dela já
-// tem o que gravou.
+// Mantém aberto o canal ao vivo de uma base e chama `aoMudar` quando outra pessoa mexe nela.
+// O aviso só diz "mudou"; vários seguidos viram uma recarga (300 ms).
+// O canal vence em 60 s (`end`) e reabrir é o normal; ao reabrir, recarrega.
+// Se cair, tenta de novo com espera de 1, 2, 4… até 30 s; enquanto isso a página volta à recarga de 10 s.
+// Aviso de ação da própria pessoa não recarrega.
 
 import { useEffect, useRef, useState } from "react";
 import { abrirCanalDaBase } from "@/lib/api";

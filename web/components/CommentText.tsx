@@ -71,10 +71,7 @@ export default function CommentText({
         />
       );
     } else {
-      // Token de gif com URL fora do dominio GIPHY: NAO vira imagem.
-      // Cai como texto puro (trava XSS). Tambem NAO passa pelo linkify --
-      // manter o token literal preserva o comportamento atual e nao promove
-      // a link uma URL que ja foi reprovada na validacao de dominio.
+      // Gif fora do domínio GIPHY: texto puro, sem imagem nem linkify (trava XSS).
       partes.push(m[0]);
     }
 

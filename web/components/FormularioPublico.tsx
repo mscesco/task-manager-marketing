@@ -1,8 +1,5 @@
 "use client";
-// components/FormularioPublico.tsx
-// Um formulario publicado, carregado pelo `slug` e desenhado. Era o mesmo
-// bloco em `/solicitar` (quando so ha um formulario) e em `/solicitar/<slug>`
-// -- inclusive o comentario do `key`, copiado (revisao de 07/10).
+// Um formulário publicado, carregado pelo `slug` e desenhado.
 
 import CarregaFormularioPublico from "@/components/CarregaFormularioPublico";
 import FormularioSolicitacao from "@/components/FormularioSolicitacao";
@@ -12,17 +9,8 @@ export default function FormularioPublico({ slug }: { slug: string }) {
     <CarregaFormularioPublico slug={slug}>
       {({ categorias, categoriaPorSlug, form }) => (
         <FormularioSolicitacao
-          // ⚠️⚠️ `key` PELO ID DO FORMULARIO, e nao enfeite. O
-          // `CarregaFormularioPublico` entrega o formulario por render prop: se
-          // o `slug` mudar, este componente fica na MESMA posicao da arvore e o
-          // React so troca as props -- sem remontar. O efeito que le o rascunho
-          // roda so na montagem, entao o estado do formulario A sobreviveria, e
-          // o efeito de GRAVACAO passaria a escreve-lo sob a chave de B: o
-          // vazamento entre formularios que a chave por `formId` fechou.
-          //
-          // ⚠️ `key` E MELHOR QUE `formId` NAS DEPENDENCIAS: remontar zera TODO
-          // o estado (ident, selecionadas, valores, passo), e nao so o que
-          // alguem lembrar de listar.
+          // `key` pelo id do formulário: sem remontar, o estado e o rascunho de
+          // um formulário vazariam para outro quando o `slug` muda.
           key={form.id}
           categorias={categorias}
           categoriaPorSlug={categoriaPorSlug}

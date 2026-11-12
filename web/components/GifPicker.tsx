@@ -4,13 +4,9 @@ import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 import { searchGifs, trendingGifs, GIPHY_ENABLED, type Gif } from "@/lib/giphy";
 
 import Loading from "@/components/Loading";
-// Seletor de GIF (GIPHY). Mesmo padrao do EmojiPicker: um botao que abre um
-// popover; ao escolher, chama onPick(url) e quem usa insere o token [gif:url]
-// na posicao do cursor. Se a key da GIPHY nao estiver configurada, o botao
-// nem aparece (GIPHY_ENABLED=false).
-//
-// A GIPHY exige atribuicao "Powered by GIPHY" onde a API aparece -> rodape do
-// painel. Busca com debounce (nao queimar o rate limit da key beta: 100/h).
+// Seletor de GIF (GIPHY): ao escolher, chama onPick(url) e quem usa insere [gif:url].
+// Sem key configurada o botao nem aparece. A GIPHY exige o rodape "Powered by GIPHY";
+// o debounce poupa o rate limit da key beta (100/h).
 
 export default function GifPicker({
   onPick,
@@ -61,9 +57,7 @@ export default function GifPicker({
     setGifs([]);
     setErro(null);
   }
-  // ⚠️ `AnchoredPanel` (revisao de 07/10): era `position: absolute` no fluxo,
-  // recortado por caixa com rolagem. Fixo, vira para cima sozinho, e fecha ao
-  // clicar fora -- pelo `fechar`, que tambem limpa a busca.
+  // Clicar fora chama `fechar`, que tambem limpa a busca.
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(open, fechar, {
     larguraPainel: 320,
   });

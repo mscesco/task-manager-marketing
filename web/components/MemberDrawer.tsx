@@ -151,8 +151,7 @@ export default function MemberDrawer({
             {acoes?.can_reset_password && (
               <ResetPassword member={member} onReveal={setRevelado} />
             )}
-            {/* O servidor já responde "não" para a própria conta e para conta
-                desativada; as duas condições ficam aqui como o desenho diz. */}
+            {/* O servidor já recusa a própria conta e a desativada; a tela repete as condições. */}
             {member.is_active && acoes?.can_deactivate && !isSelf && (
               <Deactivate member={member} onChanged={onChanged} />
             )}

@@ -5,10 +5,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { Coluna } from "@/lib/coluna";
 import { avisoDeExclusao, destinoEhTerminal } from "@/lib/edicaoDeColunas";
-// ⚠️ O TIPO VEIO PARA `lib` (13/08). Ele descreve o DADO que a revisao
-// consome, e o dado e montado por `destinosDoRascunho` -- deixa-lo no
-// componente obrigava o `lib` a nao ter tipo proprio, ou o `Board` a importar
-// tipo de um componente para chamar uma funcao de `lib`.
 import {
   colunaDoRascunho,
   ehNova,
@@ -17,21 +13,9 @@ import {
 export type { DestinoPossivel };
 
 /**
- * A revisão que abre ao concluir a edição (Spec 036, fatia 6c-3).
- *
- * ⚠️ ELA É A ÚLTIMA CHANCE, E NÃO UMA FORMALIDADE. Depois de confirmar, as
- * tarefas foram movidas -- ou concluídas, com cascata nas subtarefas,
- * `terminal_since` ligado e fila de arquivamento. **Nenhum "descartar" desfaz
- * isso.** Apagar é a única operação irreversível do modo de edição, e é por ela
- * que esta tela existe.
- *
- * ⚠️ SÓ APARECE SE HOUVER COLUNA MARCADA. Renomear, criar e reordenar não têm o
- * que perguntar -- e uma confirmação sobre eles ensinaria que a fricção não
- * significa nada, e aí ela para de funcionar onde importa.
- *
- * ⚠️ AS CONTAGENS VÊM DE FORA, buscadas AGORA. Entre marcar o "×" e concluir,
- * alguém pode ter criado tarefa naquela coluna -- o número desta tela tem de
- * ser o do momento da decisão, e não o de quando a pessoa clicou.
+ * Revisão ao concluir a edição de colunas: só aparece se houver coluna marcada para
+ * apagar, que é irreversível (as tarefas são movidas ou concluídas).
+ * As contagens são buscadas agora, não no clique do "×".
  */
 export default function RevisaoDaEdicao({
   marcadas,
@@ -44,9 +28,9 @@ export default function RevisaoDaEdicao({
   onVoltar,
 }: {
   marcadas: readonly Coluna[];
-  /** As colunas que SOBRAM, incluindo as `tmp:` criadas no rascunho. */
+  /** As colunas que sobram, incluindo as `tmp:` criadas no rascunho. */
   destinos: readonly DestinoPossivel[];
-  /** `id da coluna -> tarefas VIVAS`. `null` enquanto carrega. */
+  /** `id da coluna -> tarefas vivas`. `null` enquanto carrega. */
   contagens: Readonly<Record<string, number>> | null;
   resumo: { criadas: number; renomeadas: number; ordemMudou: boolean };
   erro: string | null;
@@ -64,10 +48,7 @@ export default function RevisaoDaEdicao({
   const opcoesPorColuna = useMemo(() => {
     const mapa: Record<string, DestinoPossivel[]> = {};
     for (const c of marcadas) {
-      // ⚠️ AS OUTRAS MARCADAS NÃO ENTRAM. Mandar tarefas para uma coluna que o
-      // mesmo lote apaga produziria um encadeamento que ninguém pediu -- e o
-      // backend aplicaria as exclusões na ordem da lista, então o resultado
-      // dependeria de qual "×" foi clicado primeiro.
+      // As outras marcadas não entram: o resultado dependeria da ordem das exclusões.
       mapa[c.id] = destinos.filter(
         (d) => d.ref !== c.id && !marcadas.some((m) => m.id === d.ref),
       );
@@ -75,11 +56,8 @@ export default function RevisaoDaEdicao({
     return mapa;
   }, [marcadas, destinos]);
 
-  // ⚠️ TODA COLUNA MARCADA PRECISA DE DESTINO, mesmo a que parece vazia -- e
-  // isso conserta por construção o beco sem saída da 5b-7. A contagem da tela
-  // conta só as tarefas VIVAS, mas o backend exige destino se houver vivas OU
-  // APAGADAS (a FK `task_board_column` é `RESTRICT`). Antes, a tela dizia "está
-  // vazia", escondia o seletor, e a recusa vinha sem ter onde escolher.
+  // Toda coluna marcada precisa de destino, mesmo a que parece vazia: o backend conta
+  // também as tarefas apagadas (FK `task_board_column` é `RESTRICT`).
   useEffect(() => {
     setEscolhas((atuais) => {
       const novo = { ...atuais };
@@ -87,9 +65,7 @@ export default function RevisaoDaEdicao({
         const opcoes = opcoesPorColuna[c.id] ?? [];
         if (!novo[c.id] && opcoes.length > 0) {
           const vazia = (contagens?.[c.id] ?? 0) === 0;
-          // ⚠️ SÓ PRÉ-SELECIONA A COLUNA QUE PARECE VAZIA. Com tarefas dentro,
-          // a escolha tem consequência -- pré-selecionar faria alguém confirmar
-          // sem ler, e a primeira opção pode ser terminal.
+          // Só pré-seleciona a coluna que parece vazia: com tarefas, a escolha tem consequência.
           if (vazia) novo[c.id] = opcoes[0].ref;
         }
       }
@@ -112,9 +88,6 @@ export default function RevisaoDaEdicao({
           Revisar alterações
         </h2>
 
-        {/* ⚠️ O RESUMO VEM PRIMEIRO E É CURTO. O que exige leitura é o bloco de
-            cada exclusão; misturar renomeações no meio faria a pessoa passar os
-            olhos pelo conjunto e perder a única parte irreversível. */}
         <ul className="muted" style={{ fontSize: 13, marginTop: 10 }}>
           {resumo.criadas > 0 && (
             <li>
@@ -142,10 +115,7 @@ export default function RevisaoDaEdicao({
             const opcoes = opcoesPorColuna[coluna.id] ?? [];
             const escolhida = opcoes.find((d) => d.ref === escolhas[coluna.id]);
             const quantas = contagens?.[coluna.id] ?? 0;
-            // ⚠️ O DESTINO `tmp:` VIRA UMA `Coluna` DE MENTIRA só para o aviso.
-            // É o que permite reusar `avisoDeExclusao` -- que já carrega o
-            // texto endurecido do caso terminal -- em vez de escrever a segunda
-            // versão daquelas frases.
+            // O destino `tmp:` vira uma `Coluna` provisória só para reusar `avisoDeExclusao`.
             const destinoComoColuna: Coluna | null = escolhida
               ? colunaDoRascunho(
                   escolhida.ref,
@@ -192,9 +162,7 @@ export default function RevisaoDaEdicao({
                     className="label"
                     htmlFor={`destino-${coluna.id}`}
                   >
-                    {/* ⚠️ UM NÓ DE TEXTO SÓ. Frase partida em vários elementos
-                        não é achada por `getByText` e um leitor de tela a
-                        anuncia em pedaços. */}
+                    {/* Um nó de texto só: o leitor de tela não anuncia em pedaços. */}
                     {`Para onde vão as tarefas de ${coluna.name}`}
                   </label>
                   <select
@@ -244,10 +212,7 @@ export default function RevisaoDaEdicao({
           >
             Voltar
           </button>
-          {/* ⚠️ VERMELHO SEMPRE QUE HÁ EXCLUSÃO, e não só quando o destino é
-              terminal. O gesto apaga coluna e move tarefas de outras pessoas,
-              numa transação sem desfazer -- e a cor é a única defesa, porque
-              aqui não há confirmação digitada. */}
+          {/* Vermelho sempre que há exclusão: não há desfazer nem confirmação digitada. */}
           <button
             type="button"
             className={marcadas.length > 0 ? "btn btn-danger" : "btn btn-primary"}

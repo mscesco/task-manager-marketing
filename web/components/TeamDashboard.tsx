@@ -1,31 +1,7 @@
 "use client";
-// components/TeamDashboard.tsx
-// Os cards da tela inicial do time (Spec 058, fatia D).
-//
-// ⚠️ SÓ DESENHA. O que aparece e em que ordem é de `lib/teamDashboard.ts`
-// (`dashboardLayout`); os números são do servidor, que também decide quem vê
-// o quê (card sem permissão chega `null`).
-//
-// O DESENHO (pedido dela, 14/10, com uma referência de painel em blocos):
-// - em cima, QUATRO NÚMEROS GRANDES; o primeiro, a semana, em destaque;
-// - embaixo, uma grade de blocos de tamanhos diferentes, SEM BURACO (14/10,
-//   ela viu o canto de baixo vazio). No `xl`, quatro colunas:
-//
-//     gestor:   [círculo ][próximos][atrasadas][minhas ]
-//               [círculo ][ carga por pessoa  ][minhas ]
-//     operador: [círculo ][      minhas (3)             ]
-//               [círculo ][ próximos (2)     ][atrasadas]
-//
-//   O círculo ocupa duas linhas (o quadrado que ela pediu); "minhas" também,
-//   no gestor. Os tamanhos moram em `SPAN`, um lugar só.
-//
-// ANIMAÇÃO, com o `motion` que o app já usa:
-// - barras e colunas crescem por `scaleX`/`scaleY`, e NÃO por largura/altura
-//   (web/AGENTS.md §7: só `transform` e `opacity`);
-// - o círculo se completa pelo `pathLength` do SVG -- traço, sem layout;
-// - trocar o time anima do valor velho para o novo;
-// - ⚠️ `useReducedMotion`, e não o bloco do `globals.css`: aquele só alcança
-//   animação de CSS (o mesmo cuidado de `FileiraDeReacoes`).
+// Os cards da tela inicial do time. Só desenha: o que aparece e em que ordem é de
+// `lib/teamDashboard.ts`; os números e quem vê o quê vêm do servidor (card sem permissão chega `null`).
+// Animação com `useReducedMotion`: o bloco do `globals.css` só alcança animação de CSS.
 
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
@@ -62,7 +38,7 @@ export default function TeamDashboard({
 }: {
   data: DashboardResponse;
   links: Links;
-  /** Filtrado por uma pessoa (14/10): "Minhas" vira dela. */
+  /** Filtrado por uma pessoa: "Minhas" vira dela. */
   personName?: string | null;
   /** Clicar num nome da carga filtra por ele. Ausente = sem o filtro. */
   onPickPerson?: (userId: string) => void;
@@ -106,10 +82,9 @@ function Tile({
   order: number;
   personName: string | null;
 }) {
-  // Filtrado por pessoa, os números são DELA (revisão de 15/10): "Minhas
-  // atrasadas" e "no time" diziam o contrário.
+  // Filtrado por pessoa, os números são dela.
   const firstName = personName?.split(" ")[0] ?? null;
-  // Com período escolhido (15/10), os números são das tarefas com prazo nele.
+  // Com período escolhido, os números são das tarefas com prazo nele.
   const inPeriod = data.period !== null;
   switch (tile) {
     case "weekDone":
@@ -233,8 +208,7 @@ function StatTile({
       {total !== undefined && total > 0 && (
         <Bar className="mt-3" parts={[{ fraction: value / total, tone: highlight ? "contrast" : "accent" }]} />
       )}
-      {/* ⚠️ Sem `opacity` no destaque: branco a 90% sobre o azul cai abaixo
-          de 4.5 (revisão de 15/10). */}
+      {/* Sem `opacity` no destaque: branco a 90% sobre o azul cai abaixo de 4.5. */}
       <p className={`m-0 mt-2 text-sm ${highlight ? "" : "text-ink-faint"}`}>{note}</p>
     </motion.section>
   );
@@ -243,9 +217,7 @@ function StatTile({
 // ------------------------------------------------------------------ cards
 /** Quanto cada bloco ocupa na grade (ver o desenho no topo). */
 const SPAN: Record<"manager" | "operator", Record<DashboardCard, string>> = {
-  // ⚠️ O último bloco de cada desenho é LARGO no `md` (duas colunas): sem
-  // isso, ele sobrava sozinho numa linha com um buraco ao lado (revisão de
-  // 15/10). No `xl` ele volta ao lugar dele.
+  // O último bloco é largo no `md`: sem isso sobraria sozinho numa linha com um buraco ao lado.
   manager: {
     weekRing: "md:row-span-2",
     aheadChart: "",
@@ -344,9 +316,7 @@ function WeekRingCard({ data, className }: { data: DashboardResponse; className:
 
 /**
  * Colunas verticais: os próximos 7 dias, ou o período (por dia até 14 dias,
- * por semana acima). Cada coluna EMPILHA concluídas, no prazo e atrasadas --
- * escolha minha, aprovada por ela em 15/10: a coluna conta como o dia (ou a
- * semana) se saiu, e não só quantas venciam.
+ * por semana acima). Cada coluna empilha concluídas, no prazo e atrasadas.
  */
 function AheadChartCard({ data, className }: { data: DashboardResponse; className: string }) {
   const reduce = useReducedMotion();
@@ -523,8 +493,7 @@ function MineCard({
   tall: boolean;
 }) {
   const { overdue, overdue_total, on_time, on_time_total } = data.mine;
-  // Filtrado por pessoa, o card é DELA (o servidor já mandou as dela); com
-  // período, é do período, e "vencem hoje" vira "em aberto no prazo".
+  // Filtrado por pessoa, o card é dela; com período, "vencem hoje" vira "em aberto no prazo".
   const inPeriod = data.period !== null;
   const whose = personName ? personName.split(" ")[0] : "Minhas";
   const title = `${whose} ${inPeriod ? "no período" : "para hoje"}`;
@@ -533,7 +502,6 @@ function MineCard({
       {overdue_total + on_time_total === 0 ? (
         <Empty>{inPeriod ? "Nada em aberto no período." : "Nada atrasado nem vencendo hoje."}</Empty>
       ) : (
-        // No gestor o card ocupa duas linhas, e a área que rola acompanha.
         <Scroll className={tall ? "max-h-[560px]" : "max-h-[300px]"}>
           <div className="flex flex-col gap-3">
           {overdue_total > 0 && (
@@ -590,14 +558,7 @@ function CardFrame({
   );
 }
 
-/**
- * As tarefas citadas num card (14/10, ela: "achei meio básico, se tiver algum
- * elemento que mostre melhor que são clicáveis").
- *
- * Cada uma é um BLOCO inteiro clicável: título, a coluna onde está (com a cor
- * do quadro), a prioridade e o prazo em pílula -- e a seta à direita, que é o
- * sinal de "abre".
- */
+/** As tarefas citadas num card: cada uma é um bloco inteiro clicável, com a seta de "abre". */
 function TaskList({
   tasks,
   today,
@@ -648,8 +609,7 @@ function TaskList({
             {t.due_date && (
               <span
                 className={`flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
-                  // ⚠️ Borda, e não fundo tingido: o vermelho sobre o
-                  // tingido dele mesmo ficava abaixo de 4.5 (revisão de 15/10).
+                  // Borda, e não fundo tingido: o vermelho sobre o tingido dele mesmo fica abaixo de 4.5.
                   danger ? "border border-danger/50 text-danger" : "bg-surface-2 text-ink-soft"
                 }`}
               >
@@ -670,8 +630,7 @@ function TaskList({
 }
 
 /**
- * A área que ROLA DENTRO do card (14/10, pedido dela: a tela não rola, a
- * lista sim, e dá para ver tudo). `pr-1` deixa a barra de rolagem fora das
+ * A área que rola dentro do card. `pr-1` deixa a barra de rolagem fora das
  * linhas; `overscroll-contain` impede que chegar ao fim role a página.
  */
 function Scroll({ className, children }: { className: string; children: ReactNode }) {
@@ -698,13 +657,7 @@ function Empty({ children }: { children: ReactNode }) {
 }
 
 // ------------------------------------------------------------------ animação
-/**
- * O azul claro de "no prazo", OPACO.
- *
- * ⚠️ Era `bg-accent/45` -- translúcido --, e as camadas do gráfico se
- * empilham: o vermelho das atrasadas, por baixo, vazava e virava ROXO (ela
- * viu em 15/10). A mistura é feita aqui, com o fundo do card, e não na tela.
- */
+/** O azul claro de "no prazo", opaco: as camadas se empilham, e translúcido o vermelho de baixo vazava. */
 const ON_TIME_FILL = "bg-[color-mix(in_srgb,var(--color-accent)_45%,var(--color-surface))]";
 
 /** A mola: sem quicar, curta o bastante para não atrasar quem abre todo dia. */
@@ -799,7 +752,7 @@ function ProgressRing({
           initial={reduce ? false : { pathLength: 0 }}
           animate={{ pathLength: percent / 100 }}
           transition={reduce ? { duration: 0 } : { ...GROW, duration: 1 }}
-          // ⚠️ 0% com `strokeLinecap="round"` ainda desenharia um pontinho.
+          // 0% com `strokeLinecap="round"` ainda desenharia um pontinho.
           style={{ opacity: percent === 0 ? 0 : 1 }}
         />
       </svg>

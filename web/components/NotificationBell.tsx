@@ -14,22 +14,12 @@ import {
 import { destinoDaNotificacao, textoDaNotificacao } from "@/lib/notificacoes";
 
 import Loading from "@/components/Loading";
-// Sino de notificacoes (Spec 018, Front-B). Polla a contagem de nao-lidas
-// a cada 30s (pausando quando a aba esta em background) e, ao abrir, busca
-// o feed. Clicar numa notificacao marca lida (otimista) e navega pro destino
-// resolvido em `lib/notificacoes`.
-//
-// O destino era `/minhas-tarefas?task=<id>`, sob a premissa de que "a task
-// sempre esta la, porque o destinatario e sempre responsavel dela". A
-// premissa vale para TASK_ASSIGNED e FALHA para TASK_MENTIONED e
-// TASK_COMMENTED -- mencao e comentario alcancam quem nao e responsavel, a
-// tarefa nao esta na lista, e o clique nao abria nada. Agora vai para a rota
-// canonica `/tarefa/<id>`, que busca por id e nao depende de lista.
+// Sino de notificações: consulta as não lidas a cada 30s (pausa em background) e,
+// ao abrir, busca o feed. Clicar marca lida (otimista) e navega ao destino de `lib/notificacoes`.
 
 const POLL_MS = 30_000;
 
-// created_at vem como ISO COMPLETO com timezone -> new Date() e seguro aqui
-// (o bug de UTC so afeta strings date-only "YYYY-MM-DD").
+// `created_at` vem como ISO completo com fuso: `new Date()` é seguro (o problema é só com "YYYY-MM-DD").
 function quando(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const min = Math.floor(diff / 60000);
@@ -60,21 +50,15 @@ export default function NotificationBell() {
       }
     }
     async function tick() {
-      // Sessao ja encerrada (401 anterior): nao dispara mais requisicao.
-      // Cobre o caminho do visibilitychange, que chama tick() a cada foco de
-      // aba independente do intervalo ja ter sido limpo em parar().
+      // Sessão já encerrada (401): o `visibilitychange` chama tick() mesmo após parar().
       if (parado) return;
       if (typeof document !== "undefined" && document.hidden) return;
       try {
         const n = await getUnreadCount();
         if (!parado) setUnread(n);
       } catch (e) {
-        // Sessao morta (401): PARA de pollar. Sem isto, um token invalido
-        // (ex.: logout em outra aba) fazia o sino martelar /unread-count a
-        // cada 30s pra sempre -- o wrapper do api so redireciona pro login
-        // quando AINDA ha token, entao o caso "sem token" ficava em loop
-        // silencioso. Aqui cortamos o loop. Outros erros: silencioso, o
-        // badge nunca derruba a tela.
+        // 401: para de consultar (o wrapper do api não redireciona sem token, e o
+        // sino ficaria em loop). Outros erros: silencioso, o badge não derruba a tela.
         if (e instanceof ApiError && e.status === 401) {
           parar();
           return;
@@ -123,15 +107,7 @@ export default function NotificationBell() {
       setUnread((u) => Math.max(0, u - 1));
       markNotificationRead(n.id).catch(() => {});
     }
-    // `/tarefa/<id>` e uma rota propria: o push remonta a pagina e o effect
-    // dela (dep `[id]`) busca a tarefa. Nao ha mais o caso "ja estou na
-    // pagina e a query so mudou", entao o CustomEvent "abrir-tarefa" que
-    // existia aqui saiu -- ele so cobria aquele caso. O listener em
-    // /minhas-tarefas continua no lugar: ele ainda serve ao deep-link
-    // `?task=` de links antigos que ja circularam.
-    //
-    // ⚠️ Spec 053 (D27): tarefa excluida ou fora do alcance NAO tem destino --
-    // o clique so marca como lida.
+    // Tarefa excluída ou fora do alcance não tem destino: o clique só marca como lida.
     const destino = destinoDaNotificacao(n);
     if (destino) router.push(destino);
   }
@@ -230,9 +206,9 @@ export default function NotificationBell() {
                       {textoDaNotificacao(n)}
                     </span>
                     <span className="mt-0.5 block text-xs text-ink-faint">
-                      {/* Spec 053 (C): a ultima mudanca, se avisos se juntaram. */}
+                      {/* A última mudança, se avisos se juntaram. */}
                       {quando(n.updated_at ?? n.created_at)}
-                      {/* Spec 053 (D27): sem link e sem titulo. */}
+                      {/* Sem link e sem título. */}
                       {n.task_access === "gone" && " · tarefa excluída ou sem acesso"}
                     </span>
                   </span>
@@ -240,8 +216,7 @@ export default function NotificationBell() {
               ))
             )}
           </div>
-          {/* Spec 053 (D20, D26): o unico caminho para a tela de notificacoes --
-              o menu lateral nao ganha item. O sino mostra so as 20 mais novas. */}
+          {/* Único caminho para a tela de notificações; o sino mostra só as 20 mais novas. */}
           <Link
             href="/notificacoes"
             onClick={() => setOpen(false)}

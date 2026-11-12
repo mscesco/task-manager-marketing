@@ -14,44 +14,15 @@ const LARGURA = 288;
 /** O conteudo, descontado o `padding: 6` de cada lado do painel. */
 const LARGURA_DO_CONTEUDO = "w-[276px]";
 
-/**
- * Os grupos do catalogo, calculados UMA vez por carga da pagina.
- *
- * ⚠️ Era um `useMemo` dentro do componente -- e ha um seletor por COMENTARIO,
- * entao abrir uma tarefa com 20 comentarios agrupava os 1.914 emojis 20 vezes.
- * O catalogo e constante: o resultado tambem.
- */
+/** Os grupos do catálogo, calculados uma vez por carga da página (há um seletor por comentário). */
 const GRUPOS = porGrupo(CATALOGO_DE_EMOJI);
 
 /**
- * O botao de reagir e o seletor que ele abre (Spec 050, §4.7).
- *
- * O gesto e o do WhatsApp, pedido dela em 15/09: o botao aparece ao passar o
- * mouse pelo comentario (quem o revela e a `CapsulaDeAcoes`), e o clique abre
- * o seletor com 👍 e ❤️ na frente e os outros depois.
- *
- * ⚠️⚠️ O PAINEL E O `AnchoredPanel`, E NAO UM `absolute`. A primeira versao era
- * `absolute`, e o detalhe da tarefa rola por dentro: o painel nascia cortado
- * pela borda da gaveta -- o MESMO defeito que o `PillSelect` ja tinha tido.
- * A caixa usa a mesma mola dos seletores da organizacao.
- *
- * ⚠️⚠️ A ANIMACAO, vista quadro a quadro na gravacao dela de 16/09:
- *   - A GRADE ENTRA DEPOIS DA CAIXA (ver `gradeLiberada`). Montar ~150 botoes
- *     de emoji colorido no mesmo quadro do clique atrasava o PRIMEIRO quadro da
- *     animacao; quando ele saia, a mola ja tinha "andado" no tempo, e o painel
- *     aparecia quase pronto e terminava aos trancos -- *"parece que eu clico pra
- *     abrir aí ela abre e depois anima e ainda travado"*. Agora o clique monta
- *     so a caixa leve; a grade chega dois quadros depois, num espaco de altura
- *     FIXA, para nada mudar de lugar quando ela aparece.
- *   - O CONTEUDO NAO USA A CASCATA dos seletores da organizacao (`PANEL_ITEM`):
- *     entrando depois da caixa, ela clareava o conteudo por um quadro -- uma
- *     piscada.
- *   - FECHANDO, o conteudo SAI ANTES da caixa (60ms, so opacidade). A caixa
- *     branca sobre o detalhe branco some aos ~50%, e sem isso os emojis
- *     coloridos ficavam flutuando sem painel por uns tres quadros.
- *
- * ⚠️ UM GRUPO POR VEZ, e nao a grade inteira: sao 1.914 emojis no catalogo. A
- * busca (em portugues, sem acento) e o caminho para o resto.
+ * O botão de reagir e o seletor que ele abre, com 👍 e ❤️ na frente.
+ * Painel no `AnchoredPanel` porque o detalhe rola por dentro e cortaria um `absolute`.
+ * A grade entra dois quadros depois da caixa, num espaço de altura fixa: montá-la no
+ * clique atrasava o primeiro quadro da animação. Ao fechar, o conteúdo sai antes da caixa.
+ * Um grupo por vez (o catálogo tem ~1.900 emojis); a busca é o caminho para o resto.
  */
 export default function SeletorDeReacao({
   onEscolher,
@@ -67,12 +38,7 @@ export default function SeletorDeReacao({
   // O app nao tem `MotionConfig`: a preferencia do sistema e respeitada aqui.
   const menosMovimento = useReducedMotion();
 
-  // A busca e limpa ao ABRIR: cada abertura comeca do grupo, sem o termo da
-  // vez anterior.
-  // ⚠️ Nao e por causa da animacao de saida, e isto foi medido: o
-  // `AnimatePresence` congela o painel que sai com o ultimo conteudo desenhado,
-  // entao limpar no fechar tambem nao trocaria nada na tela. A sabotagem que
-  // pos a limpeza de volta no fechar nao derrubou teste nenhum (16/09).
+  // A busca é limpa ao abrir: cada abertura começa do grupo.
   const fechar = useCallback(() => setAberto(false), []);
   const abrir = useCallback(() => {
     setTermo("");
@@ -82,14 +48,11 @@ export default function SeletorDeReacao({
   const { anchorRef, panelRef, box } = useAnchoredPanel<HTMLButtonElement>(
     aberto,
     fechar,
-    // O botao fica no canto DIREITO da linha: o painel abre embaixo e para a
-    // esquerda, dentro do detalhe da tarefa -- onde ela desenhou em 16/09.
+    // O botão fica no canto direito: o painel abre embaixo e para a esquerda.
     { larguraPainel: LARGURA, alinhar: "direita" },
   );
 
-  // ⚠️ DOIS quadros, e nao um: o primeiro `requestAnimationFrame` roda ANTES da
-  // pintura do quadro em que a caixa foi montada. So no segundo a caixa ja foi
-  // pintada e a animacao ja comecou -- e ai a grade pode custar o que custa.
+  // Dois quadros: o primeiro `requestAnimationFrame` roda antes da pintura da caixa.
   useEffect(() => {
     if (!aberto) return;
     let segundo = 0;
@@ -130,8 +93,7 @@ export default function SeletorDeReacao({
         <SmilePlus size={15} strokeWidth={2} aria-hidden />
       </button>
 
-      {/* ⚠️ `AnimatePresence` e o que permite a SAIDA animada: sem ele o React
-          desmonta o painel na hora e o `exit` nunca roda. */}
+      {/* `AnimatePresence` permite a saída animada. */}
       <AnimatePresence>
         {aberto && box && (
           <AnchoredPanel
@@ -141,11 +103,7 @@ export default function SeletorDeReacao({
             aria-label="Escolher reação"
             minWidth={LARGURA}
           >
-            {/* ⚠️⚠️ LARGURA FIXA NO CONTEUDO. O `AnchoredPanel` so define
-                largura MINIMA, e o conteudo esticava o painel ate a borda da
-                janela -- a captura de 16/09 ("o seletor ficou ainda pior").
-                ⚠️ `initial={false}`: nenhuma entrada propria -- o conteudo
-                aparece com a caixa. So a SAIDA e dele, mais curta que a dela. */}
+            {/* Largura fixa: o `AnchoredPanel` só define a mínima. `initial={false}`: o conteúdo entra com a caixa. */}
             <motion.div
               className={LARGURA_DO_CONTEUDO}
               initial={false}
@@ -154,7 +112,6 @@ export default function SeletorDeReacao({
                 transition: { duration: menosMovimento ? 0 : 0.06, ease: "easeOut" },
               }}
             >
-              {/* Os dois de sempre, maiores -- pedido dela. */}
               <div className="flex items-center gap-1 px-1 pb-2">
                 {REACOES_SUGERIDAS.map((emoji) => (
                   <button
@@ -180,14 +137,7 @@ export default function SeletorDeReacao({
                 />
               </div>
 
-              {/* ⚠️⚠️ AS ABAS SAO O PRIMEIRO EMOJI DE CADA GRUPO, e nao o nome
-                  escrito. Com o nome, dez abas nao cabiam: a linha ganhava
-                  barra de rolagem lateral e o conteudo passava da altura
-                  maxima do painel, que rolava inteiro (a captura de 16/09
-                  mostra as duas barras). O nome continua no rotulo e no
-                  titulo -- para o leitor de tela e para o mouse em cima.
-                  ⚠️ O emoji vem do CATALOGO, e nao de uma lista escrita aqui:
-                  um grupo novo na fonte ganha aba sozinho. */}
+              {/* Abas com o primeiro emoji de cada grupo (vindo do catálogo); o nome vai no rótulo e no título. */}
               {!buscando && (
                 <div
                   className="mt-2 flex items-center justify-between px-1"
@@ -215,10 +165,7 @@ export default function SeletorDeReacao({
                 </div>
               )}
 
-              {/* ⚠️ ALTURA FIXA (`h-40`), e nao maxima: a grade chega depois da
-                  caixa, e com altura maxima o painel CRESCERIA no quadro em que
-                  ela chega -- o pulo que a gravacao mostrava. Com a altura
-                  reservada, so os emojis aparecem. */}
+              {/* Altura fixa, e não máxima: a grade chega depois e o painel não pode crescer. */}
               <div
                 className="mt-1 grid h-40 grid-cols-8 content-start gap-0.5 overflow-y-auto px-1"
                 role="group"

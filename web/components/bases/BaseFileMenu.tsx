@@ -1,10 +1,6 @@
 "use client";
-// components/bases/BaseFileMenu.tsx
-// O menu "Planilha" da Base (Spec 057, 15/10): exportar em Excel ou CSV, e
-// importar. Fica ao lado do desfazer, com os outros controles da visão.
-//
-// ⚠️ Exporta O QUE A VISÃO MOSTRA: as linhas filtradas e ordenadas e as
-// colunas visíveis, na ordem da tela -- quem chama passa as duas listas.
+// Menu "Planilha" da Base: exportar (Excel/CSV) e importar.
+// Exporta o que a visão mostra: linhas filtradas e ordenadas e colunas visíveis, na ordem da tela.
 
 import { useCallback, useState } from "react";
 import { FileSpreadsheet } from "lucide-react";

@@ -1,16 +1,8 @@
 "use client";
-// components/SeguidoresDaTarefa.tsx
-// Seguir uma tarefa, no DETALHE (Spec 053, fatia D, decisao D5):
-//   - `BotaoSeguir`: "Seguir" / "Deixar de seguir", no topo, o gesto de um clique;
-//   - `LinhaDeSeguidores`: a linha "Seguidores" logo abaixo de "Responsaveis",
-//     com o `+` para por e tirar outras pessoas.
-//
-// ⚠️ OS DOIS LEEM O MESMO ESTADO (`useSeguidores`), criado UMA vez no
-// `TaskDetail` e passado para ambos. Dois estados separados discordariam: o
-// botao diria "Seguir" enquanto a linha ja mostra a pessoa.
-//
-// ⚠️ GRAVA NA HORA, como os responsaveis do detalhe: cada caixa marcada e uma
-// requisicao. Otimista, e volta atras com aviso na pilha se o servidor recusar.
+// Seguir uma tarefa no detalhe: `BotaoSeguir` (um clique, no topo) e `LinhaDeSeguidores`
+// (o `+` para pôr e tirar outras pessoas). Os dois recebem o mesmo `useSeguidores`,
+// criado uma vez no `TaskDetail`, para não discordarem.
+// Grava na hora, otimista; volta atrás com aviso se o servidor recusar.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bell, BellOff } from "lucide-react";
@@ -31,12 +23,7 @@ export type EstadoDosSeguidores = {
   alternar: (userId: string, daPropriaPessoa: boolean) => Promise<void>;
 };
 
-/**
- * Carrega e altera os seguidores de UMA tarefa.
- *
- * ⚠️ GUARDA DE CORRIDA, a mesma do alcance do detalhe: trocar de tarefa rapido
- * faria a resposta da anterior pintar a atual.
- */
+/** Carrega e altera os seguidores de uma tarefa; ignora a resposta de uma tarefa anterior. */
 export function useSeguidores(
   taskId: string | null,
   avisar: (texto: string) => void,
@@ -110,11 +97,8 @@ export function BotaoSeguir({
     <button
       type="button"
       className="btn btn-ghost shrink-0 gap-1.5"
-      // ⚠️ INLINE, e e o unico jeito que funciona aqui: o `.btn` do
-      // `globals.css` nao esta em camada, e por isso vence `px-*`/`py-*` do
-      // Tailwind -- as classes nao mudavam nada e o botao saia do tamanho de
-      // um "Salvar". Mesmo padding e fonte do "fechar" ao lado, para os dois
-      // alinharem (pedido dela, 17/09: "tá torto e muito grande").
+      // Inline porque o `.btn` do `globals.css` fica fora de camada e vence `px-*`/`py-*`
+      // do Tailwind. Mesmo padding e fonte do "fechar" ao lado.
       style={{ padding: "4px 10px", fontSize: 13 }}
       onClick={() => void estado.alternar(meuId, true)}
       disabled={ocupado}
@@ -160,8 +144,7 @@ export function LinhaDeSeguidores({
   );
 
   return (
-    // Sem `rotulo`: o detalhe poe "Seguidores" na coluna de rotulos da lista
-    // de propriedades (redesign 19/10).
+    // Sem `rotulo`: o detalhe põe "Seguidores" na coluna de rótulos.
     <SeletorDePessoas
       marcados={marcados}
       nomes={nomes}
@@ -172,7 +155,7 @@ export function LinhaDeSeguidores({
       onAlternar={(id) => void estado.alternar(id, id === meuId)}
       podeAbrir={mexerEmOutros && estado.seguidores !== null}
       ocupados={estado.ocupados}
-      // Pedido dela (17/09): sem "ninguem" -- vazio e so o `+`.
+      // Vazio é só o `+`, sem "ninguém".
       rotuloDoBotao="Escolher seguidores"
     />
   );

@@ -6,12 +6,8 @@ import { Archive, ArchiveRestore, Copy, FolderInput, MoreHorizontal, Trash2 } fr
 import AnchoredPanel, { useAnchoredPanel } from "@/components/AnchoredPanel";
 
 /**
- * O "⋯" do cabecalho do detalhe (pedido dela, 05/11): Mover, Duplicar,
- * Arquivar e Excluir, que eram uma fileira de botoes no rodape.
- *
- * Quem decide se cada item aparece e o `TaskDetail` (permissao, arquivada);
- * aqui `undefined` = o item nao existe. Excluir fica por ultimo, separado e em
- * `--danger` (web/AGENTS.md §6).
+ * O "⋯" do cabecalho do detalhe: Mover, Duplicar, Arquivar e Excluir.
+ * Quem decide se cada item aparece e o `TaskDetail`; `undefined` = o item nao existe.
  */
 export default function MenuDaTarefa({
   arquivada,

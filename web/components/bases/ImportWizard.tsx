@@ -1,19 +1,8 @@
 "use client";
-// components/bases/ImportWizard.tsx
-// Importar planilha na Base (Spec 057, 15/10) -- o assistente.
-//
-//   1. ARQUIVO   .xlsx ou .csv; a aba e a linha do cabeçalho.
-//   2. COLUNAS   uma por uma: criar coluna nova (com o tipo, sugerido pelo
-//                servidor olhando os valores), juntar com uma coluna que já
-//                existe, ir para o título, ou ignorar.
-//   3. CONFERIR  o servidor valida SEM gravar e diz os problemas pela linha
-//                do arquivo; aí importa tudo, ou só as válidas.
-//
-// Serve as duas entradas que ela pediu: numa base que já existe
-// (`base`), e criando uma base nova (`newBase`: o time raiz e o nome).
-//
-// ⚠️ O ARQUIVO VAI DE NOVO a cada passo (prévia, validar, importar): o
-// servidor não guarda nada entre eles. O que se valida é o que se importa.
+// Assistente de importar planilha na Base: 1. arquivo (aba e linha do cabeçalho);
+// 2. colunas (criar, juntar com existente, título ou ignorar); 3. conferir (o servidor
+// valida sem gravar) e importar. Serve base existente (`base`) e base nova (`newBase`).
+// O arquivo vai de novo a cada passo: o servidor não guarda nada entre eles.
 
 import { useMemo, useState } from "react";
 import CaixaDeDialogo from "@/components/CaixaDeDialogo";
@@ -37,9 +26,9 @@ type Target =
 
 type Choice = { action: ImportColumnPlan["action"]; type: BaseColumnType; columnId: string | null };
 
-// Spec 063, decisao 1: importar planilha e so em tela grande.
+// Importar planilha só em tela grande.
 export default function ImportWizard(props: Parameters<typeof Assistente>[0]) {
-  // Decide UMA vez, ao abrir: ver `EditorOuAviso` em formularios/[id].
+  // Decide uma vez, ao abrir: ver `EditorOuAviso` em formularios/[id].
   const [faixaAoAbrir] = useState(useFaixaDeTela());
   if (faixaAoAbrir !== "celular") return <Assistente {...props} />;
   return (
@@ -93,7 +82,7 @@ function Assistente({
       const p = await previewImport({ ...f, sheet: s, header_row: h });
       setPreview(p);
       setSheet(p.sheet);
-      // Sugestão: a 1ª coluna vai para o título; a que tem o MESMO NOME de uma
+      // Sugestão: a 1ª coluna vai para o título; a que tem o mesmo nome de uma
       // coluna da base junta com ela; o resto vira coluna nova do tipo sugerido.
       setChoices(
         p.columns.map((c, i) => {

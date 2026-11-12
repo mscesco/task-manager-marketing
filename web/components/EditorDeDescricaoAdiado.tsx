@@ -1,22 +1,8 @@
 "use client";
-// components/EditorDeDescricaoAdiado.tsx
-// O editor de descrição, baixado só quando alguém vai EDITAR (Spec 052, fatia E).
-//
-// ⚠️ MEDIDO NO `next build` DE 16/09: com o editor (Tiptap) importado direto, a
-// primeira carga de `/minhas-tarefas`, `/tarefa/[id]` e `/projetos/[id]` subiu
-// de ~290 kB para ~435 kB -- para TODO MUNDO que abre essas telas, inclusive
-// quem só lê. O editor só aparece ao clicar em "Editar", no modal de criar e no
-// painel do projeto; até lá ele não precisa existir no navegador.
-//
-// ⚠️ `React.lazy` E NÃO `next/dynamic`: os dois adiam o download, e o `lazy`
-// também funciona nos testes (vitest), sem simular o carregador do Next.
-//
-// ⚠️⚠️ E O DOWNLOAD PODE FALHAR (revisão de 16/09). Uma aba aberta desde antes
-// de um deploy pede o pedaço de código com o nome antigo, que não existe mais;
-// rede instável faz o mesmo. Sem uma fronteira de erro, a rejeição do `import()`
-// subia até a raiz -- o app não tem outra -- e a PÁGINA INTEIRA virava
-// "Application error". Aqui a falha fica no campo, com "Tentar de novo" e
-// "Recarregar a página". O rascunho mora em quem usa, e não se perde.
+// O editor de descrição, baixado só quando alguém vai editar (o Tiptap pesa
+// ~145 kB na primeira carga). `React.lazy` em vez de `next/dynamic` porque
+// funciona no vitest. A fronteira de erro segura a falha do download (aba
+// aberta antes de um deploy, rede instável) no campo, em vez de derrubar a página.
 
 import { Component, lazy, Suspense, useState, type ComponentProps, type ReactNode } from "react";
 
@@ -61,8 +47,7 @@ class FronteiraDoEditor extends Component<
 }
 
 export default function EditorDeDescricaoAdiado(props: Props) {
-  // ⚠️ UM `lazy` NOVO A CADA TENTATIVA: o `lazy` guarda a promessa rejeitada, e
-  // tentar de novo com o mesmo repetiria a falha sem pedir o arquivo outra vez.
+  // Um `lazy` novo a cada tentativa: o `lazy` guarda a promessa rejeitada.
   const [Editor, setEditor] = useState(carregarEditor);
 
   return (

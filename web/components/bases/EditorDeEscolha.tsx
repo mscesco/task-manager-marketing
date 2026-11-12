@@ -1,12 +1,6 @@
 "use client";
-// components/bases/EditorDeEscolha.tsx
-// O painel de escolher numa célula de Seleção, Seleção múltipla ou Pessoa
-// (Spec 056, fatia E). Busca no topo, a lista embaixo, e -- na seleção -- criar
-// a opção digitando (spec §12).
-//
-// ⚠️ SELEÇÃO ÚNICA GRAVA AO ESCOLHER; MÚLTIPLA GRAVA AO FECHAR. Gravar a cada
-// marcação seriam várias entradas no diário para um gesto só, e o Ctrl+Z da
-// fatia H desfaria uma marcação por vez.
+// Painel de escolha numa célula de Seleção, Seleção múltipla ou Pessoa.
+// Seleção única grava ao escolher; múltipla grava ao fechar (um gesto, uma entrada no Ctrl+Z).
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, Plus } from "lucide-react";
@@ -40,12 +34,8 @@ export default function EditorDeEscolha({
   onCriar?: (rotulo: string) => Promise<string | null>;
   onGravar: (ids: string[]) => void;
   onFechar: () => void;
-  /**
-   * ⚠️ O `useAnchoredPanel` fecha SOZINHO (Esc, clique fora, rolagem). Sem
-   * isto, na seleção múltipla esse fechamento perderia as marcações: quem abre
-   * o painel chama `fecharRef.current()` no `onClose` dele, e é o editor que
-   * decide gravar.
-   */
+  /** O `useAnchoredPanel` fecha sozinho (Esc, clique fora, rolagem); quem abre chama
+   *  `fecharRef.current()` no `onClose` para o editor decidir gravar. */
   fecharRef: MutableRefObject<(() => void) | null>;
 }) {
   const [busca, setBusca] = useState("");

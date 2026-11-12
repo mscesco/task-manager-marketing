@@ -1,23 +1,9 @@
 "use client";
-// components/TextoFormatado.tsx
-// A descrição de projeto e de tarefa desenhada com formatação (Spec 052, fatia C).
-//
-// ⚠️ É O ÚNICO LUGAR QUE TRANSFORMA DESCRIÇÃO EM ELEMENTOS. Quem precisa desenhar
-// uma descrição usa este componente, e não chama o `react-markdown` direto: a
-// lista do que é permitido e a regra de endereço moram em `lib/markdown.ts`, e
-// uma segunda chamada seria uma segunda lista para esquecer de atualizar.
-//
-// O que ele faz (spec §4.3):
-//   - `remark-gfm`: listas e URL solta vira link (o que o `linkify` fazia);
-//   - `remark-breaks`: ⚠️ QUEBRA DE LINHA SIMPLES VIRA QUEBRA. Sem isso, as
-//     descrições que já existem -- e o briefing das solicitações, que é feito
-//     de linhas curtas -- virariam um parágrafo só no dia do deploy;
-//   - HTML escrito à mão aparece como TEXTO (sem `rehype-raw`, de propósito);
-//   - link só `http`, `https` e `mailto`, sempre em aba nova.
-//
-// ⚠️ TÍTULO NUNCA COMPETE COM A PÁGINA: `#` e `##` saem como `<h3>`, e `###` em
-// diante como `<h4>`. A descrição mora embaixo do título da tarefa (`<h2>`) e
-// do nome do projeto (`<h1>`).
+// Desenha a descrição (Markdown) de projeto e tarefa. Único lugar que chama o
+// `react-markdown`; a lista do permitido e a regra de endereço ficam em `lib/markdown.ts`.
+// `remark-breaks`: quebra simples vira quebra (descrições antigas são linhas curtas).
+// HTML escrito à mão aparece como texto (sem `rehype-raw`, de propósito).
+// `#`/`##` viram `<h3>` e o resto `<h4>`, para não competir com o título da página.
 
 import Markdown, { type Components } from "react-markdown";
 import remarkBreaks from "remark-breaks";
@@ -29,8 +15,7 @@ const PLUGINS = [remarkGfm, remarkBreaks];
 const COMPONENTES: Components = {
   a({ href, children }) {
     const url = enderecoSeguro(href);
-    // ⚠️ Endereço recusado vira TEXTO, e não `<a>` sem destino: o clique não
-    // pode fazer nada inesperado, e o nome continua legível.
+    // Endereço recusado vira texto, não `<a>` sem destino.
     if (!url) return <span>{children}</span>;
     return (
       <a href={url} target="_blank" rel="noopener noreferrer">
@@ -44,9 +29,7 @@ const COMPONENTES: Components = {
   h4: ({ children }) => <h4>{children}</h4>,
   h5: ({ children }) => <h4>{children}</h4>,
   h6: ({ children }) => <h4>{children}</h4>,
-  // ⚠️ IMAGEM VIRA LINK (revisão de 16/09): o editor não mostra imagem, e
-  // desenhá-la aqui carregaria endereço externo na tela de quem só abre a
-  // tarefa. O texto alternativo é o nome; sem ele, "imagem".
+  // Imagem vira link, para não carregar endereço externo ao abrir a tarefa.
   img({ src, alt }) {
     const url = enderecoSeguro(typeof src === "string" ? src : null);
     const nome = alt || "imagem";
@@ -77,12 +60,9 @@ export default function TextoFormatado({
       <Markdown
         remarkPlugins={PLUGINS}
         allowedElements={ELEMENTOS_PERMITIDOS}
-        // ⚠️ DESEMBRULHA o que não é permitido: o conteúdo fica como texto, e
-        // não some junto com o elemento.
+        // O que não é permitido vira texto, em vez de sumir.
         unwrapDisallowed
-        // ⚠️ E NÃO REESCREVE ENDEREÇO: `enderecoSeguro` decide no `a`, onde dá
-        // para trocar o link por texto. O `urlTransform` padrão devolveria `""`,
-        // e um `href=""` recarrega a página.
+        // Quem decide o endereço é `enderecoSeguro`; o padrão devolveria `""`, e `href=""` recarrega a página.
         urlTransform={(url) => url}
         components={COMPONENTES}
       >

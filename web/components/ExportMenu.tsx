@@ -1,12 +1,7 @@
 "use client";
-// components/ExportMenu.tsx
-// "Exportar" da tela inicial (Spec 058, 15/10): PDF e planilha.
-//
-// - PDF é a IMPRESSÃO do navegador ("Salvar como PDF"): a tela já está no
-//   formato certo, e o `@media print` do `globals.css` tira a barra lateral,
-//   força o tema claro e mantém as cores. Nada a gerar no servidor.
-// - A planilha vem do servidor (`GET /dashboard/export`), com os MESMOS
-//   filtros da tela.
+// "Exportar" da tela inicial: PDF é a impressão do navegador (o `@media print`
+// do `globals.css` ajusta a tela); a planilha vem de `GET /dashboard/export`
+// com os mesmos filtros da tela.
 
 import { useCallback, useState } from "react";
 import { ChevronDown, Download, FileSpreadsheet, FileText } from "lucide-react";
@@ -39,7 +34,7 @@ export default function ExportMenu({ onSpreadsheet }: { onSpreadsheet: () => Pro
 
   function pdf() {
     close();
-    // ⚠️ Depois de fechar: o painel aberto sairia no PDF.
+    // Depois de fechar: o painel aberto sairia no PDF.
     window.setTimeout(() => window.print(), 50);
   }
 

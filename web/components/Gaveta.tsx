@@ -1,14 +1,6 @@
 "use client";
-// components/Gaveta.tsx
-// A gaveta lateral (da direita): o fundo, o painel que desliza, o cabecalho
-// com o titulo e o X, e o corpo que rola.
-//
-// ⚠️ ERA A MESMA MOLDURA EM `MemberDrawer` E `SubteamDrawer` (revisao de
-// 07/10), copiada inteira -- fundo, mola, classes do painel, cabecalho.
-//
-// ⚠️ O FUNDO FECHA SO COM O CLIQUE NELE MESMO (`target === currentTarget`), e
-// ele e IRMAO do painel, nao pai: apertar dentro da gaveta e soltar fora nao
-// fecha nada -- o `mousedown` nunca chega ao fundo.
+// Gaveta lateral da direita: fundo, painel que desliza, cabecalho com titulo e X, corpo que rola.
+// O fundo e irmao do painel, nao pai: apertar dentro e soltar fora nao fecha.
 
 import type { ReactNode } from "react";
 import { motion } from "motion/react";
@@ -35,9 +27,7 @@ export default function Gaveta({
 }) {
   return (
     <>
-      {/* ⚠️ O fundo e clicavel para fechar, mas SEM escurecer forte: a tabela
-          atras e o contexto do que se edita, e apaga-la contradiz a escolha
-          de gaveta em vez de modal. */}
+      {/* Escurece pouco: a tabela atras e o contexto do que se edita. */}
       <div
         className="fixed inset-0 z-40 bg-black/10"
         onMouseDown={(e) => {
@@ -45,8 +35,6 @@ export default function Gaveta({
         }}
       />
       <motion.aside
-        // ⚠️ Entra deslizando da direita. `prefers-reduced-motion` e honrado
-        // pelo bloco global do `globals.css` e pelo proprio motion.
         initial={{ x: 24, opacity: 0 }}
         animate={{ x: 0, opacity: 1 }}
         exit={{ x: 24, opacity: 0 }}
@@ -59,9 +47,7 @@ export default function Gaveta({
           if (e.key === "Escape" && podeFechar) onClose();
         }}
       >
-        {/* ⚠️ `items-center`, e nao `items-start`: titulo e subtitulo sao duas
-            linhas, e alinhando pelo topo o X encostava no primeiro pixel do
-            titulo em vez de acompanhar o par. */}
+        {/* `items-center`: o X acompanha o par titulo + subtitulo. */}
         <div className="flex items-center gap-3 border-b border-border p-4">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-lg font-semibold">{titulo}</h2>

@@ -1,14 +1,6 @@
 "use client";
-// components/Paginacao.tsx
 // O rodape "Envios 1–10 de 42 · ← Anterior · 1 / 5 · Próxima →".
-//
-// ⚠️ NASCEU DE TRES COPIAS (Spec 053, fatia F): `solicitacoes/page.tsx` tinha
-// uma funcao local, `arquivadas/page.tsx` tinha outra com texto diferente
-// ("Pagina X de Y"), e a tela de notificacoes seria a terceira. Um primitivo so,
-// e as telas dizem o que estao contando (`rotulo`).
-//
-// ⚠️ PRIMITIVO E CASCA (web/AGENTS.md §11): ele nao busca nada -- quem muda de
-// pagina e o `onIr` de quem chama.
+// Nao busca nada: quem muda de pagina e o `onIr` de quem chama.
 
 export default function Paginacao({
   pagina,

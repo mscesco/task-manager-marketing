@@ -1,22 +1,7 @@
 "use client";
-// components/RenameOrganization.tsx
-// Renomear a organização, no lugar -- o lápis ao lado do título de
-// `/organizacao`, e o campo que ele abre.
-//
-// ⚠️ MORA AO LADO DO `<h1>`, E NÃO DENTRO (revisão de títulos, 21/09). Até aqui
-// o lápis, o campo, o ✓, o ✕ e a mensagem de erro eram o `title` do
-// `PageHeader` -- tudo dentro do `<h1>`. O leitor de tela anunciava o título
-// como "UniFECAF Renomear a organização", e no modo de edição o título virava
-// um campo, dois botões e às vezes um erro. Agora a página passa o nome como
-// `title` e este componente como `titleAddon`.
-//
-// ⚠️ O ESTADO "EDITANDO" É DA PÁGINA, e não daqui: enquanto o campo está
-// aberto, o título visível some (o campo mostra o nome), mas o `<h1>` continua
-// lá para o leitor de tela. Quem decide o que o título mostra precisa saber se
-// se está editando -- por isso `editing` entra como prop.
-//
-// ⚠️ MORA EM `components/`, e não em `app/`, para ter guardião: o `include` do
-// vitest não lê `app/`.
+// Renomear a organização no lugar: o lápis ao lado do título de `/organizacao` e o
+// campo que ele abre. Entra como `titleAddon`, fora do `<h1>`. O estado "editando"
+// é da página (prop `editing`), que esconde o título visível enquanto o campo está aberto.
 
 import { useEffect, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
@@ -63,8 +48,7 @@ export default function RenameOrganization({
 
   async function save() {
     const next = value.trim();
-    // ⚠️ Vazio não é renomear -- e o backend recusaria com 422. Barrar aqui
-    // evita a viagem; a recusa de verdade continua sendo dele.
+    // Vazio: o backend recusaria com 422; barrar aqui só evita a viagem.
     if (next === "" || next === name) {
       close();
       return;
@@ -102,8 +86,6 @@ export default function RenameOrganization({
         }}
         style={{ fontSize: 18, width: 280 }}
       />
-      {/* ⚠️ OS DOIS BOTÕES SÃO SÓ ÍCONE, e até 21/09 não tinham nome nenhum:
-          o leitor de tela anunciava "botão" e mais nada (WCAG 4.1.2). */}
       <button
         type="button"
         className="btn btn-ghost"

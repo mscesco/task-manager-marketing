@@ -1,17 +1,11 @@
 "use client";
-// /solicitar — formulário PÚBLICO de solicitação de demandas (FazAê).
-// Sem AppShell e sem auth: quem preenche é gente de fora do sistema
-// (coordenador de polo, professor, RH).
+// Formulário público de solicitação de demandas: sem AppShell e sem auth.
 //
-// FLUXO (multi-seleção):
-//   passo 0        -> identificação + escolha de 1..N tipos de demanda
-//   passos 1..N    -> uma seção por tipo, NA ORDEM em que foram marcados
-//   passo N+1      -> revisão de tudo antes de enviar
+// Passos: 0 = identificação + escolha de 1..N tipos; 1..N = uma seção por
+// tipo, na ordem marcada; N+1 = revisão.
 //
-// Cada tipo selecionado vira uma SOLICITAÇÃO INDEPENDENTE no backend
-// (mesmo protocolo, triagem separada): o marketing pode aprovar a arte e
-// rejeitar a divulgação do mesmo envio. Mas o envio é UM POST só — o rate
-// limit é por IP, e N requests bloqueariam a pessoa no meio do pedido.
+// Cada tipo vira uma solicitação independente no backend (mesmo protocolo,
+// triagem separada), mas o envio é um POST só: o rate limit é por IP.
 //
 // Rascunho salvo no navegador a cada mudança (lib/rascunhoSolicitacao).
 // Anti-bot: input honeypot "website" escondido.
@@ -52,11 +46,9 @@ export type CamposDeIdentificacao = {
 };
 
 /**
- * Os campos da etapa de identificação, montados a partir do formulário.
- *
- * ⚠️ NOME E E-MAIL SÃO FIXOS e vêm primeiro -- eles não são configuráveis
- * porque a fila é organizada por quem pediu e a resposta automática precisa do
- * endereço. Os três seguintes só aparecem se o formulário os pedir.
+ * Os campos da etapa de identificação. Nome e e-mail são fixos e vêm
+ * primeiro (a fila é por quem pediu e a resposta automática precisa do
+ * endereço); os outros só se o formulário pedir.
  */
 export function camposDeIdentificacao(cfg: CamposDeIdentificacao) {
   const fixos = [
@@ -83,15 +75,7 @@ const IDENT_VAZIO: Record<string, string> = {
 };
 
 /**
- * A porta pública, hoje alimentada pelo `solicitacaoForm.ts` (Spec 043, B).
- *
- * ⚠️ ESTA EXTRAÇÃO NÃO MUDA COMPORTAMENTO NENHUM, e é deliberadamente burra: o
- * corpo continua idêntico, e a única diferença é que as categorias chegam por
- * PROP em vez de virem do módulo. É o passo que separa "mover 580 linhas" de
- * "trocar a fonte do formulário" -- duas mudanças que, juntas, deixariam
- * qualquer defeito sem dono numa página que **não tem teste nenhum**.
- *
- * O próximo commit troca quem passa a prop.
+ * A porta pública: desenha o formulário com as categorias recebidas por prop.
  */
 export default function FormularioSolicitacao({
   categorias,
@@ -103,40 +87,26 @@ export default function FormularioSolicitacao({
 }: {
   categorias: Categoria[];
   categoriaPorSlug: Record<string, Categoria>;
-  /**
-   * ⚠️ O TÍTULO ESTAVA ESCRITO NA MÃO ("FazAê · Solicitações de Marketing"),
-   * mesmo com o formulário já tendo `title` no banco desde a fatia A. A fatia
-   * B trocou a fonte das PERGUNTAS e esqueceu do cabeçalho -- qualquer
-   * formulário novo abria com o nome do Marketing.
-   */
   titulo: string;
   descricao: string;
   /**
-   * Quais campos de identificação este formulário pede, e com que nome
-   * (Spec 043, fatia G).
-   *
-   * ⚠️ NOME E E-MAIL NÃO ESTÃO AQUI, de propósito: a fila é organizada por
-   * quem pediu, e a resposta automática de mudança de status precisa do
-   * endereço. Os outros três são vocabulário institucional -- "Polo" não
-   * significa nada num formulário de TI.
+   * Quais campos de identificação, além de nome e e-mail, este formulário
+   * pede, e com que nome.
    */
   identificacao: CamposDeIdentificacao;
   /**
-   * ⚠️ ELE VAI NO ENVIO, e é o que faz a solicitação cair na fila do TIME dono
-   * do formulário. Sem ele ela nasce órfã: continua na fila (o `JOIN` é
-   * `LEFT`), mas visível a quem tem `solicitation.review` no workspace
-   * inteiro.
+   * Vai no envio: põe a solicitação na fila do time dono do formulário.
    */
   formId: string;
 }) {
   // passo 0 = identificação+seleção; 1..N = seções; N+1 = revisão
   const [passo, setPasso] = useState(0);
   const [ident, setIdent] = useState<Record<string, string>>(IDENT_VAZIO);
-  // ORDEM DE SELEÇÃO preservada: é a ordem das seções e do batch_seq.
+  // Ordem de seleção preservada: é a ordem das seções e do batch_seq.
   const [selecionadas, setSelecionadas] = useState<string[]>([]);
   const [valores, setValores] = useState<ValoresPorCategoria>({});
-  // Spec 059: as repetições de cada seção repetível, como chaves de `valores`
-  // (a primeira é o próprio slug). Seção sem entrada aqui vale uma vez.
+  // As repetições de cada seção repetível, como chaves de `valores` (a
+  // primeira é o próprio slug). Seção sem entrada aqui vale uma vez.
   const [repeticoes, setRepeticoes] = useState<Record<string, string[]>>({});
   const [honeypot, setHoneypot] = useState("");
   const [erro, setErro] = useState<string | null>(null);
@@ -153,11 +123,7 @@ export default function FormularioSolicitacao({
   );
   const [hidratado, setHidratado] = useState(false);
   const jaSalvou = useRef(false);
-  // ⚠️ O FOCO VAI PARA O TÍTULO DE SUCESSO (revisão de títulos, 21/09). O
-  // envio troca a tela inteira, e o botão "Enviar", que tinha o foco, deixa de
-  // existir -- o foco caía no `<body>` e quem usa leitor de tela apertava
-  // Enviar e não ouvia nada. Com o foco no `<h1>`, ele anuncia "Solicitação
-  // enviada".
+  // O foco vai para o título de sucesso: o botão "Enviar" deixa de existir.
   const tituloDoResultado = useRef<HTMLHeadingElement>(null);
   useDocumentTitle(titulo);
   useEffect(() => {
@@ -195,7 +161,7 @@ export default function FormularioSolicitacao({
       ? categoriasSelecionadas[passo - 1]
       : null;
   const naRevisao = passo === categoriasSelecionadas.length + 1;
-  // Spec 059: cada repetição é uma demanda -- o total de itens do envio.
+  // Cada repetição é uma demanda: o total de itens do envio.
   const totalDeItens = categoriasSelecionadas.reduce(
     (n, cat) => n + (cat.repetivel ? Math.max(1, repeticoes[cat.slug]?.length ?? 1) : 1),
     0
@@ -244,17 +210,15 @@ export default function FormularioSolicitacao({
     );
   }
 
-  // ⚠️ MEMOIZADO porque a lista entra num `map` de render e num `useEffect`
-  // indireto: recriá-la a cada tecla digitada faria os campos perderem o foco.
+  // Memoizado: recriar a lista a cada tecla faria os campos perderem o foco.
   const campos = useMemo(
     () => camposDeIdentificacao(identificacao),
     [identificacao]
   );
 
   function identOk(): boolean {
-    // ⚠️ NOME E E-MAIL SEMPRE. Os outros três só quando o formulário os pede
-    // -- exigir "Polo" num formulário de TI travaria o envio num campo que a
-    // tela nem desenha, e quem preenche não teria como descobrir por quê.
+    // Nome e e-mail sempre; os outros só quando o formulário os pede (a tela
+    // nem desenha os demais).
     if (ident.nome.trim().length < 2) return false;
     if (!/.+@.+\..+/.test(ident.email.trim())) return false;
     if (identificacao.telefone && ident.telefone.trim().length < 8) return false;
@@ -306,11 +270,7 @@ export default function FormularioSolicitacao({
     if (passo === 0) {
       if (!identOk()) {
         setErro(
-          // ⚠️ A MENSAGEM É MONTADA DA LISTA DE CAMPOS, e não escrita à mão.
-          // Fixa, ela acusava a pessoa de não preencher "área e polo" num
-          // formulário que nem desenha esses campos -- exatamente o defeito
-          // que o comentário do `identOk()` acima diz que não pode acontecer.
-          // Achado pela revisão de 31/08.
+          // A mensagem sai da lista de campos que o formulário pede.
           `Preencha ${campos
             .map((c) => c.label.toLowerCase())
             .join(", ")} antes de continuar.`
@@ -349,7 +309,7 @@ export default function FormularioSolicitacao({
     window.scrollTo({ top: 0 });
   }
 
-  /** Um item do envio por REPETIÇÃO de cada seção (Spec 059), na ordem. */
+  /** Um item do envio por repetição de cada seção, na ordem. */
   function montarItens(): SolicitacaoItemEnvio[] {
     return categoriasSelecionadas.flatMap((cat) => chavesDe(cat).map((chave) => montarItem(cat, chave)));
   }
@@ -393,15 +353,11 @@ export default function FormularioSolicitacao({
     setEnviando(true);
     try {
       const r = await enviarSolicitacaoPublica({
-        // ⚠️ SEMPRE MANDADO. O backend o aceita ausente por compatibilidade,
-        // mas quem envia daqui sabe de qual formulário veio -- e é isso que põe
-        // a solicitação na fila do time certo.
+        // Sempre mandado: põe a solicitação na fila do time certo.
         form_id: formId,
         requester_name: ident.nome.trim(),
         requester_email: ident.email.trim(),
-        // ⚠️ `null` NO QUE O FORMULÁRIO NÃO PERGUNTA, e não "". O backend
-        // trata `null` como "este formulário não perguntou" e "" como
-        // "perguntou e ficou em branco" -- a fila mostra só o que existe.
+        // `null` no que o formulário não pergunta: "" é "perguntou e ficou em branco".
         requester_phone: identificacao.telefone ? ident.telefone.trim() : null,
         requester_department: identificacao.area ? ident.area.trim() : null,
         requester_polo: identificacao.polo ? ident.polo.trim() : null,
@@ -451,8 +407,6 @@ export default function FormularioSolicitacao({
               : "Solicitação enviada"}
           </h1>
           <p className="muted" style={{ margin: 0, fontSize: 14 }}>
-            {/* ⚠️ Era "com o time de MARKETING", escrito na mão -- de antes de
-                o formulário ser de qualquer time (Spec 043). */}
             Guarde o protocolo para acompanhar a sua solicitação:
           </p>
           <div
@@ -500,16 +454,9 @@ export default function FormularioSolicitacao({
         <BannerRascunho
           rascunho={rascunhoAchado}
           onContinuar={() => {
-            // ⚠️⚠️ SO RESTAURA SECAO QUE AINDA EXISTE. A chave do rascunho já
-            // é por formulário, mas isso não cobre a seção APAGADA no editor
-            // entre a visita e o retorno -- e o editor da fatia C2 tornou isso
-            // possível. Restaurar um slug morto deixa a tela EM BRANCO: as três
-            // seções do formulário são condicionais e nenhuma satisfaz a
-            // condição com `selecionadas` desconhecidas.
-            //
-            // ⚠️ E O `passo` VOLTA PARA ZERO quando alguma some, em vez de ser
-            // restaurado: ele é um índice dentro da lista de selecionadas, e
-            // uma lista menor faz dele um número que aponta para lugar nenhum.
+            // Só restaura seção que ainda existe (o editor pode tê-la apagado),
+            // e o `passo` volta a zero quando alguma some: é um índice nas
+            // selecionadas.
             const vivas = (rascunhoAchado.selecionadas ?? []).filter(
               (slug) => categoriaPorSlug[slug]
             );
@@ -544,8 +491,6 @@ export default function FormularioSolicitacao({
         />
       )}
 
-      {/* Redesign (fatia 7): os passos aparecem SEMPRE, numerados, como a
-          prancha -- antes so depois de marcar um tipo de demanda. */}
       <Stepper
         categorias={categoriasSelecionadas}
         passo={passo}
@@ -553,10 +498,6 @@ export default function FormularioSolicitacao({
         completa={(cat) => faltando(cat) === null}
       />
 
-      {/* ⚠️ `role="alert"` FALTAVA AQUI, e esta é a única rota pública do
-          produto -- quem usa leitor de tela não era avisado de que o envio
-          falhou. As outras telas já têm; esta ficou para trás. Notado ao
-          escrever o teste da mensagem de erro (revisão de 31/08). */}
       {erro && (
         <div className="error-box" style={{ marginBottom: 16 }} role="alert">
           {erro}
@@ -667,7 +608,7 @@ export default function FormularioSolicitacao({
               />
             ))}
 
-          {/* Spec 059: a seção repetível empilha uma caixa por repetição. */}
+          {/* A seção repetível empilha uma caixa por repetição. */}
           {categoriaAtual.repetivel && (
             <>
               {chavesDe(categoriaAtual).map((chave, i, todas) => (
@@ -763,16 +704,12 @@ export default function FormularioSolicitacao({
           </div>
 
           <div style={{ fontSize: 13 }}>
-            {/* ⚠️ O TELEFONE SÓ ENTRA SE FOI PERGUNTADO. Fixo, ele deixava um
-                "·" pendurado no fim da revisão -- a última tela antes de
-                enviar, o pior lugar para uma dúvida. O bloco logo abaixo já
-                tratava área e polo assim; esta linha ficou para trás. */}
+            {/* O telefone só entra se foi perguntado. */}
             <strong>{ident.nome}</strong> · {ident.email}
             {identificacao.telefone ? ` · ${ident.telefone}` : ""}
             <br />
             <span className="muted">
-              {/* ⚠️ SÓ O QUE O FORMULÁRIO PERGUNTOU. Com "Polo" desligado,
-                  isto virava " / " sozinho no meio da revisão. */}
+              {/* Só o que o formulário perguntou. */}
               {[
                 identificacao.area ? ident.area : "",
                 identificacao.polo ? ident.polo : "",
@@ -958,8 +895,8 @@ function Stepper({
   onIr: (i: number) => void;
   completa: (cat: Categoria) => boolean;
 }) {
-  // Redesign (fatia 7): passos NUMERADOS. Sem tipo marcado, o meio e um passo
-  // so ("O que precisa"); cada tipo marcado vira o seu proprio passo.
+  // Passos numerados. Sem tipo marcado, o meio é um passo só ("O que
+  // precisa"); cada tipo marcado vira o seu próprio passo.
   const ultimo = categorias.length + 1;
   return (
     <div
@@ -1021,9 +958,8 @@ function Pastilha({
         display: "inline-flex",
         alignItems: "center",
         gap: 8,
-        // ⚠️ `fontFamily`, e não o atalho `font: inherit`: o atalho junto do
-        // `fontWeight` que muda a cada passo gerava aviso do React no console
-        // (15/10) -- e podia deixar o peso errado depois de rerender.
+        // `fontFamily`, não `font: inherit`: o atalho junto do `fontWeight`
+        // variável gera aviso do React.
         fontFamily: "inherit",
         fontSize: 12,
         fontWeight: 700,
@@ -1194,17 +1130,9 @@ function CampoInput({
 }
 
 /**
- * Um cartão de categoria, na escolha do que se vai pedir.
- *
- * ⚠️⚠️ VIROU COMPONENTE em 10/09 pelo CONTORNO: o cartão era um
- * `<button className="tappable">` dentro do `.map()`, e o anel duro do CSS deu
- * lugar ao traço desenhado -- gancho não se chama dentro de um `map`.
- *
- * ⚠️ `marcada` NÃO É PROP, e é derivada de `posicao`: dois campos para o mesmo
- * fato ("estou selecionada" e "sou a n-ésima") divergem no primeiro chamador
- * distraído. A posição é a verdade; a marca é uma pergunta sobre ela.
- *
- * ⚠️ `radius` 12 = o `borderRadius` de baixo. Os dois têm de andar juntos.
+ * Um cartão de categoria, na escolha do que se vai pedir. Componente próprio
+ * por causa do gancho do contorno. `marcada` deriva de `posicao`. `radius` 12
+ * tem de andar junto com o `borderRadius` de baixo.
  */
 function CartaoDeCategoria({
   cat,
@@ -1225,7 +1153,7 @@ function CartaoDeCategoria({
       {...target}
       style={{
         textAlign: "left",
-        // Redesign (fatia 7): marcada = fundo azul suave, como a prancha.
+        // Marcada = fundo azul suave.
         background: marcada ? "var(--accent-soft)" : "var(--surface)",
         border: `1.5px solid ${marcada ? "var(--accent)" : "var(--border)"}`,
         borderRadius: 12,
@@ -1236,7 +1164,7 @@ function CartaoDeCategoria({
         gap: 6,
         font: "inherit",
         color: "var(--text)",
-        // ⚠️ É ele que faz o contorno medir ESTE cartão.
+        // Faz o contorno medir este cartão.
         position: "relative",
       }}
     >

@@ -1,11 +1,6 @@
 "use client";
-// components/AbasEmPilula.tsx
-// Abas em pílula, com a pílula branca que DESLIZA entre elas (redesign, fatia 7).
-//
-// ⚠️ É a mesma forma das abas da fila de solicitações (15/10), que a Camila
-// aprovou; nasce como componente para a tela de notificações não copiar o
-// bloco. As abas sublinhadas (`Tabs.tsx`) continuam onde a lista é o assunto e
-// a aba só recorta -- a tela de Time ficou assim de propósito.
+// Abas em pílula, com a pílula que desliza entre elas. As abas sublinhadas
+// ficam em `Tabs.tsx`.
 
 import { motion } from "motion/react";
 import { DUR } from "@/lib/motion";
@@ -13,7 +8,7 @@ import { DUR } from "@/lib/motion";
 export type AbaEmPilula<T extends string> = {
   readonly id: T;
   readonly label: string;
-  /** `undefined` esconde; `0` MOSTRA "0". */
+  /** `undefined` esconde; `0` mostra "0". */
   readonly count?: number;
 };
 

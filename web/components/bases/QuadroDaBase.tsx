@@ -1,15 +1,7 @@
 "use client";
-// components/bases/QuadroDaBase.tsx
-// A visão de QUADRO da Base (Spec 056, fatia F, §8): uma coluna por opção de
-// uma coluna de Seleção (`group_by`), mais "Sem valor".
-//
-// ⚠️ MOVER UM CARD É EDITAR A CÉLULA da coluna de agrupamento -- a mesma
-// gravação da tabela, com o mesmo cadeado (`can_update_row`).
-//
-// ⚠️⚠️ DUAS MANEIRAS DE MOVER, E A SEGUNDA NÃO É ENFEITE: arrastar (mouse) e o
-// seletor "Mover para" no card (teclado). O `web/AGENTS.md` §1 registra que o
-// quadro de TAREFAS não tem alternativa de teclado ao arraste -- violação aceita
-// lá, e que este não repete.
+// Visão de quadro da Base: uma coluna por opção da coluna de Seleção (`group_by`), mais "Sem valor".
+// Mover um card é editar a célula de agrupamento (mesmo cadeado: `can_update_row`).
+// O seletor "Mover para" no card é a alternativa de teclado ao arraste.
 
 import { useState } from "react";
 import Badge from "@/components/Badge";

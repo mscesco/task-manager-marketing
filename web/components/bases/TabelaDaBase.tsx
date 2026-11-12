@@ -1,40 +1,12 @@
 "use client";
-// components/bases/TabelaDaBase.tsx
-// A tabela editável da Base (Spec 056, fatia E, §12).
-//
-// ⚠️⚠️ É UMA GRADE DE VERDADE PARA O TECLADO (web/AGENTS.md §2): `<table
-// role="grid">`, UMA célula com `tabIndex=0` por vez (o "roving tabindex"), e
-// o foco anda com as setas. Enter edita, Esc cancela, Tab vai para a próxima.
-// Digitar uma letra numa célula de texto já começa a editar com ela, como numa
-// planilha. A regra de para onde o foco vai é pura e testada: `mover()` em
-// `lib/baseTable.ts`.
-//
-// ⚠️ GRAVA SÓ A CÉLULA, otimista: a tela muda na hora, e volta se o servidor
-// recusar (com o motivo num aviso). A linha que o servidor devolve substitui a
-// local -- é ela que tem a `version` nova.
-//
-// ⚠️ A PRIMEIRA COLUNA (título) FICA PRESA na rolagem horizontal (`sticky`).
-// Com 9 colunas o título some da tela, e é por ele que se sabe de que linha
-// se está falando.
-//
-// Fatia J, pedidos dela de 07/10 ("igual uma planilha no sheets ou excel"):
-// - UM CLIQUE EDITA (antes eram dois). O teclado continua igual: as setas
-//   andam, Enter edita.
-// - LINHAS DE GRADE entre todas as células, e o fundo é o da página -- sem a
-//   caixa branca que sobrava à direita das colunas.
-// - A LARGURA SE ARRASTA pela borda direita do cabeçalho (ou pelas setas,
-//   com o foco na alça). Ela é da COLUNA, e não da visão: vale para todo mundo
-//   e em toda visão, como o resto da coluna. O arraste mostra a largura nova na
-//   hora e só grava ao soltar -- um gesto, uma entrada no diário do Ctrl+Z.
-//
-// Pedidos dela de 14/10 ("como no Notion"):
-// - DUPLO CLIQUE NA BORDA ajusta a coluna ao maior conteúdo numa linha só
-//   (medido no canvas, com a fonte da tabela; a conta é `larguraDoConteudo`).
-// - ARRASTAR O CABEÇALHO muda a coluna de lugar. Por PONTEIRO, e não pelo
-//   arrastar nativo do HTML: o cabeçalho é um botão (abre o menu), e o Firefox
-//   não começa arraste nativo a partir de botão. Só vira arraste depois de 5px
-//   -- antes disso é clique, e o menu abre. A alternativa de teclado é "Mover
-//   para a esquerda/direita" no menu da coluna. O título não sai do lugar.
+// Tabela editável da Base, uma grade de teclado: `<table role="grid">`, uma célula com
+// `tabIndex=0` por vez (roving tabindex), foco pelas setas; Enter edita, Esc cancela, Tab avança.
+// A regra do foco é `mover()` em `lib/baseTable.ts`. Um clique também edita.
+// Grava só a célula, otimista. A coluna do título fica presa (`sticky`) na rolagem horizontal.
+// A largura é da coluna (vale em toda visão): arrasta-se pela borda do cabeçalho (ou setas) e
+// grava ao soltar; duplo clique na borda ajusta ao maior conteúdo.
+// Arrastar o cabeçalho muda a coluna de lugar por ponteiro, e não pelo arraste nativo (o Firefox
+// não começa arraste a partir de botão); só vira arraste depois de 5px.
 
 import {
   useEffect,
@@ -126,21 +98,21 @@ export default function TabelaDaBase({
   onConfig,
   onRecarregar,
 }: {
-  /** Fatia I: a config da visão -- o menu do cabeçalho filtra, ordena,
-   *  congela e oculta por ela. Sem `onConfig`, esses itens não aparecem. */
+  /** Config da visão: o menu do cabeçalho filtra, ordena, congela e oculta por ela.
+   *  Sem `onConfig`, esses itens não aparecem. */
   config?: ConfigDaVisao;
   onConfig?: (c: ConfigDaVisao) => void;
   /** Inserir e duplicar mexem na posição das OUTRAS colunas: recarrega. */
   onRecarregar?: () => void;
   base: BaseDetail;
-  /** As colunas da VISÃO (fatia F: as escondidas saem). Padrão: todas. */
+  /** As colunas da visão (sem as escondidas). Padrão: todas. */
   colunas?: BaseColumn[];
   /** As linhas da visão -- já filtradas e ordenadas. */
   linhas: BaseRow[];
   /** A linha nova passa pelo filtro da visão até recarregar (ver `aplicarVisao`). */
   onLinhaCriada?: (id: string) => void;
   pessoas: Pessoas;
-  /** No teto de linhas (D23): "+ Nova linha" some. */
+  /** No teto de linhas: "+ Nova linha" some. */
   noTeto: boolean;
   onBase: (atualizar: (b: BaseDetail) => BaseDetail) => void;
   onLinhas: (atualizar: (l: BaseRow[]) => BaseRow[]) => void;
@@ -156,8 +128,8 @@ export default function TabelaDaBase({
   const esquerdas = deslocamentos(larguras);
   const congeladas = quantasCongeladas(colunas, config);
   const [ativa, setAtiva] = useState<Posicao>({ linha: 0, coluna: 0 });
-  // Spec 057 (15/10): a FAIXA selecionada, da âncora até a célula ativa
-  // (Shift+setas, Shift+clique). Sem âncora, a "faixa" é só a célula ativa.
+  // A faixa selecionada, da âncora até a célula ativa (Shift+setas, Shift+clique).
+  // Sem âncora, é só a célula ativa.
   const [ancora, setAncora] = useState<Posicao | null>(null);
   const faixa = ancora ? faixaEntre(ancora, ativa) : null;
   const [editando, setEditando] = useState<{ rascunho: string } | null>(null);
@@ -178,9 +150,8 @@ export default function TabelaDaBase({
     celulas.current.get(chave(ativa))?.focus();
   }, [ativa, editando, escolhendo]);
 
-  // ⚠️ O `onBlur` do editor também confirma (clicar fora salva), e ele dispara
-  // DEPOIS do Enter, quando o campo some. Sem esta trava a mesma célula iria
-  // duas vezes ao servidor -- duas entradas no diário para um gesto.
+  // O `onBlur` do editor também confirma e dispara depois do Enter: sem esta trava a
+  // célula iria duas vezes ao servidor.
   const confirmado = useRef(false);
 
   const linhaAtiva = linhas[ativa.linha];
@@ -188,7 +159,7 @@ export default function TabelaDaBase({
 
   const gravar = useGravarCelula(base.id, onLinhas);
 
-  // --- copiar e colar várias células (Spec 057, 15/10) ---
+  // --- copiar e colar várias células ---
   const nomeDePessoa = (id: string) => pessoas.todos.get(id)?.name ?? "";
   const pessoaPorNome = (nome: string): string | null => {
     const k = nome.trim().toLowerCase();
@@ -296,7 +267,7 @@ export default function TabelaDaBase({
     return true;
   }
 
-  // ⚠️ A posição vem EXPLÍCITA no clique: ali o `setAtiva` acabou de ser
+  // A posição vem explícita no clique: ali o `setAtiva` acabou de ser
   // pedido, e `linhaAtiva`/`colunaAtiva` ainda são os da célula anterior.
   function comecarEdicao(inicial?: string, em: Posicao = ativa) {
     const linha = linhas[em.linha];
@@ -314,15 +285,11 @@ export default function TabelaDaBase({
     }
   }
 
-  // Um clique edita (fatia J). ⚠️ Com uma célula já em edição, o clique não
-  // faz nada: ele pode ser DENTRO do editor (o evento sobe pela árvore do
-  // React, até de um portal), e recomeçar a edição apagaria o que se digitou.
-  // Clicar noutra célula já fecha o editor antes, no `mousedown` (o blur do
-  // campo, ou o "clique fora" do painel de escolha). Se o texto não passou na
-  // validação, o editor fica onde está, e o clique não o arrasta junto.
+  // Um clique edita. Com uma célula já em edição o clique não faz nada: pode vir de dentro
+  // do editor (o evento sobe até de um portal), e recomeçar apagaria o que se digitou.
   function cliqueNaCelula(em: Posicao, tipo: BaseColumn["type"], shift = false) {
     if (editando || escolhendo) return;
-    // Spec 057: Shift+clique estende a faixa, e NÃO abre a edição.
+    // Shift+clique estende a faixa e não abre a edição.
     if (shift) {
       setAncora((a) => a ?? ativa);
       setAtiva(em);
@@ -426,8 +393,7 @@ export default function TabelaDaBase({
     const setas = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"] as const;
     const mod = e.ctrlKey || e.metaKey;
     if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "c") {
-      // Spec 057: a faixa (ou a célula) no formato do Excel. A colagem vem
-      // pelo evento `paste` da tabela, que traz o texto sem pedir permissão.
+      // A faixa no formato do Excel. A colagem vem pelo evento `paste` da tabela.
       e.preventDefault();
       copiar();
       return;
@@ -486,9 +452,7 @@ export default function TabelaDaBase({
     }
   }
 
-  // Fatia J: apaga NA HORA, sem o "Apagar / Cancelar" -- ela achou ruim, e
-  // ele vazava para fora da tabela. A rede é o Ctrl+Z: a linha apagada fica
-  // guardada por 1 dia (D13), e o aviso diz isso.
+  // Apaga na hora, sem confirmação: a rede é o Ctrl+Z (a linha apagada fica guardada por 1 dia).
   async function apagarLinha(linha: BaseRow) {
     let onde = -1;
     onLinhas((ls) => {
@@ -511,20 +475,16 @@ export default function TabelaDaBase({
 
   return (
     <div className="flex flex-col gap-2">
-      {/* ⚠️ `w-fit`: sem ele a caixa da rolagem ocupa a largura toda, e o
-          espaço à direita da última coluna parecia parte da tabela. */}
+      {/* `w-fit`: sem ele a caixa da rolagem ocupa a largura toda. */}
       <div className="w-fit max-w-full overflow-x-auto">
-        {/* ⚠️ LARGURA FIXA POR COLUNA (`table-fixed`), fatia I: com várias
-            colunas congeladas, cada uma precisa saber onde a anterior acaba
-            (`deslocamentos`). Com largura pelo conteúdo, a segunda presa
-            pousaria por cima da primeira. A largura total é de runtime -- a
-            exceção do estilo inline (web/AGENTS.md §11). */}
+        {/* Largura fixa por coluna (`table-fixed`): cada coluna congelada precisa saber
+            onde a anterior acaba (`deslocamentos`). */}
         <table
           ref={tabelaRef}
           role="grid"
           aria-label={base.name}
           aria-rowcount={linhas.length + 1}
-          // ⚠️ `border-separate` com espaçamento zero, e NÃO `border-collapse`:
+          // `border-separate` com espaçamento zero, e não `border-collapse`:
           // no modo colapsado a borda é da tabela, e a célula presa (sticky)
           // rola sem ela. Por isso cada célula desenha só a direita e a de
           // baixo, e a primeira coluna e o cabeçalho completam o contorno.
@@ -534,11 +494,8 @@ export default function TabelaDaBase({
           onPaste={(e) => {
             const texto = e.clipboardData.getData("text/plain");
             if (!texto) return;
-            // ⚠️ UM CLIQUE JÁ ABRE A EDIÇÃO (fatia J), e o Ctrl+V ia para dentro
-            // do campo -- a planilha inteira numa célula só (15/10). Texto de
-            // VÁRIAS células (TAB ou quebra) sempre vai para a grade: a edição
-            // é cancelada e a colagem começa nesta célula. Um valor só, com o
-            // campo aberto, continua colando no campo.
+            // Um clique já abre a edição: texto de várias células (TAB ou quebra) vai para a
+            // grade, cancelando a edição; um valor só, com o campo aberto, cola no campo.
             const varias = /[\t\n]/.test(texto.replace(/\r?\n$/, ""));
             if (editando || escolhendo) {
               if (!varias) return;
@@ -562,9 +519,7 @@ export default function TabelaDaBase({
                     else cabecalhos.current.delete(c.id);
                   }}
                   scope="col"
-                  // Redesign (fatia 4), estilo Notion: so linhas finas -- sem
-                  // moldura em volta (nem a esquerda, nem em cima); 12/600 em
-                  // `--ink-faint` sobre o fundo da pagina.
+                  // Só linhas finas, sem moldura em volta.
                   className={`border-b border-r border-border bg-canvas px-2.5 py-1.5 text-left text-sm font-semibold text-ink-faint ${
                     i < congeladas ? "sticky z-10" : "relative"
                   } ${arraste?.id === c.id ? "opacity-50" : ""} ${
@@ -705,8 +660,6 @@ export default function TabelaDaBase({
                       aria-readonly={!base.can_update_row}
                       onClick={(e) => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type, e.shiftKey)}
                       style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
-                      // Redesign (fatia 4): linha de 38px, sem a borda da
-                      // esquerda (a tabela nao tem moldura).
                       className={`h-[38px] overflow-hidden border-b border-r border-border px-2.5 align-middle ${
                         // A coluna presa tem fundo próprio; na faixa, o da faixa.
                         ci < congeladas
@@ -715,16 +668,10 @@ export default function TabelaDaBase({
                       } ${ci === 0 ? "font-medium" : ""} ${
                         base.can_update_row ? "cursor-text" : ""
                       } ${
-                        // Fatia J, pedido dela: o contorno NÃO marca mais a
-                        // "célula ativa" para sempre -- clicar fora o apagava
-                        // e ele ficava. Agora: so com o FOCO (setas, Enter) ou
-                        // editando. A célula ativa continua existindo para o
-                        // teclado (o tabIndex 0), só não aparece quando a
-                        // tabela não está em uso.
+                        // O contorno só aparece com o foco ou editando; a célula ativa continua existindo para o teclado.
                         dentro(faixa, { linha: li, coluna: ci }) ? "bg-accent-soft" : ""
                       } ${
-                        // Redesign (fatia 4): anel INTERNO de 2px no accent, e
-                        // nada no hover -- a linha inteira ja escurece.
+                        // Anel interno de 2px no accent, e nada no hover (a linha inteira já escurece).
                         ehAtiva && (editando || escolhendo)
                           ? "shadow-[inset_0_0_0_2px_var(--accent)] outline-none"
                           : "outline-none focus:shadow-[inset_0_0_0_2px_var(--accent)]"
@@ -844,8 +791,7 @@ function AlcaDeLargura({
       aria-valuemax={LARGURA_MAX}
       tabIndex={0}
       title="Arraste para mudar a largura; clique duas vezes para caber o conteúdo"
-      // Estreita no desenho, larga no alvo (web/AGENTS.md §3): a linha azul
-      // aparece no meio dos 9px, em cima da borda da célula.
+      // Estreita no desenho, larga no alvo: a linha azul aparece no meio dos 9px, em cima da borda.
       className="absolute -right-[5px] top-0 z-20 flex h-full w-[9px] cursor-col-resize touch-none [@media(hover:none)]:hidden justify-center opacity-0 hover:opacity-100 focus-visible:opacity-100"
       onClick={(e) => e.stopPropagation()}
       onDoubleClick={(e) => {
@@ -975,9 +921,7 @@ function Celula({
         />
       );
     case "link": {
-      // Fatia J: vários links, em cápsula como os da tarefa (`LinksDoItem`).
-      // ⚠️ O clique na cápsula ABRE o link (e não edita a célula): é o gesto
-      // de quem quer ver o post. Para editar, clica-se no resto da célula.
+      // Vários links em cápsula. O clique na cápsula abre o link; para editar, clica-se no resto da célula.
       const links = linksDaCelula(valor);
       return (
         <div ref={anchorRef} className="flex min-h-6 flex-wrap items-center gap-1">
@@ -1032,8 +976,7 @@ function Celula({
         <div ref={anchorRef} className="flex min-h-6 flex-wrap items-center gap-1">
           {coluna.type === "person"
             ? ids.map((id) => (
-                // Fatia J: cápsula como a da seleção, com a cor da pessoa
-                // (`corDaPessoa`); inativo e fora do time ficam cinza.
+                // Cápsula com a cor da pessoa (`corDaPessoa`); inativo e fora do time ficam cinza.
                 <Badge
                   key={id}
                   tone="soft"
@@ -1047,10 +990,9 @@ function Celula({
                 </Badge>
               ))
             : ids.map((id) => {
-                // Opção apagada: a célula guarda o id, e aparece vazia (D17).
+                // Opção apagada: a célula guarda o id, e aparece vazia.
                 const o = coluna.options.find((x) => x.id === id);
                 return o ? (
-                  // Redesign (fatia 4): pilula de opcao com raio 5 e 20px.
                   <Badge key={id} tone="soft" size="sm" weight="semibold" forma="etiqueta" color={corDaOpcao(o.color)}>
                     {o.label}
                   </Badge>
@@ -1091,8 +1033,7 @@ function Celula({
       );
     }
     default:
-      // ⚠️ `max-w-full`, e não um teto fixo: o duplo clique na borda (14/10)
-      // alarga a coluna até o texto caber, e um teto cortaria antes.
+      // `max-w-full`, e não um teto fixo: o duplo clique na borda alarga a coluna até o texto caber.
       return <span className="block max-w-full truncate">{textoDaCelula(coluna, valor)}</span>;
   }
 }
