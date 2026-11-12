@@ -47,7 +47,9 @@ async def _hub() -> LiveHub:
     return LiveHub(conectar=conectar)
 
 
-async def _avisar(base_id: uuid.UUID, *, commit: bool = True) -> None:
+async def _avisar(
+    base_id: uuid.UUID, *, commit: bool = True, kind: str = "cell.update"
+) -> None:
     pg = await asyncpg.connect(_dsn())
     try:
         tx = pg.transaction()
@@ -55,7 +57,7 @@ async def _avisar(base_id: uuid.UUID, *, commit: bool = True) -> None:
         await pg.execute(
             "SELECT pg_notify($1, $2)",
             CANAL,
-            json.dumps({"base_id": str(base_id), "kind": "cell.update", "actor_id": "u"}),
+            json.dumps({"base_id": str(base_id), "kind": kind, "actor_id": "u"}),
         )
         await (tx.commit() if commit else tx.rollback())
     finally:
@@ -93,8 +95,11 @@ async def test_transacao_que_volta_nao_avisa() -> None:
     try:
         fila = await hub.subscribe(base)
         await _avisar(base, commit=False)
-        with pytest.raises(TimeoutError):
-            await _proximo(fila, 0.5)
+        # Sem esperar prazo: um aviso comitado DEPOIS chega pela mesma escuta,
+        # entao se o que voltou tivesse saido, chegaria antes dele.
+        await _avisar(base, kind="marcador")
+        assert (await _proximo(fila))["kind"] == "marcador"
+        assert fila.empty()
     finally:
         await hub.close()
 

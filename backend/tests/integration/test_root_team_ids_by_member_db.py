@@ -112,3 +112,18 @@ async def test_quem_nao_tem_vinculo_NAO_APARECE(db) -> None:
     with acting_as(**ctx):
         roots = await UserRepository(db).root_team_ids_by_member()
     assert solta not in roots
+
+
+async def test_membro_de_OUTRO_workspace_nao_aparece(db) -> None:
+    """O `:ws` do CTE e a unica barreira de tenant da consulta."""
+    ctx, *_ = await _mundo(db)
+    outro_ws = await f.make_workspace(db)
+    raiz_alheia = await f.make_team(db, workspace_id=outro_ws, slug="vendas")
+    alheio = await f.make_user(db, workspace_id=outro_ws, email="alheio@t.dev")
+    await f.add_member(
+        db, workspace_id=outro_ws, user_id=alheio, team_id=raiz_alheia, role="OPERATOR"
+    )
+    with acting_as(**ctx):
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert alheio not in roots
+    assert raiz_alheia not in {t for ts in roots.values() for t in ts}

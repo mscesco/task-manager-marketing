@@ -15,19 +15,14 @@ Os envios de servico passam por um formulario publicado, como a rota exige.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 from typing import NamedTuple
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Workspace
 from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
     permissions_for_roles,
@@ -46,7 +41,7 @@ from app.shared.exceptions.base import (
 )
 from app.shared.pagination import PageParams
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship
+from tests.integration.conftest import acting_as, cliente, mship
 
 pytestmark = pytest.mark.integration
 
@@ -358,28 +353,6 @@ async def test_review_de_outro_tenant_e_404(db) -> None:
 # --------------------------------------------------------
 # HTTP (rota publica + autorizacao + rate limit)
 # --------------------------------------------------------
-def _http(db, ctx: TenantContext | None = None) -> AsyncClient:
-    """App real com sessao/UoW do teste; auth so quando ctx e passado."""
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    if ctx is not None:
-        async def _ctx() -> TenantContext:
-            set_tenant(ctx)
-            return ctx
-
-        app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _publico(db) -> tuple[str, str]:
     """Slug do workspace e id do formulario publicado, para o corpo HTTP."""
     _ws, form = await _ws_com_formulario(db)
@@ -418,7 +391,7 @@ def _ip() -> dict:
 
 async def test_http_publico_cria_sem_auth(db) -> None:
     slug, form = await _publico(db)
-    async with _http(db) as client:
+    async with cliente(db) as client:
         r = await client.post(
             "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=_ip()
         )
@@ -432,7 +405,30 @@ async def test_http_publico_sem_form_id_e_recusado(db) -> None:
     slug, form = await _publico(db)
     corpo = _payload(slug, form)
     del corpo["form_id"]
-    async with _http(db) as client:
+    async with cliente(db) as client:
+        r = await client.post("/api/v1/solicitacoes/publico", json=corpo, headers=_ip())
+    assert r.status_code == 422
+    total = (await db.execute(text("SELECT count(*) FROM solicitation"))).scalar_one()
+    assert total == 0
+
+
+@pytest.mark.parametrize(
+    "over",
+    [
+        {"requester_name": None},
+        {"requester_name": "M"},
+        {"requester_email": None},
+        {"requester_email": "nao-e-email"},
+    ],
+)
+async def test_http_publico_sem_nome_ou_email_valido_e_recusado(db, over) -> None:
+    """Nome e e-mail valem em todo formulario: a fila e organizada por quem
+    pediu, e o aviso de mudanca de status precisa do endereco."""
+    slug, form = await _publico(db)
+    corpo = {
+        k: v for k, v in _payload(slug, form, **over).items() if v is not None
+    }
+    async with cliente(db) as client:
         r = await client.post("/api/v1/solicitacoes/publico", json=corpo, headers=_ip())
     assert r.status_code == 422
     total = (await db.execute(text("SELECT count(*) FROM solicitation"))).scalar_one()
@@ -441,7 +437,7 @@ async def test_http_publico_sem_form_id_e_recusado(db) -> None:
 
 async def test_http_honeypot_responde_201_indistinguivel(db) -> None:
     slug, form = await _publico(db)
-    async with _http(db) as client:
+    async with cliente(db) as client:
         r = await client.post(
             "/api/v1/solicitacoes/publico",
             json=_payload(slug, form, website="http://spam.example"),
@@ -464,7 +460,7 @@ async def test_http_rate_limit_429_no_estouro(db, monkeypatch) -> None:
     monkeypatch.setattr(public_submit_limiter, "_max", teto)
     slug, form = await _publico(db)
     ip = _ip()  # UM ip fixo pra este teste
-    async with _http(db) as client:
+    async with cliente(db) as client:
         for _ in range(teto):
             ok = await client.post(
                 "/api/v1/solicitacoes/publico", json=_payload(slug, form), headers=ip
@@ -481,7 +477,7 @@ async def test_http_rate_limit_429_no_estouro(db, monkeypatch) -> None:
 
 
 async def test_http_fila_sem_token_401(db) -> None:
-    async with _http(db) as client:
+    async with cliente(db) as client:
         r = await client.get("/api/v1/solicitacoes")
     assert r.status_code == 401
 
@@ -501,7 +497,7 @@ async def test_http_sem_permissao_403_em_tudo_inclusive_leitura(db, role) -> Non
         permissions=permissions_for_roles(frozenset({role})),
         memberships=(Membership(team_id=team, role=role),),
     )
-    async with _http(db, ctx) as client:
+    async with cliente(db, ctx) as client:
         assert (await client.get("/api/v1/solicitacoes")).status_code == 403
         assert (
             await client.get(f"/api/v1/solicitacoes/{s.id}")
@@ -552,7 +548,7 @@ async def test_http_admin_e_manager_acessam_a_fila(db, role) -> None:
             permissions=permissions_for_roles(frozenset({role})),
             memberships=(Membership(team_id=team, role=role),),
         )
-    async with _http(db, ctx) as client:
+    async with cliente(db, ctx) as client:
         lista = await client.get("/api/v1/solicitacoes")
     assert lista.status_code == 200
     assert lista.json()["total"] == 1
@@ -691,7 +687,7 @@ async def test_http_lote_um_post_um_protocolo(db) -> None:
             },
         ],
     )
-    async with _http(db) as client:
+    async with cliente(db) as client:
         r = await client.post(
             "/api/v1/solicitacoes/publico", json=payload, headers=_ip()
         )

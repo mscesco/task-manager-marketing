@@ -174,6 +174,10 @@ async def _mundo(db) -> dict:
     quadro_vendas = await f.make_board(
         db, workspace_id=ws, team_id=vendas, name="De Vendas", colunas=COLUNAS_BASE
     )
+    # Irmao do SEO: o SUPERVISOR do SEO nao administra.
+    quadro_design = await f.make_board(
+        db, workspace_id=ws, team_id=design, name="Do Design", colunas=COLUNAS_BASE
+    )
     # Quadro secundario na raiz: nem o geral (que nao se apaga) nem de subtime.
     secundario_mkt = await f.make_board(
         db, workspace_id=ws, team_id=mkt, name="Secundario", colunas=COLUNAS_BASE
@@ -306,6 +310,7 @@ async def _mundo(db) -> dict:
                 "admin2": admin2, "gestor2": gestor2, "manager2": manager2,
                 "geral_mkt": geral_mkt, "geral_com": geral_com,
                 "quadro_seo": quadro_seo.id, "quadro_vendas": quadro_vendas.id,
+                "quadro_design": quadro_design.id,
                 "cancelado_seo": cancelado_seo,
                 "secundario_mkt": secundario_mkt.id,
                 "cancelado_secundario": cancelado_secundario,
@@ -613,6 +618,12 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("board.update.root", "quadro geral do Comercial", "patch",
           f"{T}/boards/{{geral_com}}", {"name": "Geral"},
           (OK, OK, NEGADO, NEGADO, NEGADO, NEGADO)),
+    Linha("board.update", "quadro do Design (irmao do SEO)", "patch",
+          f"{T}/boards/{{quadro_design}}", {"name": "Pecas"},
+          (OK, OK, OK, NEGADO, NEGADO, OK)),
+    Linha("board.delete", "quadro do Design (irmao do SEO)", "delete",
+          f"{T}/boards/{{quadro_design}}", None,
+          (OK, NEGADO, OK, NEGADO, NEGADO, OK)),
     # O GESTOR nao apaga quadro. O do SEO tem tarefa e apaga assim mesmo (o aviso
     # e da tela).
     Linha("board.delete", "quadro do SEO, com tarefa", "delete",
@@ -678,9 +689,33 @@ MATRIZ: tuple[Linha, ...] = (
           f"{T}/tasks/{{tarefa_mkt}}/relocate",
           {"board_id": "{secundario_mkt}", "dry_run": True},
           (OK, OK, OK, OK, OK, OK)),
+    # `detach_project` numa tarefa sem projeto: passa pelas travas e nao muda nada.
+    # Sem campo nenhum o `move` volta antes de conferir a edicao.
+    Linha("task.update", "mover (move) a do Marketing", "post",
+          f"{T}/tasks/{{tarefa_mkt}}/move", {"detach_project": True},
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("task.update", "mover (move) a do Comercial", "post",
+          f"{T}/tasks/{{tarefa_com}}/move", {"detach_project": True},
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
+    # Duplicar e criar no quadro da origem; origem que nao se ve e 404.
+    Linha("task.create", "duplicar a do Marketing", "post",
+          f"{T}/tasks/{{tarefa_mkt}}/duplicate",
+          {"title": "Copia", "assignee_ids": ["{alvo_mkt}"]},
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("task.create", "duplicar a do Comercial", "post",
+          f"{T}/tasks/{{tarefa_com}}/duplicate",
+          {"title": "Copia", "assignee_ids": ["{alvo_com}"]},
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
     Linha("task.archive", "do Marketing", "post", f"{T}/tasks/{{tarefa_mkt}}/archive",
           None,
           (OK, OK, OK, OK, OK, OK)),
+    # Desarquivar tarefa ativa e idempotente, mas confere as travas antes.
+    Linha("task.archive", "desarquivar a do Marketing", "post",
+          f"{T}/tasks/{{tarefa_mkt}}/unarchive", None,
+          (OK, OK, OK, OK, OK, OK)),
+    Linha("task.archive", "desarquivar a do Comercial", "post",
+          f"{T}/tasks/{{tarefa_com}}/unarchive", None,
+          (OK, OK, OCULTO, OCULTO, OCULTO, OK)),
     Linha("task.delete", "do Marketing", "delete", f"{T}/tasks/{{tarefa_mkt}}", None,
           (OK, OK, OK, NEGADO, NEGADO, OK)),
     # DUAS_ARVORES enxerga a tarefa do Comercial mas so tem `task.delete` no

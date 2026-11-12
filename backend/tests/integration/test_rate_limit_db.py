@@ -20,6 +20,7 @@ from sqlalchemy import text
 from app.api.errors import register_exception_handlers
 from app.core.deps import get_db_session
 from app.core.rate_limit import RateLimiter, client_error_limiter, rate_limit
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
@@ -135,19 +136,9 @@ async def test_http_429_por_ip(db) -> None:
 # `/client-errors` e a unica rota sem auth que produz uma linha de log por
 # requisicao: precisa de freio por IP.
 async def test_client_errors_tem_freio_por_ip_e_nao_exige_login(db) -> None:
-    from app.main import create_app
-
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    app.dependency_overrides[get_db_session] = _session
     corpo = {"kind": "error", "message": "x"}
     headers = {"X-Forwarded-For": "203.0.113.77"}
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test"
-    ) as cli:
+    async with cliente(db) as cli:
         for _ in range(client_error_limiter._max):
             r = await cli.post("/api/v1/client-errors", json=corpo, headers=headers)
             assert r.status_code == 202, r.text  # sem token nenhum

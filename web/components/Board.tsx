@@ -68,11 +68,12 @@ import {
   type Rascunho,
 } from "@/lib/rascunhoDeColunas";
 import EmptyStateBox from "@/components/EmptyState";
-import { quadroGeralDoTime, terminal, type Coluna } from "@/lib/coluna";
+import { quadroGeralDoTime, type Coluna } from "@/lib/coluna";
 import { listAllTasks, listAllProjects, listarFilhas, getTask, updateTask, listMembers, listSubteams, getRootTeamId, listBoards, colunaComContagem, aplicarLoteDeColunas, ApiError, type Task, type Team, type Quadro } from "@/lib/api";
 import { newTaskTeam } from "@/lib/escopoTarefa";
 import { mesclaTarefa } from "@/lib/mesclaTarefa";
 import { criarUltimaVez } from "@/lib/ultimaVez";
+import { applyDrop, planDrop, revertDrop } from "@/lib/taskDrag";
 import { useWarnBeforeUnload } from "@/lib/useWarnBeforeUnload";
 import { sincronizarTaskNaUrl, lerTaskDaUrl } from "@/lib/urlTarefa";
 import { ORDENACOES, ordenar, type Ordenacao } from "@/lib/ordenacao";
@@ -564,66 +565,25 @@ export default function Board({
 
     const taskId = String(e.active.id);
     // O destino é um `column_id` (o droppable de cada coluna usa `coluna.id`).
-    const destino = e.over ? String(e.over.id) : null;
-    if (!destino) return;
+    const plano = planDrop(tasks ?? [], taskId, e.over ? String(e.over.id) : null, {
+      columns: colunas,
+      columnOf: (id) => colunaPorId.get(id),
+      countSubtasks: true,
+    });
+    if (!plano) return;
 
-    const atual = tasks?.find((t) => t.id === taskId);
-    if (!atual || atual.column_id === destino) return;
-
-    // Coluna de outro quadro viraria um 422 depois de a tela já ter mexido o card.
-    const colunaDestino = colunas.find((c) => c.id === destino);
-    if (!colunaDestino) return;
-
-    const colunaAnterior = atual.column_id;
-
-    // Cascata de conclusão: soltar a mãe numa coluna `semantic === "DONE"` move as subtarefas
-    // carregadas (não terminais, não arquivadas) para a mesma coluna, otimista. Mexe também no
-    // `status` porque o detalhe (`lib/subtarefas.ts::progresso`) lê status; `"COMPLETED"` é seguro
-    // só aqui, porque a cascata do backend grava esse valor fixo. Só o que está carregado muda.
-    const concluindo = colunaDestino.semantic === "DONE";
-    // O confete sai de onde o card foi solto, lido antes do `await`; só quando vira concluída.
+    // O confete sai de onde o card foi solto, lido antes do `await`.
     const soltoEm = e.active.rect.current.translated;
     const origemDoConfete =
-      concluindo && colunaPorId.get(colunaAnterior)?.semantic !== "DONE" && soltoEm
+      plano.celebrate && soltoEm
         ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
         : null;
-    const prefixo = atual.path + ".";
-    // Guarda coluna e status para reverter os dois.
-    const anteriores = new Map<string, { coluna: string; status: string }>();
-    if (concluindo) {
-      for (const t of tasks ?? []) {
-        const colunaDela = colunaPorId.get(t.column_id);
-        if (
-          t.path.startsWith(prefixo) &&
-          colunaDela &&
-          !terminal(colunaDela) &&
-          !t.is_archived
-        ) {
-          anteriores.set(t.id, { coluna: t.column_id, status: t.status });
-        }
-      }
-    }
-
-    // Sem as filhas no lote, o contador `☑ x/y` da mãe muda aqui; guardado para a reversão.
-    const doneAnterior = atual.subtask_done;
-    setTasks((prev) =>
-      prev!.map((t) => {
-        if (t.id === taskId)
-          return {
-            ...t,
-            column_id: destino,
-            subtask_done: concluindo ? t.subtask_total : t.subtask_done,
-          };
-        if (anteriores.has(t.id))
-          return { ...t, column_id: destino, status: "COMPLETED" };
-        return t;
-      })
-    );
+    setTasks((prev) => applyDrop(prev!, plano));
 
     const aindaEhOUltimo = vezDoArraste.nova(taskId);
     try {
       // Manda só `column_id` (os dois campos dão 422); o status certo vem na resposta.
-      const atualizada = await updateTask(taskId, { column_id: destino });
+      const atualizada = await updateTask(taskId, { column_id: plano.to });
       if (!aindaEhOUltimo()) return;
       setTasks((prev) =>
         prev!.map((t) =>
@@ -634,20 +594,7 @@ export default function Board({
       soltarConfete(origemDoConfete);
     } catch (err) {
       if (!aindaEhOUltimo()) return;
-      setTasks((prev) =>
-        prev!.map((t) => {
-          if (t.id === taskId)
-            return {
-              ...t,
-              column_id: colunaAnterior,
-              subtask_done: doneAnterior,
-            };
-          const ant = anteriores.get(t.id);
-          return ant !== undefined
-            ? { ...t, column_id: ant.coluna, status: ant.status }
-            : t;
-        })
-      );
+      setTasks((prev) => revertDrop(prev!, plano));
       const e2 = err as ApiError;
       avisar(
         e2.status === 403

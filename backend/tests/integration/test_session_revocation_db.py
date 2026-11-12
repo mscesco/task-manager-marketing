@@ -398,3 +398,44 @@ async def test_refresh_com_tv_defasado_e_recusado(db) -> None:
         )
         assert r.status_code == 401
         assert "revogada" in r.text.lower()
+
+
+# ------------------------------------------------------------------
+# Troca obrigatoria e conta desativada
+# ------------------------------------------------------------------
+async def test_rota_de_negocio_barra_quem_tem_troca_de_senha_pendente(db) -> None:
+    """Token valido de quem ainda nao trocou a senha provisoria nao usa o sistema."""
+    ws, _team, user = await _pessoa(db, pendente=True)
+    await db.commit()
+    token = create_access_token(
+        user_id=user.id, workspace_id=ws.id, token_version=user.token_version
+    )
+    async with cliente(db) as c:
+        r = await c.get("/api/v1/tasks", headers=_auth(token))
+    assert r.status_code == 409
+    assert r.json()["error"]["code"] == "password_change_required"
+
+
+async def test_conta_desativada_perde_a_sessao_aberta(db) -> None:
+    """Desativar nao sobe o `token_version`: so o `is_active` derruba os tokens
+    ja emitidos, nos tres pontos."""
+    ws, _team, user = await _pessoa(db)
+    access = create_access_token(
+        user_id=user.id, workspace_id=ws.id, token_version=user.token_version
+    )
+    refresh = create_refresh_token(
+        user_id=user.id, workspace_id=ws.id, token_version=user.token_version
+    )
+    user.is_active = False
+    await db.commit()
+
+    async with cliente(db) as c:
+        negocio = await c.get("/api/v1/tasks", headers=_auth(access))
+        me = await c.get("/api/v1/auth/me", headers=_auth(access))
+        renova = await c.post("/api/v1/auth/refresh", json={"refresh_token": refresh})
+
+    assert negocio.status_code == 401
+    assert "inativo" in negocio.text.lower()
+    assert me.status_code == 401
+    assert "inativo" in me.text.lower()
+    assert renova.status_code == 401

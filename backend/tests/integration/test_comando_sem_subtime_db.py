@@ -15,8 +15,8 @@ e a que ninguem lembra:
                            a operacao nao menciona subtime nenhum)
 
 Os casos que a regra NAO barra (OPERATOR na raiz, sem vinculo na raiz, dois
-subtimes) e o "comando em OUTRA arvore" estao em
-`tests/test_comando_sem_subtime.py`, com a arvore montada em memoria.
+subtimes) estao em `tests/test_comando_sem_subtime.py`, com a arvore montada em
+memoria. O "comando em OUTRA arvore" fica aqui tambem, com duas raizes no banco.
 
 ⚠️ Trava de escrita nao conserta linha que ja existe no banco.
 """
@@ -107,4 +107,43 @@ async def test_promover_na_raiz_quem_ja_tem_subtime_e_recusado(db) -> None:
         with pytest.raises(BusinessRuleError):
             await MemberService(db).change_member_role(
                 user_id=alvo, team_id=marketing, new_role=UserTeamRole.MANAGER
+            )
+
+
+# ------------------------------------------------------------------
+# Duas raizes: a regra e por arvore
+# ------------------------------------------------------------------
+async def _segunda_arvore(db, ws, marketing, seo, social):
+    ti = await f.make_team(db, workspace_id=ws, slug="ti")
+    infra = await f.make_team(db, workspace_id=ws, parent_team_id=ti, slug="infra")
+    await db.flush()
+    arvore = (
+        node(marketing), node(seo, marketing), node(social, marketing),
+        node(ti), node(infra, ti),
+    )
+    return ti, infra, arvore
+
+
+async def test_comando_em_OUTRA_arvore_nao_barra_subtime(db) -> None:
+    """MANAGER do TI nao alcanca o SEO: o vinculo la e o que a poe la."""
+    ws, marketing, seo, social, admin, alvo = await _mundo(db)
+    ti, infra, arvore = await _segunda_arvore(db, ws, marketing, seo, social)
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=ti, role="MANAGER")
+
+    with acting_as(workspace_id=ws, user_id=admin, team_tree=arvore, org_role="ADMIN"):
+        await MemberService(db).assign_to_team(
+            user_id=alvo, team_id=seo, role=UserTeamRole.OPERATOR
+        )
+
+
+async def test_comando_no_TI_barra_subtime_do_TI(db) -> None:
+    """O par do anterior: sem ele, "so a primeira raiz conta" fica verde."""
+    ws, marketing, seo, social, admin, alvo = await _mundo(db)
+    ti, infra, arvore = await _segunda_arvore(db, ws, marketing, seo, social)
+    await f.add_member(db, workspace_id=ws, user_id=alvo, team_id=ti, role="MANAGER")
+
+    with acting_as(workspace_id=ws, user_id=admin, team_tree=arvore, org_role="ADMIN"):
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).assign_to_team(
+                user_id=alvo, team_id=infra, role=UserTeamRole.OPERATOR
             )

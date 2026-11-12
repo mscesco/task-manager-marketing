@@ -489,9 +489,10 @@ describe("copiar e colar", () => {
     fireEvent.click(screen.getByRole("gridcell", { name: "Alcance, linha 2" }), { shiftKey: true });
     expect(screen.queryByRole("textbox")).toBeNull();
     // a âncora (Alcance, linha 1) até a clicada (Alcance, linha 2)
-    expect(screen.getByRole("gridcell", { name: "Alcance, linha 1" }).className).toContain("bg-accent-soft");
-    expect(screen.getByRole("gridcell", { name: "Alcance, linha 2" }).className).toContain("bg-accent-soft");
-    expect(screen.getByRole("gridcell", { name: "Título, linha 2" }).className).not.toContain("bg-accent-soft");
+    const selecionadas = screen
+      .getAllByRole("gridcell", { selected: true })
+      .map((c) => c.getAttribute("aria-label"));
+    expect(selecionadas).toEqual(["Alcance, linha 1", "Alcance, linha 2"]);
   });
 
   it("⚠️ colar com a célula em edição vai para a grade, e cria as linhas que faltam", async () => {
