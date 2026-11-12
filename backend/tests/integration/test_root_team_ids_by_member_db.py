@@ -1,16 +1,7 @@
-"""Spec 047, fatia B -- a que AREAS cada pessoa pertence.
+"""`UserRepository.root_team_ids_by_member`: a que times raiz cada pessoa pertence.
 
-Alimenta a `/organizacao`: a contagem de cada card e o card "Pessoas sem
-area". Uma pessoa pertence a uma area se tem vinculo NA area **ou em qualquer
-subtime dela** -- a mesma regra da tabela da §4.2.
-
-⚠️⚠️ POR QUE NAO DA PARA REUSAR `list_all_with_subteams`: aquela consulta
-EXCLUI a raiz de proposito (quem esta na raiz nao pode ser rotulado com o id
-do Marketing, senao o filtro de subtime do quadro perde o sentido). Resultado:
-quem esta vinculado SO na area apareceria com lista vazia nos dois campos, e a
-tela o classificaria como "sem area" -- o oposto da verdade.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+Vinculo na raiz ou em qualquer subtime dela conta. Nao da para reusar
+`list_all_with_subteams`: ela exclui a raiz, e quem esta so na raiz sairia sem time.
 """
 
 from __future__ import annotations
@@ -36,9 +27,7 @@ async def _mundo(db):
     admin = await f.make_user(
         db, workspace_id=ws, email="admin@t.dev", org_role="ADMIN"
     )
-    # ⚠️ O vinculo de MANAGER e o que poe o admin NA area -- e o que
-    # `test_vinculo_SO_NA_AREA_conta_como_area` mede. Ser ADMIN de organizacao
-    # nao e vinculo de time e nao aparece aqui.
+    # Papel de organizacao nao e vinculo de time: o MANAGER e que poe o admin na raiz.
     await f.add_member(
         db, workspace_id=ws, user_id=admin, team_id=marketing, role="MANAGER"
     )
@@ -58,53 +47,37 @@ async def _mundo(db):
     return ctx, ws, marketing, seo, junior, ti, admin
 
 
-async def test_vinculo_SO_NA_AREA_conta_como_area(db) -> None:
-    """⭐⭐ O caso que `list_all_with_subteams` nao consegue responder.
-
-    Esta pessoa tem vinculo apenas na raiz. Em `subteam_ids` ela aparece com
-    lista VAZIA -- correto, ela nao esta em subtime nenhum. Se a tela usasse
-    aquele campo para o card "Pessoas sem area", ela cairia la, errada.
-    """
+async def test_vinculo_SO_NA_RAIZ_conta(db) -> None:
     ctx, ws, marketing, seo, junior, ti, admin = await _mundo(db)
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert areas[admin] == [marketing]
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert roots[admin] == [marketing]
 
 
-async def test_vinculo_em_SUBTIME_sobe_para_a_area(db) -> None:
+async def test_vinculo_em_SUBTIME_sobe_para_a_raiz(db) -> None:
     ctx, ws, marketing, seo, junior, ti, _admin = await _mundo(db)
     pessoa = await f.make_user(db, workspace_id=ws, email="seo@t.dev")
     await f.add_member(
         db, workspace_id=ws, user_id=pessoa, team_id=seo, role="OPERATOR"
     )
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert areas[pessoa] == [marketing]
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert roots[pessoa] == [marketing]
 
 
 async def test_vinculo_em_NETO_tambem_sobe(db) -> None:
-    """⚠️ A SUBIDA E RECURSIVA, e este teste e o guardiao disso.
-
-    A arvore tem tres niveis desde a Spec 036. Uma versao que olhasse so o pai
-    direto classificaria esta pessoa como "sem area" -- e passaria em todos os
-    outros testes deste arquivo.
-    """
+    """A subida e recursiva, nao so ate o pai direto."""
     ctx, ws, marketing, seo, junior, ti, _admin = await _mundo(db)
     neta = await f.make_user(db, workspace_id=ws, email="jr@t.dev")
     await f.add_member(
         db, workspace_id=ws, user_id=neta, team_id=junior, role="OPERATOR"
     )
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert areas[neta] == [marketing]
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert roots[neta] == [marketing]
 
 
-async def test_pessoa_em_DUAS_areas_aparece_nas_duas(db) -> None:
-    """⭐ O caso que a `/organizacao` existe para tornar visivel.
-
-    Com N areas e uma pessoa podendo estar em varias, "onde esta a Fulana?"
-    nao tem resposta numa grade por area -- e por isso a tela tem busca.
-    """
+async def test_pessoa_em_DOIS_times_raiz_aparece_nos_dois(db) -> None:
     ctx, ws, marketing, seo, junior, ti, _admin = await _mundo(db)
     dupla = await f.make_user(db, workspace_id=ws, email="dupla@t.dev")
     await f.add_member(
@@ -114,13 +87,12 @@ async def test_pessoa_em_DUAS_areas_aparece_nas_duas(db) -> None:
         db, workspace_id=ws, user_id=dupla, team_id=ti, role="OPERATOR"
     )
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert sorted(areas[dupla]) == sorted([marketing, ti])
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert sorted(roots[dupla]) == sorted([marketing, ti])
 
 
-async def test_dois_vinculos_na_MESMA_area_nao_duplicam(db) -> None:
-    """⚠️ Sem o `DISTINCT`, quem esta na area E num subtime dela apareceria
-    duas vezes -- e a contagem do card diria uma pessoa a mais."""
+async def test_dois_vinculos_na_MESMA_raiz_nao_duplicam(db) -> None:
+    """Sem o `DISTINCT`, raiz + subtime contaria a pessoa duas vezes."""
     ctx, ws, marketing, seo, junior, ti, _admin = await _mundo(db)
     pessoa = await f.make_user(db, workspace_id=ws, email="dois@t.dev")
     await f.add_member(
@@ -130,15 +102,13 @@ async def test_dois_vinculos_na_MESMA_area_nao_duplicam(db) -> None:
         db, workspace_id=ws, user_id=pessoa, team_id=seo, role="OPERATOR"
     )
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert areas[pessoa] == [marketing]
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert roots[pessoa] == [marketing]
 
 
 async def test_quem_nao_tem_vinculo_NAO_APARECE(db) -> None:
-    """A conta de administracao da Camila, desde 08/09 -- e o card
-    "Pessoas sem area" e feito exatamente deste conjunto."""
     ctx, ws, marketing, seo, junior, ti, _admin = await _mundo(db)
     solta = await f.make_user(db, workspace_id=ws, email="solta@t.dev")
     with acting_as(**ctx):
-        areas = await UserRepository(db).areas_por_membro()
-    assert solta not in areas
+        roots = await UserRepository(db).root_team_ids_by_member()
+    assert solta not in roots

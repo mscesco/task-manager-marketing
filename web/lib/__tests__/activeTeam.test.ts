@@ -1,13 +1,4 @@
-/**
- * Spec 048, fatia A — em que time a tela está.
- *
- * ⚠️ POR QUE ESTES TESTES EXISTEM: nenhum erro aqui dá tela vermelha. Errar
- * **recorta a tela pelo time errado** — a pessoa vê o Comercial vazio achando
- * que está no Marketing, e os quatro portões passam verdes. É a mesma classe de
- * defeito que a §3 da spec mediu em seis lugares do produto.
- *
- * SABOTAGENS medidas -- ver o fim do arquivo.
- */
+// Em que time a tela está: erro aqui recorta a tela pelo time errado sem dar tela vermelha.
 
 import { describe, it, expect } from "vitest";
 import {
@@ -20,7 +11,7 @@ import {
   teamUrlToWrite,
   withTeam,
 } from "../activeTeam";
-import { rootTeamOf } from "../areas";
+import { rootTeamOf } from "../rootTeams";
 import type { Team } from "../api";
 
 const MKT = "t-mkt";
@@ -53,8 +44,6 @@ describe("activeTeam — o caminho", () => {
   });
 
   it("⚠️ num SUBTIME, sobe até a raiz", () => {
-    // O contexto é o TIME; subtime é navegação dentro dele. Mesma regra do
-    // rótulo da barra (`currentContext`), e agora do recorte das telas.
     expect(activeTeam(`/times/${SEO}`, "", TIMES, AMBOS, AMBOS)).toMatchObject({
       teamId: MKT,
     });
@@ -71,19 +60,13 @@ describe("activeTeam — o caminho", () => {
   });
 
   it("⚠️⚠️ o CAMINHO ganha do parâmetro", () => {
-    // ⚠️ `/times/<A>?time=<B>` é link malformado. Honrar o parâmetro mostraria
-    // o time A com a barra dizendo B -- a tela e o contexto discordando na
-    // mesma página.
     expect(
       activeTeam(`/times/${MKT}`, `?${TEAM_PARAM}=${COM}`, TIMES, AMBOS, AMBOS),
     ).toMatchObject({ teamId: MKT });
   });
 
   it("⚠️ o caminho NÃO é validado contra o alcance", () => {
-    // ⚠️ ASSIMETRIA DELIBERADA (ver o bloco de `activeTeam`): no caminho, quem
-    // decide acesso é a tela e, atrás dela, o servidor. Um operador do
-    // Marketing que cole a URL do Comercial tem de ver a recusa vinda de lá --
-    // e não um recorte silencioso para o time dele, que esconderia o 403.
+    // Quem decide acesso no caminho é a tela e o servidor (o 403 tem de aparecer).
     expect(activeTeam(`/times/${COM}`, "", TIMES, SO_MKT, SO_MKT)).toMatchObject({
       teamId: COM,
       fromUrl: true,
@@ -97,7 +80,6 @@ describe("activeTeam — o caminho", () => {
   });
 
   it("id desconhecido no caminho cai na reserva", () => {
-    // Árvore ainda carregando, ou id colado à mão.
     expect(activeTeam("/times/nao-existe", "", TIMES, SO_MKT, SO_MKT)).toEqual({
       kind: "team",
       teamId: MKT,
@@ -126,8 +108,6 @@ describe("activeTeam — o parâmetro", () => {
   });
 
   it("⚠️ convive com outros parâmetros", () => {
-    // A tela do time guarda `?ver=` e `?aba=` na URL (Spec 047). Ler o time não
-    // pode depender de ele ser o primeiro nem o único.
     expect(
       activeTeam(
         "/minhas-tarefas",
@@ -146,10 +126,7 @@ describe("activeTeam — o parâmetro", () => {
   });
 
   it("⚠️⚠️ parâmetro FORA DO ALCANCE cai no time da pessoa, e pede reescrita", () => {
-    // ⚠️ A outra metade da assimetria: o parâmetro é um FILTRO que o próprio
-    // produto escreve. Um id que a pessoa não alcança só chega ali por link
-    // velho, e a resposta certa para link velho é cair no time dela e
-    // reescrever a URL -- não desenhar uma tela vazia sem explicação.
+    // O parâmetro é filtro escrito pelo produto: link velho cai no time da pessoa.
     expect(
       activeTeam("/minhas-tarefas", `?${TEAM_PARAM}=${COM}`, TIMES, SO_MKT, SO_MKT),
     ).toEqual({ kind: "team", teamId: MKT, fromUrl: false });
@@ -163,13 +140,7 @@ describe("activeTeam — o parâmetro", () => {
 });
 
 describe("activeTeam — a reserva", () => {
-  it("⚠️⚠️ PREFERE O TIME EM QUE A PESSOA TRABALHA — o defeito da §4.5", () => {
-    // ⚠️⚠️ ESTE É O TESTE QUE CORRIGE A PRÓPRIA SPEC. A §4.5 dizia "o time da
-    // pessoa, a mesma conta de `peopleEntry`" -- e `peopleEntry` recebe
-    // `rootsForPerson`, que para quem tem papel de organização devolve TODOS os
-    // times. Para a conta dela (ADMIN) o primeiro por nome é "Comercial", e ela
-    // trabalha no Marketing.
-    //
+  it("⚠️⚠️ PREFERE O TIME EM QUE A PESSOA TRABALHA", () => {
     // Alcança os dois, trabalha num: a reserva é o que ela trabalha.
     expect(activeTeam("/minhas-tarefas", "", TIMES, AMBOS, SO_MKT)).toEqual({
       kind: "team",
@@ -179,9 +150,7 @@ describe("activeTeam — a reserva", () => {
   });
 
   it("sem vínculo nenhum, cai no primeiro que ela ALCANÇA", () => {
-    // ⚠️ É o cadastro de quem administra a organização desde 08/09: papel de
-    // organização sem vínculo de time (Spec 045, fatia B). Aí sim vale "o
-    // primeiro por nome".
+    // Papel de organização sem vínculo de time.
     expect(activeTeam("/minhas-tarefas", "", TIMES, AMBOS, [])).toEqual({
       kind: "team",
       teamId: COM,
@@ -190,8 +159,6 @@ describe("activeTeam — a reserva", () => {
   });
 
   it("⚠️ `fromUrl: false` na reserva — é ele que manda reescrever a URL", () => {
-    // Sem isso o link copiado não carrega o contexto, e o Voltar volta para um
-    // estado sem time. É o defeito silencioso desta fatia.
     const r = activeTeam("/projetos", "", TIMES, SO_MKT, SO_MKT);
     expect(r).toMatchObject({ fromUrl: false });
   });
@@ -203,8 +170,6 @@ describe("activeTeam — a reserva", () => {
   });
 
   it("⚠️ sem alcance, nem o caminho é inventado — mas o do caminho vale", () => {
-    // Quem não alcança nada ainda pode abrir `/times/<id>` por link; a recusa
-    // vem da tela.
     expect(activeTeam(`/times/${MKT}`, "", TIMES, [], [])).toMatchObject({
       teamId: MKT,
     });
@@ -219,8 +184,6 @@ describe("withTeam", () => {
   });
 
   it("⚠️ PRESERVA os outros parâmetros", () => {
-    // Trocar de time não pode apagar o recorte que a pessoa escolheu -- ela
-    // perderia a aba de inativos por ter trocado de time.
     const url = withTeam("/times/x", "?ver=subtimes&aba=inativos", MKT);
     expect(url).toContain("ver=subtimes");
     expect(url).toContain("aba=inativos");
@@ -239,7 +202,7 @@ describe("withTeam", () => {
   });
 });
 
-describe("rootTeamOf — a cópia que virou uma", () => {
+describe("rootTeamOf", () => {
   it("de um subtime, devolve a raiz", () => {
     expect(rootTeamOf(SEO, TIMES)).toBe(MKT);
     expect(rootTeamOf(JR, TIMES)).toBe(MKT);
@@ -254,24 +217,13 @@ describe("rootTeamOf — a cópia que virou uma", () => {
   });
 
   it("⚠️⚠️ PAI PENDURADO devolve null, e NÃO o último nó conhecido", () => {
-    // ⚠️ É AQUI QUE AS DUAS CÓPIAS DIVERGIAM. A de `lens.ts` fazia `break` e
-    // devolvia o último nó conhecido -- afirmando que um SUBTIME era raiz. A
-    // unificação escolheu `null`, que é fail-closed: "não sei" faz o chamador
-    // cair na reserva, enquanto o último-nó-conhecido escreve um time errado
-    // como se fosse certo, e recorta a tela por ele.
+    // `null` é fail-closed: o chamador cai na reserva em vez de recortar por um subtime.
     const orfao = [time("t-orfao", "Órfão", "t-pai-que-nao-veio")];
     expect(rootTeamOf("t-orfao", orfao)).toBeNull();
   });
 
   it("ciclo não trava a aba", () => {
-    // `parent_team_id` apontando para um descendente giraria para sempre sem o
-    // teto de saltos.
-    //
-    // ⚠️ O TESTE AFIRMA QUE ELA TERMINA, e não em qual nó ela para. A primeira
-    // versão deste teste esperava `"b"` e ficou vermelha: num ciclo de dois, o
-    // nó final é função da PARIDADE do teto de saltos (50, par, devolve o nó
-    // inicial). Amarrar isso transformaria `MAX_SALTOS` em contrato — mudar 50
-    // para 51 quebraria um teste sem que nada de real mudasse.
+    // Afirma só que termina: o nó final depende da paridade de `MAX_SALTOS`.
     const ciclo = [time("a", "A", "b"), time("b", "B", "a")];
     const r = rootTeamOf("a", ciclo);
     expect(["a", "b"]).toContain(r);
@@ -280,20 +232,14 @@ describe("rootTeamOf — a cópia que virou uma", () => {
 
 describe("preferredTeams", () => {
   it("⚠️⚠️ onde a pessoa TRABALHA primeiro, e o resto depois", () => {
-    // ⚠️ A regra existe para não ser três cópias: a reserva do `activeTeam`, o
-    // destino do item TIME e a entrada do quadro fazem a mesma pergunta.
     expect(preferredTeams(AMBOS, SO_MKT).map((t) => t.id)).toEqual([MKT, COM]);
   });
 
   it("sem vínculo, é a ordem do alcance", () => {
-    // O cadastro de quem administra a organização desde 08/09.
     expect(preferredTeams(AMBOS, []).map((t) => t.id)).toEqual([COM, MKT]);
   });
 
   it("⚠️ NÃO DESCARTA o resto -- é ele que distingue 'uma só' de 'várias'", () => {
-    // `entradaDoQuadro` desenha com uma e redireciona com várias. Se esta
-    // função devolvesse só `own`, quem alcança dois times e trabalha num
-    // pareceria ter um -- e a entrada deixaria de redirecionar.
     expect(preferredTeams(AMBOS, SO_MKT)).toHaveLength(2);
   });
 
@@ -302,23 +248,6 @@ describe("preferredTeams", () => {
   });
 });
 
-// SABOTAGENS medidas:
-//   A. Honrar o parâmetro antes do caminho. **Cai 1** -- o teste ⭐ do caminho
-//      ganhando, e na tela seria a barra dizendo um time e o conteúdo sendo de
-//      outro.
-//   B. Validar o CAMINHO contra `reachable`. **Cai 1**: o operador que cola a
-//      URL de outro time deixa de ver o 403 e passa a ver o time dele, o que
-//      esconde a recusa em vez de mostrá-la.
-//   C. NÃO validar o PARÂMETRO contra `reachable`. **Cai 1**: link velho passa
-//      a desenhar tela vazia sem explicação.
-//   D. Devolver `fromUrl: true` na reserva. **Cai 2**: a URL nunca é reescrita,
-//      e o link copiado não carrega o contexto -- o defeito silencioso desta
-//      fatia.
-//   E. Trocar o `params.set` por concatenação de string em `withTeam`.
-//      **Cai 2**: o time duplica na URL e os outros parâmetros somem.
-
-// ⚠️ A §4.1 da spec: sem a reescrita, o recorte existe e é invisível -- copiar
-// o link manda outra pessoa para o time DELA.
 describe("teamUrlToWrite", () => {
   const RAIZ_A = "raiz-a";
 
@@ -339,10 +268,7 @@ describe("teamUrlToWrite", () => {
   });
 
   it("⚠️⚠️ com a query AINDA NÃO LIDA (`null`), NÃO escreve", () => {
-    // O caso que estragaria link colado: na primeira renderização o
-    // `TeamParamReader` ainda não reportou, `activeTeam` cai na reserva, e
-    // escrever aqui sobrescreveria o `?time=` que estava na URL antes de
-    // alguém tê-lo lido.
+    // Sem a query lida, escrever sobrescreveria o `?time=` colado.
     expect(
       teamUrlToWrite("/minhas-tarefas", { kind: "team", teamId: RAIZ_A, fromUrl: false }, null),
     ).toBe(null);
@@ -364,8 +290,6 @@ describe("teamUrlToWrite", () => {
   });
 
   it("⚠️ numa tela que NÃO carrega o parâmetro, nunca escreve", () => {
-    // Escrever em `/quadro/<id>` ou `/organizacao` produziria a URL que mente
-    // -- e em `/quadro/<id>` o `activeTeam` ignora o parâmetro de propósito.
     for (const tela of ["/quadro/raiz-a", "/organizacao", "/times/raiz-a", "/tarefa/t1"]) {
       expect(
         teamUrlToWrite(tela, { kind: "team", teamId: RAIZ_A, fromUrl: false }, ""),
@@ -374,25 +298,15 @@ describe("teamUrlToWrite", () => {
   });
 });
 
-// ⚠️⚠️ O DEFEITO DE 14/09, reportado na tela: Minhas tarefas com
-// `?time=<Comercial>` mostrava as tarefas do Marketing. A barra publicava o
-// time ativo ANTES de ter como resolvê-lo, e as telas buscavam com a resposta
-// provisória. Os logs do servidor mostraram o pedido certo chegando e sendo
-// atropelado pelos provisórios.
 describe("publishedActiveTeam -- a barra só publica o que já sabe", () => {
   const COMERCIAL: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
   const NENHUM: ActiveTeamForTest = { kind: "none" };
 
   it("⚠️ árvore de times AINDA a caminho -> null, e não `kind: \"none\"`", () => {
-    // Com a árvore vazia, `activeTeam` responde `none` -- e `none` é "resolvi,
-    // e não há time". A tela buscava sem recorte. Foi a primeira metade.
     expect(publishedActiveTeam(NENHUM, false, "?time=com")).toBe(null);
   });
 
   it("⚠️ query AINDA não lida -> null, e não o time de reserva", () => {
-    // Sem a query, o `?time=` não conta e a reserva (o time em que a pessoa
-    // trabalha) aparece como resposta. A tela buscava o Marketing. Foi a
-    // segunda metade.
     const reserva: ActiveTeamForTest = { kind: "team", teamId: "mkt", fromUrl: false };
     expect(publishedActiveTeam(reserva, true, null)).toBe(null);
   });
@@ -402,18 +316,13 @@ describe("publishedActiveTeam -- a barra só publica o que já sabe", () => {
   });
 
   it("⚠️ árvore que FALHOU conta como respondida -- `none` sai, e a tela não trava", () => {
-    // O `catch` de `listTeamsAll()` no `AppShell` é silencioso de propósito.
-    // Esperar por "tem times" deixaria a tela carregando para sempre; o flag
-    // diz "a pergunta foi respondida", com sucesso ou não.
+    // O `catch` de `listTeamsAll()` no `AppShell` é silencioso; sem isto a tela trava.
     expect(publishedActiveTeam(NENHUM, true, "")).toBe(NENHUM);
   });
 });
 
 type ActiveTeamForTest = Parameters<typeof publishedActiveTeam>[0];
 
-// ⚠️⚠️ DEFEITO DE 14/09: com o Comercial ativo, "Projetos" no menu abria o
-// Marketing. O item era `/projetos` puro; o clique apagava o time, a tela caía
-// na reserva e a URL era reescrita com ela.
 describe("navHref -- o menu leva o time junto", () => {
   const COMERCIAL: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
 
@@ -423,14 +332,11 @@ describe("navHref -- o menu leva o time junto", () => {
   });
 
   it("vale também quando o time veio do CAMINHO (saindo do quadro)", () => {
-    // Do quadro do Comercial para Projetos: o time do caminho é o ativo.
     const doCaminho: ActiveTeamForTest = { kind: "team", teamId: "com", fromUrl: true };
     expect(navHref("/minhas-tarefas", doCaminho)).toBe("/minhas-tarefas?time=com");
   });
 
   it("⚠️ \"Todos os times\" NÃO é levado para as outras telas", () => {
-    // Só Minhas tarefas oferece "tudo". Levá-lo a Projetos pediria uma tela que
-    // não existe; o caminho puro deixa a tela resolver pela reserva.
     expect(navHref("/projetos", { kind: "all" })).toBe("/projetos");
   });
 
@@ -444,8 +350,6 @@ describe("navHref -- o menu leva o time junto", () => {
   });
 });
 
-// ⚠️ 14/09: o voltar do detalhe de projeto leva o time DO projeto, e projeto
-// pode ser de subtime. O parâmetro precisa subir até a raiz, como o caminho.
 describe("activeTeam -- parâmetro com SUBTIME sobe até a raiz", () => {
   it("⚠️ `?time=<subtime>` resolve para a raiz dele", () => {
     expect(
@@ -454,15 +358,12 @@ describe("activeTeam -- parâmetro com SUBTIME sobe até a raiz", () => {
   });
 
   it("⚠️ e pede reescrita da URL para a raiz (`fromUrl: false`)", () => {
-    // Um endereço por time. Sem isto a URL guardaria o subtime e a barra
-    // mostraria a raiz -- os dois discordando na mesma página.
     expect(
       activeTeam("/projetos", `?${TEAM_PARAM}=${JR}`, TIMES, AMBOS, SO_MKT),
     ).toEqual({ kind: "team", teamId: MKT, fromUrl: false });
   });
 
   it("subtime de raiz FORA do alcance continua caindo na reserva", () => {
-    // Subir até a raiz não pode virar porta para o time alheio.
     const soComercial: Team[] = [TIMES[0]];
     expect(
       activeTeam("/projetos", `?${TEAM_PARAM}=${SEO}`, TIMES, soComercial, soComercial),

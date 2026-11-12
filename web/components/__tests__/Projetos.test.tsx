@@ -1,16 +1,4 @@
-// /projetos -- a criação segue o time ativo (Spec 048, defeito de 14/09).
-//
-// ⚠️ ESTA TELA NÃO TINHA TESTE DE COMPONENTE NENHUM. Os dois defeitos abaixo
-// viveram nela sem ninguém para gritar:
-//
-//   1. o seletor de time do "Novo projeto" só se preenchia com UMA área. Com
-//      duas ficava vazio, ignorando que a pessoa estava no Comercial -- embora
-//      o próprio comentário da tela já tivesse decidido o contrário ("quando a
-//      área ambiente existir, este seletor passa a ser confirmação do lugar
-//      onde a pessoa já está");
-//   2. o projeto recém-criado entrava na lista na hora, mesmo sendo de OUTRO
-//      time. Com a lista recortada, ele aparecia "em Comercial" sendo do
-//      Marketing, até recarregar.
+// /projetos: a criação segue o time ativo e só oferece times em que a pessoa cria.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -22,10 +10,8 @@ import {
   type ActiveTeamContext,
 } from "@/lib/useActiveTeam";
 
-// ⚠️ O MOCK FORNECE O CONTEXTO DE TIME, porque o `AppShell` de verdade fornece.
-// Variável mutável pelo mesmo motivo de `Formularios.test.tsx`: a fábrica do
-// `vi.mock` é içada, e ela não LÊ a variável (só o corpo do componente, no
-// render) -- sem TDZ.
+// O mock fornece o contexto de time (como o `AppShell`). Variável mutável: a fábrica
+// do `vi.mock` é içada, mas só o render a lê.
 vi.mock("@/components/AppShell", () => ({
   default: ({ children }: { children: React.ReactNode }) => (
     <ActiveTeamProvider value={contextoDoTeste}>{children}</ActiveTeamProvider>
@@ -49,8 +35,7 @@ const MKT = "team-marketing";
 const COM = "team-comercial";
 
 function time(id: string, name: string, criaProjeto = true): Team {
-  // ⚠️ Spec 051, fatia A: `can_create_project` vem do servidor, e AUSENTE
-  // LÊ-SE COMO "NÃO" -- sem ele aqui, nenhuma área seria oferecida.
+  // `can_create_project` ausente lê-se como "não": sem ele, nenhum time seria oferecido.
   return {
     id,
     workspace_id: "ws",
@@ -71,8 +56,7 @@ const CONTEXTO_PADRAO: ActiveTeamContext = {
 let contextoDoTeste: ActiveTeamContext = CONTEXTO_PADRAO;
 
 function projeto(over: Partial<Project> & { id: string; title: string }): Project {
-  // Literal completo, SEM `as` -- fixture com `as` cala o `tsc` sobre campo
-  // que não existe.
+  // Literal completo, sem `as`: o `as` cala o `tsc` sobre campo inexistente.
   return {
     description: "",
     status: "PLANNING",
@@ -84,7 +68,7 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     created_by: "user-1",
     created_at: "2026-09-14T12:00:00Z",
     updated_at: "2026-09-14T12:00:00Z",
-    // Spec 051, fatia A: os botões vêm do servidor, no time do projeto.
+    // Os botões vêm do servidor, no time do projeto.
     can_update: true,
     can_delete: true,
     ...over,
@@ -98,8 +82,7 @@ function montar() {
     page: 1,
     size: 100,
   });
-  // ⚠️ PAPEL DE ORGANIZAÇÃO e DUAS raízes: é o que faz `rootsForPerson` devolver
-  // as duas e o campo "Time" aparecer. Com uma só, o campo nem é desenhado.
+  // Papel de organização e duas raízes: faz `rootsForPerson` devolver as duas e o campo "Time" aparecer.
   vi.mocked(api.currentUser).mockResolvedValue({
     id: "user-1",
     name: "Camila",
@@ -118,8 +101,7 @@ function montar() {
 }
 
 async function abrirNovoProjeto(): Promise<HTMLSelectElement> {
-  // ⚠️ DOIS BOTÕES COM ESTE TEXTO quando a lista está vazia: o do cabeçalho e o
-  // do aviso de vazio. O primeiro na ordem do documento é o do cabeçalho.
+  // Com a lista vazia há dois botões com este texto; o primeiro é o do cabeçalho.
   const [doCabecalho] = await screen.findAllByText("+ Novo projeto");
   fireEvent.click(doCabecalho);
   return (await screen.findByLabelText("Time do projeto")) as HTMLSelectElement;
@@ -180,11 +162,9 @@ describe("/projetos -- a criação segue o time ativo", () => {
   });
 });
 
-describe("/projetos -- só oferece a área em que a pessoa CRIA (Spec 051, fatia A)", () => {
+describe("/projetos -- só oferece o time em que a pessoa CRIA", () => {
   it("⚠️ gerente no Marketing e operador no Comercial: o Comercial ativo não vira destino", async () => {
-    // O caso da fatia. Ela alcança as duas áreas (`rootsForPerson`) e tem
-    // `project.create` em algum lugar -- mas só cria no Marketing. Antes, o
-    // campo vinha preenchido com o Comercial (o time ativo) e o POST dava 403.
+    // Alcança os dois times (`rootsForPerson`), mas só cria no Marketing: o Comercial ativo daria 403.
     vi.mocked(api.listProjects).mockResolvedValue({
       items: [],
       total: 0,
@@ -218,7 +198,7 @@ describe("/projetos -- só oferece a área em que a pessoa CRIA (Spec 051, fatia
     fireEvent.change(await screen.findByPlaceholderText("Ex.: Campanha Q3"), {
       target: { value: "Campanha" },
     });
-    // Uma área só: não há pergunta, e o campo nem é desenhado.
+    // Um time só: o campo nem é desenhado.
     expect(screen.queryByLabelText("Time do projeto")).toBeNull();
     fireEvent.click(screen.getByText("Criar projeto"));
 
@@ -229,7 +209,7 @@ describe("/projetos -- só oferece a área em que a pessoa CRIA (Spec 051, fatia
     );
   });
 
-  it("sem área nenhuma em que crie, não há botão de novo projeto", async () => {
+  it("sem time nenhum em que crie, não há botão de novo projeto", async () => {
     vi.mocked(api.listProjects).mockResolvedValue({
       items: [],
       total: 0,

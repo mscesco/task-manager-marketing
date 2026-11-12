@@ -1,10 +1,5 @@
-"""Auditoria de 21/10 -- duas portas que o `TaskService` deixava abertas.
-
-1. Criar ou mover subtarefa PARA um pai arquivado. Duplicar, arquivar e
-   desarquivar ja recusavam o estado "filha ativa sob pai arquivado"; criar e
-   mover nao -- e a filha nascia sem tela nenhuma que a mostrasse.
-2. Trocar o `team_id` de uma tarefa com subtarefas vivas: o PATCH escrevia so
-   na mae, e as filhas ficavam no time antigo.
+"""`TaskService`: subtarefa sob pai arquivado, troca de time com subtarefas
+vivas, e time da tarefa fora do time raiz do quadro.
 """
 
 from __future__ import annotations
@@ -102,7 +97,7 @@ async def test_trocar_time_com_subtarefa_viva_e_recusado(db) -> None:
 
 
 async def test_trocar_time_com_subtarefa_ARQUIVADA_tambem_e_recusado(db) -> None:
-    """Auditoria de 21/10 (item 8): desarquivar a filha recriaria o estado."""
+    """Desarquivar a filha recriaria o estado."""
     raiz, sub, proj, ctx, user = await _mundo(db)
     with acting_as(**ctx):
         svc = TaskService(db)
@@ -123,10 +118,10 @@ async def test_trocar_time_com_subtarefa_ARQUIVADA_tambem_e_recusado(db) -> None
             await svc.update(task_id=pai.id, command=UpdateTaskCommand(team_id=sub))
 
 
-async def test_quadro_geral_nao_aceita_o_time_de_OUTRA_area(db) -> None:
-    """Auditoria de 21/10 (item 12): o geral do Marketing aceitava o time do
-    Comercial pela API -- o Marketing perdia a tarefa e o Comercial nao via o
-    quadro. O subtime da propria area continua livre."""
+async def test_quadro_geral_nao_aceita_o_time_de_OUTRO_time_raiz(db) -> None:
+    """O quadro geral do Marketing recusa o time do Comercial; subtime do proprio
+    time raiz continua livre.
+    """
     raiz, sub, _proj, ctx, user = await _mundo(db)
     comercial = await f.make_team(db, workspace_id=ctx["workspace_id"], slug="comercial")
     ctx["team_tree"] = (*ctx["team_tree"], node(comercial))
@@ -142,8 +137,7 @@ async def test_quadro_geral_nao_aceita_o_time_de_OUTRA_area(db) -> None:
 
 
 async def test_mudar_de_projeto_confere_o_time_das_FILHAS(db) -> None:
-    """Auditoria de 21/10 (item 9): a filha do `sub` nao cabe no projeto do
-    `outro` -- e ia junto, porque so o time da mae era conferido."""
+    """Mudar de projeto confere o time das filhas, nao so o da mae."""
     raiz, sub, proj, ctx, user = await _mundo(db)
     outro = await f.make_team(
         db, workspace_id=ctx["workspace_id"], parent_team_id=raiz, slug="outro"

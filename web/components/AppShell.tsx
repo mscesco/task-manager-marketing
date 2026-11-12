@@ -51,7 +51,7 @@ import {
   publishedActiveTeam,
   teamUrlToWrite,
 } from "@/lib/activeTeam";
-import { urlDoQuadroDeArea } from "@/lib/areas";
+import { rootBoardUrl } from "@/lib/rootTeams";
 import {
   FolderKanban,
   ListChecks,
@@ -77,25 +77,18 @@ import type { LucideIcon } from "lucide-react";
 
 import { LoadingScreen } from "@/components/Loading";
 import { AvisosProvider } from "@/components/Toasts";
-// Navegacao lateral retratil. Itens usam a MESMA classe-base `itemCls` ->
-// alinham por construcao. Expandido: icone + rotulo. Retraido: so icone.
-// Fatia 7b: grupo "Quadros" (accordion, abre com clique) com o Quadro Geral
-// + uma sub-aba por subtime da LENTE do usuario (computeLens). Retraido, o
-// grupo colapsa pro icone.
+// Casca do app: barra lateral (retrátil; gaveta no celular, sobreposta no
+// tablet), time ativo da barra e conteúdo. Grupo "Quadros" = quadro geral +
+// subtimes da lente (`computeLens`) no time ativo.
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
-  // ⚠️ LIDOS DO localStorage NO INICIALIZADOR, e nao num efeito. A navegacao
-  // do app e por `<a href>` (recarga total), entao sem persistir a barra
-  // voltaria ao padrao a CADA troca de tela -- foi o que a Camila relatou em
-  // 21/08. Ler no inicializador e seguro pelo mesmo motivo ja escrito abaixo
-  // para o tema: com `loading` comecando true, a barra so desenha depois do
-  // check de auth, ja no cliente.
+  // Lidos do localStorage no inicializador: a navegação é recarga total, e com
+  // `loading` começando true a barra só desenha no cliente.
   const [preferenciaAberta, setPreferenciaAberta] = useState(lerBarraAberta);
-  // Spec 063: no celular e no tablet o menu abre POR CIMA do conteudo. Estado
-  // a parte da preferencia, e nao gravado: ver `barraExpandida`.
+  // Celular e tablet: o menu abre por cima do conteúdo, sem gravar a preferência.
   const faixa = useFaixaDeTela();
   const [gaveta, setGaveta] = useState(false);
   const sobreposta = faixa !== "computador" && gaveta;
@@ -120,30 +113,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   // Trocar de tela ou girar o aparelho fecha a gaveta.
   useEffect(() => setGaveta(false), [pathname, faixa]);
   const [teams, setTeams] = useState<Team[]>([]);
-  // ⚠️ O NOME DA ORGANIZAÇÃO É DA BARRA desde 10/09: o rodapé o mostra em toda
-  // tela que não tem área na URL. `getWorkspace` é memoizado em módulo, então
-  // isto é uma requisição por sessão, não por navegação.
+  // Nome da organização, mostrado no rodapé quando a tela não tem time na URL.
   const [orgName, setOrgName] = useState("");
-  // ⚠️⚠️ A QUERY DA URL, entregue pelo `TeamParamReader` (fatia C), e `null` NÃO
-  // É O MESMO QUE `""`: `null` = ainda não lida, `""` = lida e vazia.
-  //
-  // A distinção existe por causa da REESCRITA (§4.1): na primeira renderização
-  // a query não chegou, `activeTeam` cai na reserva, e reescrever ali
-  // sobrescreveria um `?time=` que estava na URL antes de alguém tê-lo lido --
-  // link colado apontando para outro time viraria o time da pessoa. Quem trata
-  // isso é `teamUrlToWrite`, que recebe o `null`.
-  //
-  // Ver o bloco de aviso no `TeamParamReader`: a fronteira de `Suspense` que o
-  // `useSearchParams` exige não pode ficar aqui.
+  // Query da URL, entregue pelo `TeamParamReader`. `null` = ainda não lida
+  // (`teamUrlToWrite` não reescreve por cima de um `?time=`), `""` = vazia.
   const [search, setSearch] = useState<string | null>(null);
-  // ⚠️ "A ÁRVORE DE TIMES JÁ FOI PERGUNTADA", com sucesso ou não -- e não
-  // `teams.length > 0`. Sem ele a barra publicava o time ativo antes de poder
-  // resolvê-lo; ver `publishedActiveTeam` e o defeito de 14/09.
+  // A árvore de times já foi perguntada (com sucesso ou não); ver `publishedActiveTeam`.
   const [teamsLoaded, setTeamsLoaded] = useState(false);
   const [quadrosOpen, setQuadrosOpen] = useState(lerQuadrosAberto); // accordion
-  // Preferencia de tema. Ler localStorage no inicializador e seguro aqui: com
-  // `loading` comecando true, a barra so renderiza depois do check de auth, ja
-  // no cliente -- entao nao ha divergencia de hidratacao com o SSR.
+  // Ler localStorage no inicializador é seguro: a barra só renderiza no cliente.
   const [tema, setTema] = useState<Tema>(lerTema);
 
   // Pinta o tema quando a preferencia muda. Na montagem apenas confirma o que
@@ -184,35 +162,21 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         listTeamsAll()
           .then(setTeams)
           .catch(() => {})
-          // ⚠️ `finally`, e não só no `then`: se a árvore falhar, as telas
-          // recortadas precisam saber que a pergunta foi respondida -- senão
-          // ficam carregando para sempre esperando por ela.
+          // `finally`: se a árvore falhar, as telas precisam saber que a pergunta foi respondida.
           .finally(() => setTeamsLoaded(true));
-        // ⚠️ TAMBEM SEM BLOQUEAR, e o `catch` vazio e de proposito: sem o nome
-        // o seletor cai no rotulo "Organização" (ver `currentContext`), o que
-        // e feio e nao quebra nada. Derrubar a barra inteira por causa dele
-        // seria trocar um rotulo generico por uma tela branca.
+        // Sem bloquear; sem o nome o seletor cai no rótulo "Organização".
         getWorkspace()
           .then((ws) => setOrgName(ws.name))
           .catch(() => {});
       })
       .catch((_e: ApiError) => {
-        // ⚠️ NAO chamar logout() aqui. Este caminho e "o getMe falhou", ou
-        // seja, a sessao JA esta morta -- o servidor recusaria o aviso com
-        // 401 e nao ha nada para revogar. logout() so no botao Sair (Spec 030).
+        // Sem `logout()`: a sessão já está morta, não há o que revogar.
         clearTokens();
         router.replace("/login");
       });
   }, [router]);
 
-  // ⚠️⚠️ A ARVORE PODE MUDAR SEM NAVEGACAO, e ate 10/09 a barra nao ficava
-  // sabendo: *"criei uma raiz e nao apareceu direto na barra lateral"*. O
-  // `useEffect` de cima roda uma vez; criar area acontece na `/organizacao`,
-  // que recarrega o proprio estado e nao o desta barra.
-  //
-  // ⚠️ QUEM AVISA E `invalidateTeams()`, entao TODA mutacao de time serve --
-  // criar, renomear, remover, de qualquer tela. Ouvir o evento da criacao
-  // especificamente cobriria um caso e deixaria os outros dois.
+  // Toda mutação de time dispara `TIMES_MUDARAM` (via `invalidateTeams()`), e a barra relê.
   useEffect(() => {
     const reler = () => {
       listTeamsAll()
@@ -223,10 +187,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(TIMES_MUDARAM, reler);
   }, []);
 
-  // ⚠️ Spec 051, fatia E: O PRÓPRIO NOME TAMBÉM MUDA SEM NAVEGAÇÃO -- no
-  // `/perfil`. Mesmo desenho do `TIMES_MUDARAM` logo acima: sem ouvir, o rodapé
-  // da barra seguiria com o nome antigo até recarregar. O nome vem no `detail`,
-  // e por isso não há ida ao servidor.
+  // O próprio nome muda no `/perfil`; o novo vem no `detail`.
   useEffect(() => {
     const trocar = (e: Event) => {
       const novo = (e as CustomEvent<string>).detail;
@@ -236,56 +197,23 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener(NOME_MUDOU, trocar);
   }, []);
 
-  // ⚠️⚠️ O PAPEL DE ORGANIZACAO SOBE PARA CA (era calculado depois da lente):
-  // ele decide quais times a pessoa ALCANCA, e o alcance entra na lente.
-  //
-  // ⚠️ E NAO E UMA PERMISSAO -- consertado em 10/09, com o defeito na tela: uma
-  // pessoa que "nao administra a organizacao" via "Gerenciar a organizacao" no
-  // seletor. O gate era `permissions.includes("area.create")`, e parecia certo
-  // (§4.1 da Spec 046), mas `_ORG_ROLE_PERMISSIONS[ADMIN]` E LITERALMENTE
-  // `_ROLE_PERMISSIONS[UserTeamRole.ADMIN]` -- entao quem tem papel de TIME
-  // ADMIN (residuo anterior a Spec 045) carrega `area.create` tambem. E `roles`
-  // nao desempata: o `/auth/me` junta os dois niveis ali de proposito.
-  // Spec 051, fatia F: a condicao mora em `lib/organization` -- a propria
-  // `/organizacao` faz a mesma pergunta para barrar quem digita o endereco.
+  // Papel de organização, não permissão: papel de time ADMIN também carrega as
+  // permissões de organização. Entra no alcance da lente.
   const podeVerOrganizacao = podeAbrirOrganizacao(user);
 
-  // ONDE a pessoa alcanca, e onde ela TRABALHA -- duas perguntas diferentes, e
-  // para quem administra a organizacao as respostas divergem muito.
+  // Onde a pessoa alcança e onde trabalha divergem para quem administra a organização.
   const alcanca = rootsForPerson(teams, user, podeVerOrganizacao);
   const trabalha = ownRootTeams(teams, user);
   const preferidos = preferredTeams(alcanca, trabalha);
 
-  // ⚠️⚠️ O TIME ATIVO DA BARRA (Spec 048, fatia B). Ate 11/09 a lente pegava a
-  // PRIMEIRA RAIZ da lista, e o menu respondia pelo time errado: com dois
-  // times, os sub-quadros eram os de todos eles juntos e o "Quadro geral"
-  // apontava para o primeiro do alfabeto.
-  //
-  // ⚠️ `search` LIGADO NA FATIA C (era `""`). A barra resolve o time na ordem
-  // do `activeTeam`: caminho (`/times/<id>`, `/quadro/<id>`), depois `?time=`,
-  // depois o time em que a pessoa trabalha.
-  //
-  // ⚠️ SEM ISTO A FATIA C SERIA INCOERENTE, e a spec já avisava: as telas
-  // recortariam pelo `?time=` e a barra seguiria mostrando os quadros de outro
-  // time -- a pessoa veria o menu do Marketing com o conteúdo do Comercial.
+  // Time ativo da barra: caminho, depois `?time=`, depois onde a pessoa trabalha.
   const contexto = activeTeam(pathname, search ?? "", teams, alcanca, trabalha);
-  // ⚠️ O QUE A BARRA PUBLICA, calculado UMA vez: as telas o recebem pelo
-  // contexto, e o menu o usa para levar o time junto nos links. Duas chamadas
-  // separadas poderiam divergir no dia em que uma delas mudar.
+  // O que a barra publica, calculado uma vez para as telas e para os links do menu.
   const publicado = publishedActiveTeam(contexto, teamsLoaded, search);
   const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
 
-  // ⚠️⚠️ A REESCRITA DA URL (§4.1), e ela mora AQUI e não nas telas -- mesmo
-  // motivo do contexto: a barra é quem resolve o time, e cinco telas
-  // reescrevendo seriam cinco cópias da mesma regra.
-  //
-  // `replace` e não `push`: a pessoa não NAVEGOU para cá, a tela só está
-  // dizendo onde já estava. Com `push`, o Voltar cairia na mesma tela sem o
-  // parâmetro, que reescreveria de novo -- um Voltar que não volta.
-  //
-  // ⚠️ Quando reescrever é decisão de `teamUrlToWrite`, com teste. O laço é
-  // impossível por construção: depois do `replace` a query passa a dizer o
-  // time, `fromUrl` vira `true`, e a função devolve `null`.
+  // A barra reescreve a URL com o time inferido (`replace`); `teamUrlToWrite`
+  // devolve `null` depois disso, então não há laço.
   const urlComTime = teamUrlToWrite(pathname, contexto, search);
   useEffect(() => {
     if (urlComTime) router.replace(urlComTime);
@@ -295,48 +223,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
 
 
-  // Fatia 2/7b: sub-abas de quadro = subtimes DO TIME ATIVO que a lente alcanca.
+  // Sub-abas de quadro = subtimes do time ativo que a lente alcança.
   const lens = user
     ? computeLens(user.teams, teams, user.roles, timeAtivo)
     : null;
   const subteams = lens ? lens.boardSubteams : [];
 
-  // Spec 025/D11: a fila de solicitações é do time principal. Só quem
-  // tem `solicitation.review` (ADMIN/MANAGER — que, pela invariante da
-  // Spec 024, só existem na raiz) enxerga a aba. O backend também barra
-  // por 403; esconder aqui evita oferecer uma porta que não abre.
+  // A fila de solicitações; o backend também barra.
   const podeVerSolicitacoes =
     user?.permissions.includes("solicitation.read") ?? false;
 
-  // Spec 043 (fatia C). ⚠️ PERMISSÃO PRÓPRIA, e não a de triagem: definir o
-  // que se pergunta e responder a fila são trabalhos diferentes, e o backend
-  // já os separa. Mesmo espírito dos dois gates acima -- quem não tem a
-  // permissão não veria botão útil nenhum lá dentro.
+  // Permissão própria, separada da triagem de solicitações.
   const podeGerirFormularios =
     user?.permissions.includes("form.read") ?? false;
 
-  // Spec 056, fatia E: a Base -- `base.read` em ALGUM lugar. Quais bases, quem
-  // decide é o servidor (`GET /bases`); aqui é só se o item aparece.
+  // Quais bases, decide o servidor (`GET /bases`); aqui é só se o item aparece.
   const podeVerBases = user?.permissions.includes("base.read") ?? false;
 
-  // ⚠️⚠️ "TIME" NAO E UMA TELA PROPRIA: ele aponta para `/times/<area>`, a
-  // MESMA tela que se abre clicando numa area. A rota `/membros` existia e
-  // sumiu em 09/09 -- a Camila viu as duas e resolveu: *"tirar o /membros e
-  // deixar 'time', e quando abrir ser o /times/id"*.
-  //
-  // ⚠️ E O DESTINO E CALCULADO, nao fixo. Com varias areas (Spec 046) nao ha
-  // um "/membros" que sirva para todo mundo: a entrada cai na area DA PESSOA,
-  // e quem administra a organizacao cai na primeira por nome. A regra mora em
-  // `lib/contextSwitcher.ts`, testada -- aqui so se le.
-  // ⚠️ `preferidos`, e nao `alcanca`: o item TIME leva ao time em que a pessoa
-  // TRABALHA. Com `alcanca`, quem administra a organizacao caia no primeiro do
-  // alfabeto -- o mesmo defeito do "Quadro geral", e a Camila o descreveu com
-  // estas palavras: *"tudo ta levando em consideracao o quadro do comercial que
-  // nao tem nada, mesmo que eu esteja no marketing"*.
-  // ⚠⚠ E SEGUE O TIME ATIVO (14/09, reportado na tela: com o Comercial ativo,
-  // "Time" abria o Marketing). `peopleEntry` sozinho só olhava os preferidos,
-  // e o primeiro preferido é onde a pessoa trabalha. `navHref` não alcançava
-  // este item porque aqui o time mora no CAMINHO, não no `?time=`.
+  // "Time" aponta para `/times/<id>`: o time ativo, senão o primeiro preferido.
   const entradaDoTime = peopleEntryFor(publicado, preferidos);
 
   // Itens simples (fora do grupo Quadros).
@@ -350,11 +254,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       ? [{ href: "/formularios", label: "Formulários", icon: ClipboardList }]
       : []),
     ...(podeVerBases ? [{ href: "/bases", label: "Bases", icon: Table2 }] : []),
-    // ⚠️ SEM AREA, SEM ENTRADA: nao ha destino, e um item que leva a lugar
-    // nenhum e pior que um item ausente. Acontece com quem foi cadastrado e
-    // nunca alocado -- e a conta de administracao cai no ramo de cima, porque
-    // `rootsForPerson` devolve todas as areas para quem administra a
-    // organizacao.
+    // Sem time, sem entrada: um item que não leva a lugar nenhum é pior que nenhum.
     ...(entradaDoTime.kind === "team"
       ? [
           {
@@ -364,27 +264,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           },
         ]
       : []),
-    // ⚠️⚠️ AQUI ESTAVAM "Organização" e "Times", e as duas SAIRAM em 09/09,
-    // por decisão da Camila: *"ela não é para estar no menu junto com
-    // projetos, minhas tarefas e afins, é outra seção"*.
-    //
-    // E ela está certa sobre a natureza da lista: "Projetos", "Minhas
-    // tarefas" e "Solicitações" são LUGARES DE TRABALHO -- coisas que se
-    // abrem para fazer algo. A organização e a árvore de times são ONDE VOCÊ
-    // ESTÁ. Misturar as duas naturezas fazia a lista crescer sem que nenhum
-    // item ficasse mais fácil de achar.
-    //
-    // ⚠️ AS DUAS PORTAS CONTINUAM EXISTINDO, no `ContextSwitcher` acima -- e
-    // com os MESMOS gates de antes: a lista de times aparece para quem tem
-    // `team.manage`, e "Gerenciar a organização" só com `area.create`.
-    // Cortar do menu não pode virar cortar o acesso.
+    // Organização e lista de times não ficam no menu: estão no `ContextSwitcher`.
     { href: "/arquivadas", label: "Arquivadas", icon: Archive },
   ];
 
   function sair() {
-    // Spec 030 (D4): avisa o servidor ANTES de limpar o localStorage -- a
-    // funcao le o token na primeira linha sincrona. Disparada SEM await de
-    // proposito: sair nao pode ficar preso esperando rede. Ela nunca lanca.
+    // Avisa o servidor antes de limpar o localStorage (a função lê o token
+    // na primeira linha síncrona). Sem await: sair não espera rede; ela nunca lança.
     void logout();
     clearTokens();
     router.replace("/login");
@@ -402,42 +288,24 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     }`;
 
   const w = open ? "w-56" : "w-16";
-  // ⚠️⚠️ O "QUADRO GERAL" APONTA PARA O TIME ATIVO, e nao mais para `/quadro`
-  // cru -- que redirecionava para a primeira raiz por nome (defeito 3.1).
-  // ⚠️ Sem time ativo ele cai em `/quadro`, que ainda sabe decidir sozinho (ou
-  // desenhar, com uma raiz so, ou mostrar o vazio). Melhor um endereco que se
-  // resolve que um link morto.
-  const hrefGeral = timeAtivo ? urlDoQuadroDeArea(timeAtivo) : "/quadro";
-  // ⚠️ E o ATIVO passa a casar com os DOIS enderecos: quem chegou por
-  // `/quadro` (link antigo, favorito) e quem chegou por `/quadro/<ativo>`.
+  // Quadro geral do time ativo; sem time ativo, `/quadro` decide sozinho.
+  const hrefGeral = timeAtivo ? rootBoardUrl(timeAtivo) : "/quadro";
+  // Ativo casa com `/quadro` (link antigo) e com `/quadro/<ativo>`.
   const geralActive = pathname === "/quadro" || pathname === hrefGeral;
   const algumQuadroAtivo = pathname.startsWith("/quadro");
 
   return (
     <AvisosProvider>
     <div className="flex min-h-dvh">
-      {/* ⚠️⚠️ A FRONTEIRA DE `Suspense` DO PRODUTO INTEIRO PARA O `?time=`.
-          IRMÃO, e não ancestral: envolver a barra e o `children` faria as telas
-          remontarem (e refazerem os `fetch`) quando a query resolvesse.
-          `fallback={null}` não pisca porque o componente não desenha nada.
-          O motivo completo está no topo de `TeamParamReader.tsx`. */}
+      {/* Fronteira de `Suspense` do `?time=`, irmã (não ancestral) para as telas
+          não remontarem. Ver `TeamParamReader.tsx`. */}
       <Suspense fallback={null}>
         <TeamParamReader onSearch={setSearch} />
       </Suspense>
-      {/* ⚠️ ALTURA FIXA + COLUNA = MENU QUE SOME COM ZOOM.
-          A barra e `h-screen` e nao rola: com zoom do navegador (ou tela
-          baixa) a lista de itens passa de 100vh e o que sobra fica CORTADO
-          e inalcancavel -- nao ha barra de rolagem porque o `overflow`
-          padrao e `visible`, e a rolagem da PAGINA nao ajuda: o `sticky
-          top-0` prende a barra no topo. Relatado em 05/08: com zoom
-          aumentado nao dava pra chegar nas ultimas paginas do menu.
-          O conserto e o `overflow-y-auto` no <nav> junto do `min-h-0` --
-          sem `min-h-0` um filho flex NAO encolhe abaixo do proprio
-          conteudo, e o `overflow` nunca chega a valer. O `overflow-y-auto`
-          do <aside> e o ultimo recurso: se ate os blocos fixos (logo,
-          retrair, rodape) nao couberem, a barra inteira rola. */}
-      {/* Spec 063: o tablet reserva a largura dos icones, e o menu aberto passa
-          por cima sem empurrar o conteudo. */}
+      {/* `min-h-0` + `overflow-y-auto` no <nav>: sem eles, com zoom o menu
+          passa de 100vh e o fim fica inalcançável. O `overflow-y-auto` do
+          <aside> é o último recurso. */}
+      {/* Tablet: reserva a largura dos ícones e o menu aberto passa por cima. */}
       {faixa === "tablet" && <div className="w-16 shrink-0 print:hidden" aria-hidden="true" />}
       {sobreposta && (
         <div
@@ -447,18 +315,15 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         />
       )}
       <aside
-        // `print:hidden`: exportar o painel em PDF (15/10) imprime SÓ o conteúdo.
+        // `print:hidden`: exportar em PDF imprime só o conteúdo.
         className={`flex shrink-0 flex-col gap-1 overflow-y-auto border-r border-border bg-surface px-2 py-2 duration-200 print:hidden ${
           faixa === "computador"
             ? `sticky top-0 h-dvh transition-[width] ${w}`
             : faixa === "tablet"
               ? `fixed inset-y-0 left-0 transition-[width] ${w} ${gaveta ? "z-50" : "z-30"}`
               : // `invisible` tira os links do Tab enquanto a gaveta esta fechada.
-                // ⚠️ ABERTA, SEM `translate` NENHUM: ele faz o aside conter os
-                // filhos `fixed`, e o `AnchoredPanel` (seletor de time) ficaria
-                // recortado pelo `overflow` daqui.
-                // A visibilidade so anima ao FECHAR: ao abrir, ainda invisivel
-                // no instante do `focus()`, a gaveta recusaria o foco.
+                // Aberta, sem `translate`: ele recortaria o `AnchoredPanel` (`fixed`).
+                // A visibilidade só anima ao fechar: invisível, a gaveta recusaria o foco.
                 `fixed inset-y-0 left-0 z-50 w-64 max-w-[85vw] ${
                   gaveta
                     ? "transition-[translate]"
@@ -486,12 +351,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
         {/* Botao de retrair */}
         <button
           type="button"
-          // ⚠️ GRAVA NO CLIQUE, e nao num efeito sobre `open`. Efeito
-          // gravaria tambem na MONTAGEM, reescrevendo a preferencia com o
-          // valor que acabou de ser lido -- inofensivo hoje, e a porta para
-          // sobrescrever a escolha da pessoa no dia em que a leitura falhar e
-          // cair no padrao. Mesma disciplina do `gravarTema`, que so grava
-          // "quando a pessoa AGE".
+          // Grava no clique, não num efeito: efeito gravaria também na montagem.
           ref={retrairRef}
           onClick={() => {
             if (faixa !== "computador") {
@@ -513,9 +373,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         {/* Navegacao */}
         <nav className="mt-1 flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
-          {/* ⭐ Spec 058 (§10.1): a tela inicial é a ENTRADA, e o primeiro
-              item; os Quadros vêm logo abaixo. Leva o `?time=` da barra
-              (`navHref`), como os outros itens simples. */}
+          {/* Início: primeiro item, leva o `?time=` da barra (`navHref`). */}
           <a
             href={navHref("/inicio", publicado)}
             title={!open ? "Início" : undefined}
@@ -573,29 +431,17 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
           {/* Demais itens */}
           {nav.map((n) => {
-            // ⚠️ Spec 056: `/bases/<id>` acende "Bases" -- a igualdade exata
-            // apagava o item ao abrir uma base. O `/` no fim impede que
-            // `/basesX` acenda `/bases`.
+            // `/bases/<id>` acende "Bases"; o `/` impede `/basesX` de acender.
             const active =
               pathname === n.href || pathname.startsWith(`${n.href}/`);
             const Icon = n.icon;
             return (
               <a
                 key={n.href}
-                // ⚠⚠ O TIME VAI JUNTO (14/09, reportado na tela: com o
-                // Comercial ativo, "Projetos" abria o Marketing). O caminho puro
-                // apagava o `?time=`, a tela caía na reserva e a URL era
-                // reescrita com ela. `key` e o ativo seguem pelo caminho puro:
-                // o `pathname` não carrega a query.
+                // Leva o time junto; `key` e o ativo usam o caminho puro.
                 href={navHref(n.href, publicado)}
                 title={!open ? n.label : undefined}
-                // ⚠️ SPEC 039 (F3): COLAPSADO O LINK SO TEM ICONE, e o `title`
-                // sozinho nao e nome acessivel confiavel -- ele depende de o
-                // leitor de tela usar a reserva. O `web/AGENTS.md` exige
-                // `aria-label` em controle so-de-icone, e aqui sao SETE de
-                // uma vez. Expandido fica `undefined`: o texto ao lado ja
-                // nomeia, e um label duplicado faria o leitor anunciar duas
-                // vezes.
+                // Colapsado o link só tem ícone: `aria-label` (expandido o texto já nomeia).
                 aria-label={!open ? n.label : undefined}
                 className={itemCls(active)}
               >
@@ -606,37 +452,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
 
-        {/* Rodape: perfil + sair. `shrink-0` de proposito -- quem cede
-            espaco quando falta altura e a lista de navegacao (que rola),
-            nunca o rodape (que nao tem como ser alcancado de outro jeito). */}
+        {/* Rodapé: `shrink-0` -- quem cede altura é a navegação, que rola. */}
         <div className="flex shrink-0 flex-col gap-1 border-t border-border pt-2">
-          {/* ---- ONDE VOCE ESTA ----------------------------------------
-              ⚠️⚠️ ESTE E O "TIME PRINCIPAL" DA SPEC 039 (F3), com a outra
-              metade finalmente feita. A regra combinada com a Camila em 19/08
-              e repetida em 09/09:
-
-                  um time raiz, sem poder na organizacao  -> nome, sem chevron
-                  dois ou mais, ou administra a org       -> seletor
-
-              A primeira metade ja existia aqui como texto simples; a Spec 046
-              (varias areas) criou o caso que exige a segunda.
-
-              ⚠️ E ELE FICA AQUI, acima do nome da pessoa, e nao no topo da
-              barra. Eu ja o pus la em cima uma vez e a Camila corrigiu: o
-              rodape e o bloco do "quem sou eu e onde estou"; o topo e a
-              identidade do produto.
-
-              ⚠️ SO TIMES RAIZ entram na lista -- subtime e navegacao DENTRO
-              da area, e o lugar dela e a tela do time. A regra inteira mora em
-              `lib/contextSwitcher.ts`, testada. */}
+          {/* Onde você está: rótulo ou seletor de time raiz (`lib/contextSwitcher.ts`). */}
           <ContextSwitcher
             teams={teams}
             me={user}
             pathname={pathname}
-            // ⚠️ `?? ""` aqui e não no estado: para o SELETOR, "query não lida"
-            // e "query vazia" dão o mesmo link. Quem precisa distinguir os dois
-            // é a reescrita da URL (`teamUrlToWrite`), e é por isso que o
-            // estado guarda `null`.
+            // `?? ""`: para o seletor, "não lida" e "vazia" dão o mesmo link.
             search={search ?? ""}
             canManageOrg={podeVerOrganizacao}
             expanded={open}
@@ -654,10 +477,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={trocarTema}
-            // Cicla claro -> escuro -> sistema. Um botao so (em vez de tres
-            // opcoes lado a lado) porque a barra retrai pra 16px de largura:
-            // um controle segmentado nao caberia e viraria um segundo layout
-            // pra manter. O rotulo diz o estado atual, entao nao vira adivinha.
+            // Cicla claro -> escuro -> sistema: um botão só cabe na barra retraída.
             title={ROTULO_TEMA[tema]}
             aria-label={ROTULO_TEMA[tema]}
             className={itemCls(false)}
@@ -709,31 +529,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         )}
-        {/* ⚠️ O TIME ATIVO DESCE PARA AS TELAS AQUI (fatia C). A barra já
-            resolveu o time -- ela tem a query, a árvore e quem está olhando --,
-            e as cinco telas recortadas perguntam com `useActiveTeam()`. O
-            motivo de ser contexto e não cada tela resolvendo o seu está no
-            topo de `lib/useActiveTeam.tsx`. */}
+        {/* O time ativo desce para as telas por contexto (`useActiveTeam()`). */}
         <main className={`min-w-0 flex-1 px-4 pb-4 sm:px-6 sm:pb-6 print:p-0 ${faixa === "celular" ? "pt-4" : "pt-16"}`}>
           <ActiveTeamProvider
             value={{
-              // ⚠⚠ `publishedActiveTeam`, e NÃO `contexto` cru. Até 14/09 era o
-              // cru: com a árvore ainda a caminho ele diz `kind: "none"`, e com
-              // a query ainda não lida ele diz o time de RESERVA -- e as telas
-              // buscavam com essas respostas provisórias. Em Minhas tarefas o
-              // pedido do Comercial chegava e era atropelado pelos provisórios.
+              // Publicado, não `contexto` cru: este diz respostas provisórias antes da carga.
               active: publicado,
               search,
               teamName:
                 teams.find((t) => t.id === timeAtivo)?.name ?? null,
-              // ⚠️ OS PREFERIDOS, e não `teams`: a lista completa inclui
-              // subtime, e o seletor de Minhas tarefas é de time RAIZ. A ordem
-              // também importa -- `preferredTeams` põe onde a pessoa trabalha
-              // primeiro, e é dela que sai o padrão do seletor do quadro.
+              // Preferidos, não `teams`: só raízes, onde a pessoa trabalha primeiro.
               teams: preferidos,
             }}
           >
-            {/* O Perfil le e troca o tema por aqui (fatia 4). */}
+            {/* O Perfil lê e troca o tema por aqui. */}
             <TemaProvider value={{ tema, mudarTema }}>{children}</TemaProvider>
           </ActiveTeamProvider>
         </main>

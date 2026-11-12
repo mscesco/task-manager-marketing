@@ -1,34 +1,19 @@
-"""Spec 048 -- `under_team_id` nas duas rotas de leitura de tarefa.
+"""`under_team_id` nas rotas de leitura de tarefa: recorta pela arvore e pelo
+time efetivo (o do projeto, quando houver).
 
-⚠️⚠️ A ARMADILHA DESTA FATIA E QUE O PARAMETRO JA EXISTIA. `GET /tasks` aceita
-`team_id` desde a Entrega 3, e usa-lo para recortar por raiz PARECERIA pronto.
-Ele casa `Task.team_id == team_id` -- igualdade crua no time da PROPRIA tarefa
--- e erraria de duas formas ao mesmo tempo:
-
-  1. esconderia toda tarefa INTERNA de subtime (o time dela e o subtime);
-  2. ignoraria o time do PROJETO, que e quem decide o alcance de uma tarefa de
-     projeto.
-
-Os dois testes `test_o_team_id_ANTIGO_...` existem para registrar isso com
-numeros, e nao com argumento: eles chamam o parametro velho e mostram o que ele
-devolve. Se alguem "simplificar" o recorte para usa-lo, eles nao caem -- eles
-AFIRMAM o comportamento antigo, e os testes do `under_team_id` e que caem.
-
-O MUNDO:
+O `team_id` antigo de `GET /tasks` e igualdade crua no time da tarefa: esconde
+a tarefa interna de subtime e ignora o time do projeto. Os testes
+`test_o_team_id_ANTIGO_...` registram essa diferenca.
 
     Marketing (raiz)
       SEO (subtime)
     Comercial (raiz)
 
     tarefas:
-      t_raiz     avulsa, team=Marketing
-      t_interna  avulsa, team=SEO            <- a que a igualdade esconderia
-      t_projeto  em projeto do Marketing, team=SEO
-                                             <- time da TAREFA e SEO, do
-                                                PROJETO e Marketing
+      t_raiz      avulsa, team=Marketing
+      t_interna   avulsa, team=SEO
+      t_projeto   em projeto do Marketing, team=SEO
       t_comercial avulsa, team=Comercial
-
-SABOTAGENS (executadas, resultado colado em cada teste).
 """
 
 from __future__ import annotations
@@ -75,8 +60,7 @@ async def _mundo(db):
     t_interna = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=seo, title="Interna do SEO"
     )
-    # ⚠️ O caso que separa as duas escritas: time da TAREFA = SEO, do PROJETO =
-    # Marketing. Quem decide o alcance e o do projeto.
+    # Time da tarefa = SEO, do projeto = Marketing: decide o do projeto.
     t_projeto = await f.make_task(
         db,
         workspace_id=ws,
@@ -127,15 +111,11 @@ async def _titulos(db, *, under=None, team_id=None):
     return {t.title for t in page.items}
 
 
-# ------------------------------------------- 1. o recorte por arvore
+# ------------------------------------------- o recorte por arvore
 
 
 async def test_recorte_pela_raiz_traz_raiz_subtime_e_projeto(db) -> None:
-    """As tres do Marketing, e nenhuma do Comercial.
-
-    SABOTAGEM: apagar o `if under_team_id is not None` do `list_page_with_filters`
-    -> este teste cai ("Do Comercial" volta).
-    """
+    """As tres do Marketing, e nenhuma do Comercial."""
     m = await _mundo(db)
     with _como_admin(m):
         titulos = await _titulos(db, under=m["marketing"])
@@ -144,11 +124,8 @@ async def test_recorte_pela_raiz_traz_raiz_subtime_e_projeto(db) -> None:
 
 
 async def test_recorte_pelo_subtime_nao_sobe_para_a_raiz(db) -> None:
-    """Descendentes, e nao ancestrais.
-
-    ⚠️ "Do projeto" NAO entra: o time EFETIVO dela e o do PROJETO (Marketing),
-    e nao o da tarefa (SEO). E a mesma regra que decide quem a enxerga -- quem
-    ve o projeto ve todas as tarefas dele.
+    """Descendentes, e nao ancestrais. "Do projeto" nao entra: o time efetivo dela
+    e o do projeto (Marketing).
     """
     m = await _mundo(db)
     with _como_admin(m):
@@ -158,7 +135,7 @@ async def test_recorte_pelo_subtime_nao_sobe_para_a_raiz(db) -> None:
 
 
 async def test_sem_recorte_vem_tudo(db) -> None:
-    """`None` = sem recorte, e e resposta legitima (o "tudo" da §4.3)."""
+    """`None` = sem recorte."""
     m = await _mundo(db)
     with _como_admin(m):
         titulos = await _titulos(db)
@@ -171,20 +148,12 @@ async def test_sem_recorte_vem_tudo(db) -> None:
     }
 
 
-# ------------------------------- 2. o parametro velho, e por que nao serve
+# ------------------------------- o parametro antigo `team_id`
 
 
 async def test_o_team_id_ANTIGO_esconde_a_tarefa_interna(db) -> None:
-    """⚠️⚠️ O REGISTRO DA ARMADILHA, com numeros.
-
-    `team_id=<Marketing>` casa `Task.team_id == Marketing` -- e devolve SO a
-    avulsa da raiz. A interna do SEO e a do projeto ficam de fora, embora as
-    duas sejam trabalho do Marketing.
-
-    ⚠️ Este teste AFIRMA o comportamento antigo, de proposito. Ele nao cai se
-    alguem trocar o recorte pelo parametro velho -- quem cai sao os tres de
-    cima. Ele esta aqui para que a diferenca entre os dois parametros seja
-    legivel sem ter de ler SQL.
+    """`team_id=<Marketing>` devolve so a avulsa da raiz. Afirma o comportamento
+    antigo de proposito, para a diferenca ficar legivel.
     """
     m = await _mundo(db)
     with _como_admin(m):
@@ -194,12 +163,7 @@ async def test_o_team_id_ANTIGO_esconde_a_tarefa_interna(db) -> None:
 
 
 async def test_o_team_id_ANTIGO_pega_a_do_projeto_pelo_time_errado(db) -> None:
-    """E com o SUBTIME ele devolve a do projeto -- pelo time da TAREFA.
-
-    `team_id=<SEO>` traz "Do projeto", que pertence a um projeto do Marketing.
-    Um recorte de tela feito com este parametro poria no quadro do SEO uma
-    tarefa que o Marketing considera dele.
-    """
+    """`team_id=<SEO>` traz a do projeto do Marketing, pelo time da tarefa."""
     m = await _mundo(db)
     with _como_admin(m):
         titulos = await _titulos(db, team_id=m["seo"])
@@ -207,7 +171,7 @@ async def test_o_team_id_ANTIGO_pega_a_do_projeto_pelo_time_errado(db) -> None:
     assert titulos == {"Interna do SEO", "Do projeto"}
 
 
-# ------------------------------------------- 3. /me/assignments
+# ------------------------------------------- /me/assignments
 
 
 async def _minhas(db, *, under):
@@ -220,15 +184,8 @@ async def _minhas(db, *, under):
 
 
 async def test_minhas_tarefas_recortam_pelo_time(db) -> None:
-    """A lista de "minhas tarefas" pelo time ativo.
-
-    ⚠️ O `under_team_id` do `list_my_relations` NAO TEM DEFAULT: esta lista e a
-    tela inteira de Minhas tarefas, e a diferenca entre "de todos os times" e
-    "de um time" nao pode sair de um valor omitido. Sem default, o `pytest`
-    apontou os dois chamadores existentes.
-
-    SABOTAGEM: apagar o `if under_team_id is not None` do `list_my_relations`
-    -> este teste cai ("Do Comercial" volta).
+    """Minhas tarefas recortadas pelo time ativo. `under_team_id` de
+    `list_my_relations` nao tem default: "todos" tem de ser explicito.
     """
     m = await _mundo(db)
     with _como_admin(m):
@@ -239,11 +196,7 @@ async def test_minhas_tarefas_recortam_pelo_time(db) -> None:
 
 
 async def test_minhas_tarefas_sem_recorte_atravessam_times(db) -> None:
-    """⚠️ E O "TUDO" E MODO DE USO, nao esquecimento.
-
-    Decisao dela, na §4.3: esta e a UNICA tela que atravessa times de
-    proposito -- *"o time muda com a area; o que e meu, nao"*.
-    """
+    """Sem recorte, Minhas tarefas atravessa os times (a unica tela que faz isso)."""
     m = await _mundo(db)
     with _como_admin(m):
         titulos = await _minhas(db, under=None)
@@ -252,31 +205,15 @@ async def test_minhas_tarefas_sem_recorte_atravessam_times(db) -> None:
     assert "Da raiz" in titulos
 
 
-# ------------------------------------------- 4. a lente, que virou codigo compartilhado
+# ------------------------------------------- a lente
 
 
 async def test_a_LENTE_olha_o_time_do_PROJETO_e_nao_o_da_tarefa(db) -> None:
-    """⚠️⚠️ ESTE TESTE NASCEU DE UMA SABOTAGEM, e o achado nao era meu codigo.
+    """A lente decide pelo time do projeto, nao pelo da tarefa.
 
-    A Spec 048 extraiu `_time_efetivo_em` para que a LENTE ("posso ver?") e o
-    RECORTE ("e do time que estou vendo?") nao pudessem divergir. Sabotei a
-    funcao trocando-a por `Task.team_id.in_(times)` -- a forma ingenua -- e
-    esperava ver os testes de visibilidade caírem junto com os meus.
-
-    Caiu SO UM dos meus. `test_visibility_db.py` passou inteiro.
-
-    Ou seja: o ramo da lente que olha `Project.team_id` -- a regra "quem ve o
-    projeto ve todas as tarefas dele", de onde vem metade do alcance deste
-    produto -- nao tinha teste que o distinguisse do ramo da tarefa. Agora que
-    o predicado serve DOIS recursos, isso deixou de ser aceitavel.
-
-    O caso: MANAGER do SEO (lente = {SEO}) diante de uma tarefa cujo PROJETO e
-    do Marketing e cujo `task.team_id` e o SEO. A regra certa esconde (o time
-    que decide e o do projeto, e Marketing nao esta na lente dele). A forma
-    ingenua mostraria -- vazando para o subtime uma tarefa do projeto da raiz.
-
-    SABOTAGEM: trocar o corpo de `_time_efetivo_em` por
-    `Task.team_id.in_(times)` -> este teste cai.
+    MANAGER do SEO diante de tarefa de projeto do Marketing com `team_id` = SEO:
+    nao ve. A forma ingenua (`Task.team_id.in_(times)` em `_time_efetivo_em`)
+    mostraria.
     """
     m = await _mundo(db)
     with acting_as(
@@ -288,6 +225,5 @@ async def test_a_LENTE_olha_o_time_do_PROJETO_e_nao_o_da_tarefa(db) -> None:
         titulos = await _titulos(db)
 
     assert "Do projeto" not in titulos
-    # E a interna do SEO continua visivel -- sem esta metade, uma lente que
-    # esconde tudo passaria o teste.
+    # A interna do SEO continua visivel, senao uma lente que esconde tudo passaria.
     assert titulos == {"Interna do SEO"}

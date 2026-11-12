@@ -1,18 +1,6 @@
-"""A solicitação vira TAREFA de verdade (Spec 043, fatia E).
+"""A solicitacao vira tarefa (`criar_tarefa`) ou se vincula a uma existente por id.
 
-⚠️⚠️ ATÉ AQUI O VÍNCULO ERA TEXTO LIVRE. `task_ref` guardava o que o triador
-escrevesse -- "quadro do Design", uma URL, às vezes só "feito". Não dava para
-clicar, não seguia a tarefa quando ela era renomeada, e não sabia dizer se ela
-ainda existia.
-
-⚠️ E O BOTÃO "COPIAR BRIEFING" ERA A PROVA DE QUE FALTAVA ISTO. Ele existe na
-fila desde a Spec 025 porque o fluxo real era: copiar, sair da fila, abrir o
-quadro, criar a tarefa, colar, voltar e marcar "tarefa criada". Seis passos, e
-o último era o que mais se esquecia -- daí o filtro "aprovadas sem tarefa" ter
-valor. `criar_tarefa` colapsa os seis num.
-
-⚠️ `task_ref` FICA, e não é indecisão: as marcações antigas moram nele e não há
-como convertê-las em id. Os dois convivem.
+`task_ref` (texto livre) continua: as marcacoes antigas moram nele.
 """
 
 from __future__ import annotations
@@ -50,12 +38,10 @@ pytestmark = pytest.mark.integration
 
 
 async def _cena(db, *, com_formulario: bool = True):
-    """Workspace com um pedido já APROVADO e um triador ADMIN de organização.
+    """Workspace com um pedido aprovado e um triador ADMIN de organizacao.
 
-    ⚠️ ADMIN e não MANAGER: `TaskService.create` confere se o `team_id` está
-    no alcance de quem cria, e o time da tarefa vem do FORMULÁRIO. Com ADMIN
-    (`visible_team_ids` devolve `None` = sem filtro) o teste mede a regra da
-    fatia E, e não a de escopo de time, que já tem portão próprio.
+    ADMIN para nao esbarrar no escopo de time de `TaskService.create`: o time da
+    tarefa vem do formulario.
     """
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
@@ -66,8 +52,7 @@ async def _cena(db, *, com_formulario: bool = True):
         workspace_id=ws,
         user_id=user,
         team_tree=arvore,
-        # ⚠️ Spec 051, fatia B: com `com_formulario=False` o pedido e ORFAO, e
-        # orfa e so de quem administra a ORGANIZACAO.
+        # Sem formulario o pedido e orfao, e orfao e so de quem administra a organizacao.
         org_role="ADMIN",
     )
 
@@ -107,9 +92,7 @@ async def _cena(db, *, com_formulario: bool = True):
 # Criar a tarefa a partir do pedido
 # ==========================================================
 async def test_criar_tarefa_vincula_e_marca_de_uma_vez(db) -> None:
-    """⚠️ OS TRÊS EFEITOS SÃO UM SÓ GESTO. Criar a tarefa e esquecer de marcar
-    era o passo perdido do fluxo antigo -- é o que o filtro "aprovadas sem
-    tarefa" existe para achar."""
+    """Criar, vincular e marcar acontecem de uma vez."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:
@@ -134,8 +117,7 @@ async def test_o_titulo_usa_o_ROTULO_e_nao_o_slug(db) -> None:
 
 
 async def test_a_descricao_leva_o_BRIEFING_inteiro(db) -> None:
-    """⚠️ AS RESPOSTAS VÃO JUNTO, e é o ponto: quem for fazer a tarefa precisa
-    do que foi pedido, sem voltar à fila."""
+    """A descricao leva as respostas do pedido."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:
@@ -148,12 +130,7 @@ async def test_a_descricao_leva_o_BRIEFING_inteiro(db) -> None:
 
 
 async def test_o_time_vem_do_FORMULARIO_e_nao_de_quem_clica(db) -> None:
-    """⚠️ SENÃO A TAREFA NASCE LONGE DE QUEM VAI FAZÊ-LA.
-
-    O pedido entrou por uma porta que pertence a um time. Usar o time de quem
-    tria faria a tarefa cair no lugar errado toda vez que um ADMIN triasse a
-    fila de outra equipe.
-    """
+    """O time da tarefa e o do formulario, nao o de quem tria."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:
@@ -164,8 +141,7 @@ async def test_o_time_vem_do_FORMULARIO_e_nao_de_quem_clica(db) -> None:
 
 
 async def test_pedido_PENDENTE_nao_vira_tarefa(db) -> None:
-    """Criar tarefa de pedido pendente pularia a triagem por um caminho
-    lateral -- a mesma razão de `andar` recusar PENDING."""
+    """Pedido pendente nao vira tarefa (pularia a triagem)."""
     ws, slug = await _make_ws_with_slug(db)
     raiz = await f.make_team(db, workspace_id=ws)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
@@ -187,8 +163,7 @@ async def test_pedido_PENDENTE_nao_vira_tarefa(db) -> None:
 
 
 async def test_NAO_cria_a_SEGUNDA_tarefa(db) -> None:
-    """⚠️ DOIS CLIQUES, OU DUAS ABAS, DARIAM DUAS TAREFAS IDÊNTICAS no quadro
-    -- e a segunda ficaria órfã, porque o vínculo é um só."""
+    """Nao cria segunda tarefa: o vinculo e um so."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:
@@ -204,10 +179,7 @@ async def test_NAO_cria_a_SEGUNDA_tarefa(db) -> None:
 
 
 async def test_pedido_ORFAO_ainda_vira_tarefa(db) -> None:
-    """⚠️ SEM FORMULÁRIO NÃO HÁ TIME PARA HERDAR, e `None` no
-    `CreateTaskCommand` significa "o subtime de quem cria" -- o comportamento
-    de sempre. Recusar seria deixar os pedidos anteriores a esta spec sem a
-    funcionalidade nova, sem motivo."""
+    """Sem formulario nao ha time a herdar: `None` no comando usa o time de quem cria."""
     ws, pedido, raiz, ctx = await _cena(db, com_formulario=False)
     assert pedido.form_id is None
     with acting_as(**ctx):
@@ -215,13 +187,14 @@ async def test_pedido_ORFAO_ainda_vira_tarefa(db) -> None:
             _, tarefa = await SolicitationService(db).criar_tarefa(
                 uow, CriarTarefaCommand(solicitation_id=pedido.id)
             )
-    # ⚠️ E O TÍTULO CAI NO SLUG CRU, que é a mesma reserva da fila.
+    # O titulo cai no slug cru, como na fila.
     assert tarefa.title.startswith("[arte]")
 
 
 async def test_formulario_APAGADO_ainda_da_o_time_com_DUAS_raizes(db) -> None:
-    """Auditoria de 21/10 (item 6). Sem o time do formulário, a tarefa caía
-    em "a única área" -- 422 com duas raízes, depois de já ter aprovado."""
+    """Formulario apagado ainda da o time: sem ele, com dois times raiz, a tarefa
+    seria recusada (422) depois de o pedido ja estar aprovado.
+    """
     ws, pedido, raiz, ctx = await _cena(db)
     await f.make_team(db, workspace_id=ws, slug="comercial")
     form = await db.get(SolicitationForm, pedido.form_id)
@@ -257,8 +230,7 @@ async def test_marcar_tarefa_aceita_o_ID_de_verdade(db) -> None:
 
 
 async def test_tarefa_de_OUTRO_workspace_e_recusada_com_404(db) -> None:
-    """⚠️ A FK COMPOSTA JÁ IMPEDIRIA, mas o erro viria do banco como violação
-    de integridade -- feio e sem explicação. Aqui vira 404 com texto."""
+    """Tarefa de outro workspace vira 404 com texto, antes da FK composta."""
     ws, pedido, raiz, ctx = await _cena(db)
     outro_ws = await f.make_workspace(db)
     outro_time = await f.make_team(db, workspace_id=outro_ws)
@@ -300,8 +272,7 @@ async def test_tarefa_inexistente_e_recusada(db) -> None:
 
 
 async def test_DESMARCAR_solta_o_vinculo(db) -> None:
-    """⚠️ SENÃO A TELA DIZ DUAS COISAS OPOSTAS: "esta solicitação não tem
-    tarefa" ao lado de um link para a tarefa dela."""
+    """Desmarcar solta o vinculo com a tarefa."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         svc = SolicitationService(db)
@@ -318,8 +289,7 @@ async def test_DESMARCAR_solta_o_vinculo(db) -> None:
 
 
 async def test_o_task_ref_de_TEXTO_continua_funcionando(db) -> None:
-    """⚠️ LEGADO VIVO. As marcações antigas moram nele e não há como
-    convertê-las -- apagar a coluna perderia o único rastro delas."""
+    """`task_ref` de texto continua funcionando."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:
@@ -339,8 +309,7 @@ async def test_o_task_ref_de_TEXTO_continua_funcionando(db) -> None:
 # A fila
 # ==========================================================
 async def test_a_fila_resolve_o_TITULO_da_tarefa_vinculada(db) -> None:
-    """⚠️ RESOLVIDO NA HORA, e não gravado: renomear a tarefa no quadro arruma
-    o link na fila. Mesma regra do rótulo da categoria."""
+    """O titulo da tarefa vinculada e resolvido na hora, nao gravado."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         svc = SolicitationService(db)
@@ -356,8 +325,7 @@ async def test_a_fila_resolve_o_TITULO_da_tarefa_vinculada(db) -> None:
 
 
 async def test_tarefa_APAGADA_some_dos_titulos(db) -> None:
-    """⚠️ A TELA CAI EM "tarefa vinculada" SEM NOME, e o pedido volta a
-    aparecer como algo a resolver -- que é a verdade."""
+    """Tarefa apagada some dos titulos."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         svc = SolicitationService(db)
@@ -389,16 +357,12 @@ class _Falso:
     batch_total = 3
     answers = [{"label": "O que precisa?", "value": "um banner"}]  # noqa: RUF012 -- dublê
 
-    # ⚠️ 02:30 UTC de 27/08 = 23:30 de 26/08 em Brasilia. O briefing tem de
-    # dizer 26/08 (auditoria de 21/10: dizia 27/08). Um dublê de `strftime`
-    # aqui esconderia exatamente isso.
+    # 02:30 UTC de 27/08 = 23:30 de 26/08 em Brasilia: o briefing diz 26/08.
     created_at = datetime(2026, 8, 27, 2, 30, tzinfo=UTC)
 
 
 def test_titulo_e_cortado_em_255() -> None:
-    """⚠️ `task.title` É `String(255)` e o `summary` do pedido vai até 500.
-    Sem o corte, a criação explodiria no BANCO -- depois de o pedido já ter
-    sido aprovado, e com a tarefa meio criada."""
+    """`task.title` e `String(255)` e o `summary` vai ate 500."""
 
     class Longo(_Falso):
         summary = "x" * 500
@@ -407,18 +371,7 @@ def test_titulo_e_cortado_em_255() -> None:
 
 
 def test_briefing_NAO_escreve_None_quando_o_formulario_nao_pergunta() -> None:
-    """⚠️⚠️ ACHADO PELA REVISÃO DE 31/08, e é o pior dos quatro que ela trouxe.
-
-    `f"{None}"` produz o literal **"None"**, e este briefing vira a DESCRIÇÃO
-    de uma tarefa no quadro. Quem pegasse a tarefa leria "Solicitante: Maria ·
-    maria@x · None" e "Área: None · Polo: None" enquanto tentava fazer o
-    trabalho.
-
-    ⚠️ E PASSOU POR DOIS MOTIVOS SOMADOS: o `Protocol` declarava os três campos
-    como `str` (o mypy calou), e **todas** as fixtures preenchiam os cinco
-    campos -- o caso `None` nunca era exercitado. É o mesmo padrão que a fatia
-    G repetiu em quatro lugares: escritor migrado, leitor esquecido.
-    """
+    """Campo que o formulario nao pergunta (`None`) nao vira o texto "None"."""
 
     class SemLugar(_Falso):
         requester_phone = None
@@ -427,12 +380,8 @@ def test_briefing_NAO_escreve_None_quando_o_formulario_nao_pergunta() -> None:
 
     texto = briefing(SemLugar(), "Criar uma arte")
     assert "None" not in texto
-    # ⚠️ E A LINHA INTEIRA SOME, em vez de virar "Área:  · Polo: " vazio --
-    # campo em branco parece dado perdido.
-    #
-    # ⚠️ A ASSERÇÃO É SOBRE O RÓTULO (`"Polo:"`, com dois-pontos) e não sobre a
-    # palavra: "Polo" aparece em "Maria do Polo" e dentro de "Protocolo". A
-    # primeira versão deste teste reprovou por isso.
+    # A linha inteira some em vez de ficar vazia. A assercao e sobre o rotulo
+    # ("Polo:"), porque "Polo" aparece em "Maria do Polo" e em "Protocolo".
     assert "Área:" not in texto
     assert "Polo:" not in texto
     # O que o formulário PERGUNTOU continua lá.
@@ -468,9 +417,7 @@ def test_envio_de_UM_item_nao_mostra_a_posicao() -> None:
     assert "(1/1)" not in briefing(Sozinho())
 
 async def test_so_marcar_nao_apaga_o_vinculo_que_ja_existe(db) -> None:
-    """Auditoria de 16/10: "Já criei -- só marcar" sem `task_id` gravava `None`
-    por cima. Com a tela velha numa aba e "Criar tarefa" clicado na outra, a
-    tarefa criada perdia o vínculo e virava só texto na fila."""
+    """"So marcar" sem `task_id` nao apaga o vinculo por id que ja existe."""
     ws, pedido, raiz, ctx = await _cena(db)
     with acting_as(**ctx):
         async with UnitOfWork(db) as uow:

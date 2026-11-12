@@ -1,21 +1,4 @@
-"""Casos de uso de gestao do workspace e de equipes.
-
-Toda regra de negocio fica aqui -- os routers apenas
-delegam. Os services recebem a sessao e instanciam seus
-repositories; o commit e feito pelo Unit of Work acionado
-no router/DI.
-
-Casos de uso:
-    WorkspaceService.get_current   -- ver o workspace atual
-    WorkspaceService.rename        -- renomear o workspace
-    TeamService.create             -- criar uma equipe (raiz ou subtime)
-    TeamService.list_teams         -- listar equipes
-    TeamService.move               -- mover equipe (validando ciclos)
-    TeamService.update             -- renomear equipe (Spec 029)
-    TeamService.delete             -- remover equipe VAZIA (Spec 029)
-    TeamService.previa_remocao     -- o que sai junto (Spec 029)
-    TeamService.esvaziar_e_remover -- move pra raiz, arquiva e apaga (Spec 029)
-"""
+"""Casos de uso do workspace e dos times. O commit e da unidade de trabalho da rota."""
 
 from __future__ import annotations
 
@@ -65,28 +48,17 @@ class PreviaRemocao:
     projetos: int
     membros: int
     filhos: int
-    # ⚠️⚠️ PARA ONDE O CONTEUDO VAI -- nasce na Spec 046, fatia 3 (§4.2).
-    #
-    # Ate aqui a previa dizia QUANTOS saem e nao dizia PARA ONDE, porque com
-    # uma raiz so o destino era obvio ate para quem nunca tinha pensado nele.
-    # Com N areas, "3 tarefas serao movidas" deixa a pergunta mais importante
-    # sem resposta -- e e a pergunta que faz alguem cancelar a operacao.
-    #
-    # `None` quando o time E a area (nao ha destino: a operacao ja e recusada)
-    # ou quando o destino nao pode ser resolvido.
+    # Para onde o conteudo vai. `None` quando o time ja e raiz (a remocao e
+    # recusada) ou o destino nao pode ser resolvido.
     destino_nome: str | None = None
     destino_team_id: uuid.UUID | None = None
-    #: Auditoria de 16/10: tambem sobem para a area (incluindo os apagados).
+    #: Tambem sobem para a raiz, incluindo os apagados.
     quadros: int = 0
     formularios: int = 0
 
 
 def _descreve(c: TeamContagens) -> str:
-    """Lista so o que EXISTE, em portugues, para a mensagem de bloqueio.
-
-    "3 tarefas, 2 membros" e acionavel; "3 tarefas, 0 projetos, 2 membros,
-    0 subtimes" faz a pessoa procurar o que importa no meio de zeros.
-    """
+    """Lista so o que existe (sem zeros), para a mensagem de bloqueio."""
     partes = [
         (c.tarefas, "tarefa", "tarefas"),
         (c.projetos, "projeto", "projetos"),
@@ -111,12 +83,7 @@ class WorkspaceService:
         return await self._repo.get_current()
 
     async def rename(self, *, new_name: str) -> Workspace:
-        """Renomeia o workspace corrente.
-
-        So o nome e editavel: o slug e usado em URLs/login e
-        muda-lo quebraria referencias -- por isso fica imutavel
-        apos o provisionamento.
-        """
+        """Renomeia o workspace. O slug e imutavel (usado em URL e login)."""
         name = new_name.strip()
         if not name:
             raise ValidationError(
@@ -131,59 +98,10 @@ class WorkspaceService:
 
 
 class TeamService:
-    """Casos de uso de equipes.
+    """Casos de uso de times.
 
-    DECISOES ARQUITETURAIS (hierarquia + permissoes)
-    -----------------------------------------------------
-    1. HIERARQUIA E APENAS ORGANIZACIONAL
-       parent_team_id serve para organizacao, navegacao e
-       agrupamento. NAO implica heranca de permissoes nem
-       cascata de acesso.
-
-    2. PERMISSOES SAO EXPLICITAS, via user_team
-       Para ser ADMIN de um subtime, e preciso um registro
-       PROPRIO em user_team -- mesmo se o usuario ja for
-       ADMIN do team pai.
-
-    3. SEPARACAO DE RESPONSABILIDADES
-         - team / parent_team_id : estrutura
-         - user_team             : autorizacao (RBAC)
-       Essa separacao e intencional e deve ser preservada.
-
-    4. EVOLUCAO FUTURA CONTINUA POSSIVEL
-       Se um dia for preciso heranca de permissoes, sera uma
-       camada NOVA sobre esta estrutura -- nao precisa mudar
-       este service nem o schema.
-
-    5. PROFUNDIDADE ILIMITADA
-       Sem CHECK depth <= N no banco. A UI pode futuramente
-       impor recomendacoes visuais. O service guarda apenas
-       um max_depth=50 defensivo no collect_ancestor_ids
-       (rede contra arvore corrompida, nao regra de negocio).
-
-    6. ESTRUTURA: SO parent_team_id
-       Optamos por NAO adicionar `path` (LTREE) nem `depth`
-       em team -- diferente de task. Motivo: equipes sao
-       poucas (poucas dezenas no maximo, profundidade <10)
-       e recursao Python e suficiente. LTREE seria
-       overengineering para esse volume. Schema v5 maduro,
-       nao se mexe.
-
-    7. BANCO VALIDA O QUE PODE
-       FK composta (parent_team_id, workspace_id) ja garante
-       isolamento por workspace. CHECK team_no_self_parent
-       impede self-reference direta. NAO duplicamos essas
-       validacoes aqui.
-
-    8. SERVICE VALIDA APENAS CICLOS INDIRETOS
-       A->B->C->A. Implementado por recursao subindo a arvore
-       (collect_ancestor_ids no repository). Sem LTREE.
-
-    9. SEM HERANCA DE PERMISSOES
-       Reforco: o BaseRepository nao consulta a arvore para
-       decidir acesso. require_permission le apenas o
-       TenantContext, que vem de user_team direto.
-    -----------------------------------------------------
+    A arvore e so `parent_team_id` (sem LTREE). O banco garante workspace e
+    auto-referencia; aqui so se valida ciclo indireto.
     """
 
     def __init__(self, session: AsyncSession) -> None:
@@ -197,17 +115,9 @@ class TeamService:
         slug: str,
         parent_team_id: uuid.UUID | None = None,
     ) -> Team:
-        """Cria uma equipe no workspace corrente.
+        """Cria um time; com `parent_team_id`, nasce subtime daquele pai.
 
-        Se `parent_team_id` for informado, a equipe nasce como
-        subtime daquele pai. Ao criar (sem id ainda), nao ha
-        risco de ciclo -- so precisamos validar que o pai
-        existe no workspace.
-
-        Erros:
-            ValidationError -- nome vazio ou slug mal formado.
-            ConflictError   -- slug ja usado no workspace.
-            EntityNotFoundError -- parent_team_id inexistente.
+        Time raiz nasce com quadro geral, na mesma transacao.
         """
         name = name.strip()
         slug = slug.strip()
@@ -229,108 +139,40 @@ class TeamService:
                 details={"field": "slug", "value": slug},
             )
 
-        # ⚠️⚠️ AQUI MORAVA A TRAVA DA RAIZ UNICA (Spec 024/D4):
-        #
-        #     if parent_team_id is None and await self._repo.root_exists():
-        #         raise ConflictError("Este workspace ja possui um time
-        #         principal. Novos times precisam ser criados como subtime...")
-        #
-        # Ela saiu na Spec 046, fatia 2, junto com o indice
-        # `team_unica_raiz_por_workspace` (migration `0023`). AS DUAS SAEM
-        # JUNTAS, e essa e a parte facil de errar: derrubar so o indice
-        # deixaria esta mensagem barrando com o banco ja liberado, e derrubar
-        # so esta checagem faria o `IntegrityError` cru virar HTTP 500.
-        #
-        # No lugar dela entra uma pergunta diferente -- nao "cabe mais uma?",
-        # e sim "quem esta pedindo?".
         if parent_team_id is None:
-            # Criar AREA e do papel de ORGANIZACAO (§4.1). Um MANAGER continua
-            # criando subtime na propria arvore, e so isso.
-            #
-            # ⚠️ NAO DA PARA FAZER ISTO NA ROTA. `POST /teams` cria area E
-            # subtime; o que separa os dois e o `parent_team_id` do corpo, que
-            # o `require_permission` nao enxerga. Um segundo endpoint seria a
-            # alternativa, e ela troca uma checagem por uma rota duplicada com
-            # as mesmas cinco validacoes.
+            # Criar time raiz e do papel de organizacao. Fica aqui e nao na
+            # rota: `POST /teams` cria raiz e subtime, e so o corpo distingue.
             tenant = require_tenant()
             if not tenant.has_permission("team.create"):
                 raise AuthorizationError(
-                    # ⚠️ VOCABULARIO DE 10/09: organizacao, time, subtime -- e
-                    # nada de "area". A frase antiga dizia "area" e "time" na
-                    # MESMA sentenca, para dois niveis diferentes, e era ela
-                    # que a pessoa lia ao levar o 403.
                     "Criar um time exige papel de organizacao. "
                     "Para criar um subtime dentro do seu, escolha o time pai.",
                     details={"required": "team.create"},
                 )
 
-        # Se o pai foi informado, ele precisa existir no workspace.
-        # A FK composta no banco ja garantiria, mas falhar aqui
-        # da uma mensagem de dominio clara em vez de IntegrityError.
         if parent_team_id is not None:
             parent = await self._repo.get_by_id(parent_team_id)
             if parent is None:
                 raise EntityNotFoundError("Team", identifier=parent_team_id)
-            # ⚠️⚠️ NESTE TIME, e nao "em algum lugar" (Spec 049, fatia 0b). A
-            # rota cobra `team.manage` sem saber o pai; ate 14/09 ninguem
-            # perguntava depois, e o MANAGER do Marketing criava subtime no
-            # Comercial. Contra a decisao dela de 09/09: *"gerente so mexe na
-            # propria arvore"*.
+            # A rota nao conhece o pai: o escopo se confere aqui.
             if not require_tenant().has_permission_in("subteam.create", parent_team_id):
                 raise AuthorizationError(
                     "Voce administra times, mas nao nesta arvore.",
                     details={"parent_team_id": str(parent_team_id)},
                 )
 
-        # workspace_id e injetado pelo BaseRepository.add a partir
-        # do tenant corrente -- nao precisamos seta-lo aqui.
         team = Team(name=name, slug=slug, parent_team_id=parent_team_id)
         self._repo.add(team)
         await self._repo.session.flush()  # garante o id
 
-        # ⚠️⚠️ TIME RAIZ NAO NASCE SEM QUADRO. Invariante ditada pela Camila em
-        # 10/09, com todas as letras: *"time raiz que nao pode nascer sem
-        # quadro"*.
-        #
-        # ⚠️⚠️ E ELA JA ERA DECISAO, tomada na Spec 046 §4.3 em 02/09 -- *"o
-        # quadro geral deixa de ser um objeto unico do workspace e passa a ser
-        # uma propriedade da area: cada raiz tem o seu, criado junto com ela"*.
-        # A metade que GARANTE UM SO foi implementada (o indice parcial
-        # `board_um_padrao_por_time`); a metade que CRIA ficou de fora, porque
-        # `create_default_board` so era chamado do provisionamento do
-        # workspace. Resultado na tela: o segundo time raiz nascia sem quadro
-        # geral, e a Camila viu o Comercial vazio de um jeito inexplicavel.
-        #
-        # ⚠️ SO RAIZ. Subtime nao tem quadro geral -- ele tem quadro INTERNO,
-        # que e `is_default=False`, criado por gente, com nome escolhido. Criar
-        # um padrao aqui daria a cada subtime um segundo "Quadro geral", e o
-        # indice parcial nem reclamaria (ele e por time).
-        #
-        # ⚠️ MESMA TRANSACAO, e e por isso que nao ha commit aqui nem la: um
-        # time raiz que existisse sem o quadro seria exatamente o estado que
-        # esta linha veio matar. Quem commita e a unidade de trabalho da rota.
-        #
-        # ⚠️ E O QUADRO E EDITAVEL, que foi a outra metade do pedido dela. Isso
-        # ja e verdade e nao precisou de nada: a trava larga que recusava
-        # mexer nas colunas do padrao caiu em 13/08, e hoje sobra so
-        # `_assert_ponte_sobrevive` -- apagar coluna que carrega `legacy_status`
-        # no quadro padrao. Renomear, reordenar e criar coluna estao abertos
-        # para ADMIN e MANAGER da raiz (`board.manage.root`).
+        # Time raiz nao nasce sem quadro geral (mesma transacao). Subtime nao
+        # ganha padrao: o dele e quadro interno, criado por gente.
         if parent_team_id is None:
             await BoardService(self._repo.session).create_default_board(
                 workspace_id=team.workspace_id,
                 team_id=team.id,
-                # ⚠️⚠️ AS QUATRO, E NAO AS OITO -- correcao dela em 10/09: *"o
-                # quadro nao e pra nascer igual o do marketing, e pra nascer
-                # como um quadro comum, com backlog, em andamento, concluido e
-                # cancelado"*. As oito do Marketing sao historicas (a copia da
-                # migration `0008`); um time novo nao herda o passado dele.
-                #
-                # ⚠️ E ELAS RECEBEM TAREFA porque nascem com PONTE e como ALVO
-                # da semantica. Os quatro status sem coluna propria (`PLANNED`,
-                # `IN_REVIEW`, `EXTERNAL_APPROVAL`, `BLOCKED`) caem no alvo da
-                # semantica deles -- o que exige o segundo degrau em
-                # `default_board_and_column_for_status`, que entrou junto.
+                # Quatro colunas. Status sem coluna propria cai no alvo da
+                # semantica (`default_board_and_column_for_status`).
                 colunas=COLUNAS_BASE,
             )
 
@@ -342,7 +184,7 @@ class TeamService:
         return await self._repo.list_all()
 
     async def contagens_de_todos(self) -> dict[uuid.UUID, TeamContagens]:
-        """Dependencias de cada time do workspace, em lote (Spec 029)."""
+        """Dependencias de cada time do workspace, em lote."""
         return await self._repo.contagens_em_lote()
 
     async def update(
@@ -352,27 +194,12 @@ class TeamService:
         name: str,
         description: str | None = None,
     ) -> Team:
-        """Renomeia uma equipe e ajusta a descricao (Spec 029/D6).
-
-        O SLUG NAO E EDITAVEL, de proposito -- mesma razao do
-        `WorkspaceService.rename` acima: ele e unico no workspace e serve de
-        identificador estavel. Trocar o rotulo ("Copy" -> "Copywriting") e
-        barato; trocar o identificador so cria chance de colisao sem ganho.
-
-        A RAIZ nao e editavel pela tela (D5): ela e a ancora do tenant.
-
-        Erros:
-            EntityNotFoundError -- equipe inexistente no workspace.
-            BusinessRuleError   -- tentou editar a raiz.
-            ValidationError     -- nome vazio.
-        """
+        """Renomeia um subtime e ajusta a descricao. Slug e time raiz nao se editam aqui."""
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
 
-        # ⚠️ Mesma pergunta do `create`, e antes da regra da raiz: quem nao
-        # manda neste time leva 403, e nao a explicacao de uma regra que nao
-        # e dele (Spec 049, fatia 0b).
+        # 403 antes da regra da raiz: quem nao manda aqui nao ve a explicacao.
         if not require_tenant().has_permission_in("subteam.update", team_id):
             raise AuthorizationError(
                 "Voce administra times, mas nao nesta arvore.",
@@ -393,8 +220,7 @@ class TeamService:
             )
 
         team.name = novo_nome
-        # `description` ausente (None) preserva o valor atual; string vazia
-        # limpa. Sem isso, um PATCH que so muda o nome apagaria a descricao.
+        # `None` preserva a descricao; string vazia limpa.
         if description is not None:
             team.description = description.strip() or None
 
@@ -405,7 +231,7 @@ class TeamService:
     async def _supervisiona_outro_subtime(
         self, *, user_id: uuid.UUID, raiz_id: uuid.UUID, saindo: uuid.UUID
     ) -> bool:
-        """A pessoa e SUPERVISOR de outro subtime desta area?"""
+        """A pessoa e SUPERVISOR de outro subtime deste time raiz?"""
         stmt = select(UserTeam.team_id).where(
             UserTeam.workspace_id == require_tenant().workspace_id,
             UserTeam.user_id == user_id,
@@ -413,24 +239,15 @@ class TeamService:
             UserTeam.team_id != saindo,
         )
         for tid in (await self._session.execute(stmt)).scalars():
-            if await self._repo.area_de(tid) == raiz_id:
+            if await self._repo.root_team_id_of(tid) == raiz_id:
                 return True
         return False
 
     @staticmethod
     def _assert_apaga_subtime(team_id: uuid.UUID) -> None:
-        """403 se quem chama nao tem `subteam.delete` NESTE time. Spec 051, D.
+        """403 se quem chama nao tem `subteam.delete` neste time.
 
-        ⚠️⚠️ ATE A FATIA D AS TRES OPERACOES DE APAGAR NAO CONFERIAM ARVORE
-        NENHUMA -- so a rota, "em algum lugar". Inofensivo enquanto o verbo era
-        so do ADMIN (que alcanca tudo); no dia em que o MANAGER o recebeu
-        (decisao 4), o gerente do Marketing apagaria subtime do Comercial por
-        aqui. Dar o verbo sem esta linha seria abrir a falha, e por isso os dois
-        entram no mesmo commit.
-
-        ⚠️ DEPOIS DO 404, antes da regra da raiz: time inexistente e 404 para
-        todos; quem nao manda nesta arvore leva 403, e nao a explicacao de uma
-        regra que nao e dele. Mesma ordem do `update`.
+        Chamar depois do 404 e antes da regra da raiz.
         """
         if not require_tenant().has_permission_in("subteam.delete", team_id):
             raise AuthorizationError(
@@ -439,23 +256,9 @@ class TeamService:
             )
 
     async def delete(self, *, team_id: uuid.UUID) -> None:
-        """Remove uma equipe VAZIA (Spec 029/D3, caminho A).
+        """Remove um subtime vazio (contando a lixeira).
 
-        "Vazio" = nenhuma tarefa, projeto, membro ou subtime filho. A
-        contagem INCLUI a lixeira -- ver `TeamRepository.contagens`.
-
-        Esta guarda existe pela MENSAGEM, nao pela seguranca: o banco ja
-        recusaria por `fk_task_team`, `project_team` e `fk_team_parent`
-        (todas RESTRICT). Sem ela, quem esta na tela veria um erro de chave
-        estrangeira. `user_team` e a excecao -- ela e CASCADE, entao os
-        vinculos sumiriam calados; por isso membros contam como bloqueio.
-
-        Esvaziar (arquivar tarefas e mover membros para a raiz) e o caminho
-        B, entrega separada -- ver plan.md, Fatia 3.
-
-        Erros:
-            EntityNotFoundError -- equipe inexistente no workspace.
-            BusinessRuleError   -- e a raiz, ou o time nao esta vazio.
+        Membros bloqueiam porque `user_team` e CASCADE: sumiriam calados.
         """
         team = await self._repo.get_by_id(team_id)
         if team is None:
@@ -485,9 +288,7 @@ class TeamService:
                 },
             )
 
-        # O nome e capturado ANTES do delete: apos o flush (e mais ainda apos
-        # um eventual rollback) o objeto ORM esta expirado e ler `team.name`
-        # dispararia um refresh contra uma linha que nao existe mais.
+        # Nome lido antes do delete: depois o objeto ORM esta expirado.
         nome = team.name
         await self._repo.remove(team)
         await self._session.flush()
@@ -499,62 +300,29 @@ class TeamService:
         team_id: uuid.UUID,
         new_parent_id: uuid.UUID | None,
     ) -> Team:
-        """Move uma equipe para um novo pai (ou para a raiz).
+        """Move um subtime para outro pai dentro da mesma arvore.
 
-        `new_parent_id=None` torna a equipe raiz. Se informado,
-        a equipe vira filha do pai indicado.
-
-        Validacoes:
-            - Equipe a mover existe no workspace.
-            - Novo pai (se informado) existe no workspace.
-            - Equipe nao pode ser pai dela mesma (auto-referencia).
-            - Mover nao pode criar CICLO INDIRETO (A->B->C->A):
-              checamos se a propria `team_id` aparece entre os
-              ancestrais do `new_parent_id`.
-
-        Erros:
-            EntityNotFoundError -- team_id ou new_parent_id ausente.
-            BusinessRuleError   -- ciclo detectado / auto-referencia.
+        Recusa ciclo, auto-referencia, promover a raiz, rebaixar raiz e trocar
+        de arvore (essas operacoes nao estao desenhadas).
         """
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
 
-        # No-op: pai novo igual ao atual, nada a fazer. (Cobre tambem o caso
-        # "raiz continua raiz", que por isso nunca chega na checagem abaixo.)
+        # No-op, inclusive "raiz continua raiz".
         if team.parent_team_id == new_parent_id:
             return team
 
-        # ⚠️⚠️ PROMOVER SUBTIME A AREA CONTINUA RECUSADO, e a razao MUDOU.
-        #
-        # Ate a Spec 046 a recusa era estrutural: so cabia uma raiz, e a
-        # checagem existia para o indice unico nao virar HTTP 500. O indice
-        # caiu (migration `0023`) -- ou seja, o banco aceitaria.
-        #
-        # A recusa fica porque a OPERACAO nao esta desenhada, e a §6 da spec
-        # registra isso com essas palavras: promover subtime a area e rebaixar
-        # area a subtime "ganham um caso novo que NAO esta desenhado. Fica
-        # registrado, nao feito."
-        #
-        # ⚠️ O QUE FALTA DECIDIR, para quem for fazer: um subtime promovido
-        # leva junto a arvore inteira dele e vira uma area nova -- com quadro
-        # geral proprio? Com quais membros? O `MANAGER` da area de origem
-        # perde alcance sobre gente que continua trabalhando com ele? Nenhuma
-        # dessas tem resposta hoje, e escolher uma calado seria pior do que
-        # recusar.
-        #
-        # ⚠️ TROCAR ISTO POR "deixa passar" NAO E REMOVER UMA LINHA MORTA. O
-        # dia em que alguem apagar esta checagem achando que e resto da raiz
-        # unica, a operacao passa a existir sem que ninguem a tenha desenhado.
+        # Promover subtime a time raiz nao esta desenhado (quadro geral?
+        # membros?). O banco aceitaria: a recusa e a unica trava.
         if new_parent_id is None:
             raise BusinessRuleError(
-                "Promover um time a area ainda nao e possivel. "
-                "Crie a area e mova o conteudo, ou fale com quem administra.",
+                "Promover um subtime a time raiz ainda nao e possivel. "
+                "Crie o time e mova o conteudo, ou fale com quem administra.",
                 details={"field": "new_parent_id"},
             )
 
         if new_parent_id is not None:
-            # Banco ja bloquearia, mas mensagem clara antes do flush.
             if new_parent_id == team_id:
                 raise BusinessRuleError(
                     "Uma equipe nao pode ser pai de si mesma.",
@@ -565,13 +333,7 @@ class TeamService:
                 raise EntityNotFoundError(
                     "Team", identifier=new_parent_id
                 )
-            # Checagem de ciclo: subo a arvore a partir do novo
-            # pai; se eu encontrar o proprio team_id no caminho,
-            # estou criando um ciclo.
-            # ⚠️ Spec 051: ANTES das duas recusas abaixo. Mover um time para
-            # dentro do proprio descendente e ciclo mesmo quando o time e raiz,
-            # e "criaria um ciclo" diz o erro de verdade -- "time principal nao
-            # vira subtime" seria certo e menos util.
+            # Ciclo antes das recusas abaixo: e a mensagem mais precisa.
             ancestors = await self._repo.collect_ancestor_ids(new_parent_id)
             if team_id in ancestors:
                 raise BusinessRuleError(
@@ -583,30 +345,19 @@ class TeamService:
                     },
                 )
 
-            # ⚠️⚠️ Spec 051, fatia D -- decisao 7 da Camila (16/09): MOVER SO
-            # DENTRO DA ARVORE, "e desenhar depois". Ate aqui esta funcao
-            # recusava promover subtime a raiz (acima), auto-referencia e ciclo
-            # -- e ACEITAVA as duas operacoes que ninguem desenhou:
-            #   - dar pai a um time RAIZ: a area inteira vira subtime de outra,
-            #     com o quadro geral, os membros e o gerente dela;
-            #   - jogar um subtime numa OUTRA arvore: as tarefas mudam de area,
-            #     e o gerente de origem perde gente que trabalha com ele.
-            # Nenhuma tinha botao; a API deixava. As perguntas sao as mesmas da
-            # promocao a raiz (quadro geral? membros? alcance?), e a resposta e
-            # a mesma: recusar e melhor que escolher calado. ⚠️ TROCAR ISTO POR
-            # "deixa passar" nao e tirar uma trava velha -- e fazer existir uma
-            # operacao que a spec registrou como NAO desenhada.
+            # So dentro da mesma arvore: rebaixar raiz e trocar de arvore
+            # tambem nao estao desenhados.
             if team.parent_team_id is None:
                 raise BusinessRuleError(
                     "Transformar um time principal em subtime ainda nao e "
                     "possivel.",
                     details={"team_id": str(team_id), "field": "new_parent_id"},
                 )
-            if await self._repo.area_de(new_parent_id) != await self._repo.area_de(
+            if await self._repo.root_team_id_of(new_parent_id) != await self._repo.root_team_id_of(
                 team_id
             ):
                 raise BusinessRuleError(
-                    "Mover um time para outra area ainda nao e possivel.",
+                    "Mover um time para outro time raiz ainda nao e possivel.",
                     details={
                         "team_id": str(team_id),
                         "new_parent_id": str(new_parent_id),
@@ -624,38 +375,23 @@ class TeamService:
         return team
 
     # ----------------------------------------------------
-    # Esvaziar e remover (Spec 029 / D3-B, Fatia 3)
+    # Esvaziar e remover
     # ----------------------------------------------------
     async def previa_remocao(self, *, team_id: uuid.UUID) -> PreviaRemocao:
-        """O que vai acontecer se este time for esvaziado e removido.
-
-        Existe para a tela mostrar ANTES da confirmacao. Os numeros saem do
-        banco no momento da chamada -- nao do carregamento da lista -- porque
-        eles mudam sozinhos: medido em 29/07, um subtime foi de 0 para 2
-        membros em vinte minutos.
-        """
+        """O que sai junto, e para onde, se o time for esvaziado e removido."""
         team = await self._repo.get_by_id(team_id)
         if team is None:
             raise EntityNotFoundError("Team", identifier=team_id)
-        # A previa e o primeiro passo de apagar: mesma pergunta, para a tela
-        # nao mostrar "isto vai sair junto" a quem nao pode apagar.
         self._assert_apaga_subtime(team_id)
 
         tarefas = await self._repo.tarefas_do_time(team_id)
         c = await self._repo.contagens(team_id)
 
-        # ⚠️ Spec 046, fatia 3: a previa passa a NOMEAR a area de destino.
-        # Com uma raiz so o destino era obvio; com N areas, "3 tarefas serao
-        # movidas" esconde justamente a informacao que faria alguem cancelar.
-        #
-        # ⚠️ RESOLVIDO PELA MESMA FUNCAO QUE O `esvaziar_e_remover` usa
-        # (`area_de`), e nao por uma consulta parecida escrita aqui. A previa
-        # que promete um destino diferente do que a operacao faz e pior que
-        # previa nenhuma -- ela seria acreditada.
+        # Mesma funcao que `esvaziar_e_remover` usa, para a previa nao mentir.
         destino_id: uuid.UUID | None = None
         destino_nome: str | None = None
         if team.parent_team_id is not None:
-            destino_id = await self._repo.area_de(team_id)
+            destino_id = await self._repo.root_team_id_of(team_id)
             if destino_id is not None:
                 destino = await self._repo.get_by_id(destino_id)
                 destino_nome = destino.name if destino is not None else None
@@ -676,40 +412,12 @@ class TeamService:
         )
 
     async def esvaziar_e_remover(self, *, team_id: uuid.UUID) -> PreviaRemocao:
-        """Move o conteudo para a raiz, arquiva as tarefas e apaga o time.
+        """Move o conteudo para a raiz da mesma arvore, arquiva as tarefas e apaga o time.
 
-        UMA transacao (o UoW do router commita no fim): se qualquer passo
-        falhar, nada e aplicado. Sem isso, um erro no meio deixaria um time
-        semi-esvaziado -- tarefas ja arquivadas, membros ainda dentro, time
-        ainda existindo -- que ninguem sabe consertar.
-
-        Ordem e regras:
-
-        1. **Tarefas** -> `team_id` da raiz.
-           - vivas: viram `is_archived=True` e ganham linha `archived` no
-             historico. Arquivar (e nao soft-deletar) porque desarquivar
-             existe na UI e restaurar deletada NAO -- soft delete e caminho
-             so de ida pela aplicacao (D4).
-           - na lixeira: SO trocam de time. Elas ja estao fora de tudo;
-             arquivar e escrever historico numa tarefa deletada seria ruido.
-             Mas precisam ser reatribuidas, senao `fk_task_team` recusa o
-             DELETE do time.
-        2. **Projetos** -> `team_id` da raiz.
-        3. **Membros** -> vinculo na raiz, SUPERVISOR rebaixado a OPERATOR
-           (D5: `member.manage.subteam` da Spec 028 ficaria orfao sem subtime).
-           Quem JA tem vinculo com a raiz so perde o do subtime.
-        4. **Time** -> apagado.
-
-        NAO reusava `MemberService.move_member_subteam` (removido em 17/09/2026)
-        de proposito, e o motivo vale para qualquer caso de uso de membro: as travas
-        de la sao interpessoais ("nao mexer em si mesmo", matriz de quem pode
-        mirar quem, conflito de destino) e quebram numa operacao em lote. Caso
-        real: quem executa pode ser MANAGER na raiz E membro do subtime que
-        esta removendo -- a trava de "si mesmo" pararia a operacao no meio.
-
-        Erros:
-            EntityNotFoundError -- time inexistente.
-            BusinessRuleError   -- e a raiz, ou tem subtime filho.
+        Uma transacao so. Tarefas vivas sao arquivadas (com historico); as da
+        lixeira so trocam de time. Membros sobem para a raiz, SUPERVISOR vira
+        OPERATOR. Nao usa o MemberService: as travas interpessoais de la quebram
+        numa operacao em lote.
         """
         team = await self._repo.get_by_id(team_id)
         if team is None:
@@ -730,24 +438,12 @@ class TeamService:
                 details={"team_id": str(team_id), "filhos": contagens.filhos},
             )
 
-        # ⚠️⚠️ O DESTINO E A AREA DESTA ARVORE, e nao "a raiz do workspace".
-        #
-        # Ate a Spec 046 isto era `await self._repo.root_id()`, sem argumento,
-        # e a docstring do metodo dizia "destino fixo do esvaziamento". Com N
-        # areas nao ha destino fixo: a versao velha escolheria uma delas, e
-        # esvaziar um subtime do Marketing podia despejar as tarefas no TI --
-        # sem erro, sem aviso, sem teste vermelho.
-        #
-        # §4.2: o conteudo vai para `root_of(team_id)`. NUNCA atravessa areas.
-        raiz_id = await self._repo.area_de(team_id)
+        # O destino e a raiz desta arvore; nunca atravessa para outro time raiz.
+        raiz_id = await self._repo.root_team_id_of(team_id)
         if raiz_id is None:
-            # ⚠️ Deixou de ser "estado impossivel". O comentario antigo dizia
-            # que o indice unico garantia uma raiz -- o indice caiu na fatia 2.
-            # Hoje isto so acontece se o time sumir entre o `get_by_id` acima e
-            # esta linha; parar continua sendo melhor que mover para lugar
-            # nenhum.
+            # So se o time sumir entre o `get_by_id` e aqui.
             raise BusinessRuleError(
-                "Nao consegui identificar a area de destino para o conteudo.",
+                "Nao consegui identificar o time raiz de destino para o conteudo.",
                 details={"team_id": str(team_id)},
             )
 
@@ -770,10 +466,7 @@ class TeamService:
                     user_id=tenant.user_id,
                     entries=[build_archived_entry()],
                 )
-                # ⚠️ A SUBARVORE VAI JUNTO, como no `TaskService.archive`. Uma
-                # filha de OUTRO time (o PATCH troca o time) ficava viva
-                # embaixo da mae arquivada -- o estado da consulta 11 do
-                # `invariantes.sql`, que nenhuma tela mostra.
+                # A subarvore vai junto, inclusive filha de outro time.
                 await historico.set_archived_subtree(task=tarefa, archived=True)
             vivas += 1
 
@@ -782,14 +475,9 @@ class TeamService:
         for projeto in projetos:
             projeto.team_id = raiz_id
 
-        # --- 2b. quadros e formularios (auditoria de 16/10) ---
-        # Seguram o time por FK RESTRICT; sem mover, o DELETE do fim estourava
-        # e a transacao inteira voltava -- o subtime nunca saia. Sobem para a
-        # area como o resto do conteudo.
-        #
-        # ⚠️ O NOME DO QUADRO E UNICO POR TIME (entre os vivos): se a area ja
-        # tem um com o mesmo nome, o que sobe leva o nome do subtime junto.
-        # E "padrao" e um por time: o que sobe deixa de ser o padrao.
+        # --- 2b. quadros e formularios (FK RESTRICT) ---
+        # Nome de quadro e unico por time entre os vivos: em conflito, o que
+        # sobe leva o nome do subtime. E o que sobe deixa de ser o padrao.
         ocupados = await self._repo.nomes_de_quadros_vivos(raiz_id)
         quadros = await self._repo.quadros_do_time(team_id)
         for quadro in quadros:
@@ -797,7 +485,7 @@ class TeamService:
                 novo = f"{quadro.name} ({team.name})"[:255]
                 if novo in ocupados:
                     raise BusinessRuleError(
-                        f"A área já tem um quadro chamado '{novo}'. "
+                        f"O time raiz já tem um quadro chamado '{novo}'. "
                         "Renomeie um dos dois antes de excluir o subtime.",
                         details={"team_id": str(team_id), "quadro": quadro.name},
                     )
@@ -816,19 +504,16 @@ class TeamService:
             ja_na_raiz = await self._repo.vinculo(
                 user_id=vinculo.user_id, team_id=raiz_id
             )
-            # ⚠️ SUPERVISOR DE OUTRO SUBTIME DA AREA NAO GANHA A RAIZ (auditoria
-            # de 21/10, item 11). OPERATOR na raiz + SUPERVISOR em Midias e a
-            # inversao que `_assert_posto_coerente` recusa -- toda mudanca
-            # seguinte no cadastro dela dava 409. A lente do SUPERVISOR ja
-            # inclui a raiz, entao o conteudo que sobe continua visivel.
+            # Supervisor de outro subtime desta arvore nao ganha vinculo na raiz:
+            # OPERATOR na raiz + SUPERVISOR embaixo e inversao recusada. A lente
+            # dele ja inclui a raiz.
             if ja_na_raiz is None and await self._supervisiona_outro_subtime(
                 user_id=vinculo.user_id, raiz_id=raiz_id, saindo=team_id
             ):
                 await self._session.delete(vinculo)
                 continue
             if ja_na_raiz is None:
-                # Sobe preservando o papel, mas SUPERVISOR vira OPERATOR: o
-                # poder de gerir o proprio subtime nao faz sentido sem subtime.
+                # SUPERVISOR vira OPERATOR: sem subtime nao ha o que supervisionar.
                 novo_papel = (
                     UserTeamRole.OPERATOR
                     if vinculo.role == UserTeamRole.SUPERVISOR
@@ -860,10 +545,7 @@ class TeamService:
             projetos=len(projetos),
             membros=len(vinculos),
         )
-        # ⚠️ O DESTINO VAI NA RESPOSTA DA OPERACAO, e nao so na previa (Spec
-        # 046, fatia 3). A previa diz para onde VAI; esta diz para onde FOI --
-        # e com N areas a segunda deixou de ser dedutivel pela tela. Sem isto,
-        # quem confirmou nao tem como conferir se acertou o time.
+        # O destino volta na resposta para quem confirmou poder conferir.
         destino = await self._repo.get_by_id(raiz_id)
         return PreviaRemocao(
             team_id=team_id,

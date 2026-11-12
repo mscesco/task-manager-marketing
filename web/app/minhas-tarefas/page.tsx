@@ -21,10 +21,6 @@ import TaskModal from "@/components/TaskModal";
 import TaskDetail from "@/components/TaskDetail";
 import TaskCard from "@/components/TaskCard";
 import {
-  // ⚠️ `STATUSES` SAIU DESTA TELA na fatia 4c-2. A vista de LISTA ja lia as
-  // colunas da API desde a 4b; agora o KANBAN tambem le, e nao sobrou leitor
-  // aqui. O que ainda vem de `lib/status` sao rotulos e cores de PRIORIDADE e
-  // de PRAZO, que nao tem nada a ver com coluna.
   PRIORITY_LABEL,
   PRIORITY_COLOR,
   deadlineLabel,
@@ -66,30 +62,18 @@ import { useAvisar } from "@/components/Toasts";
 const RELATION_LABEL: Record<string, string> = {
   assignee: "Responsável",
   creator: "Criei",
-  // Spec 053, fatia D (D1): na tela e "seguir". Era "Acompanho" enquanto so
-  // o n8n ou a API inscreviam alguem.
   watcher: "Sigo",
 };
-// ⚠️ `STATUS_LABEL` e `STATUS_COLOR` SAIRAM DAQUI (Spec 036, fatia 4b).
-// Eram derivadas de `STATUSES` em escopo de MODULO -- calculadas no import,
-// antes do primeiro render. Com as colunas vindo da API isso deixa de ser
-// possivel, e as duas viraram `useMemo` dentro do componente (`rotuloDaColuna`
-// e `colunaDe`). Ver `plan.md` da Spec 036, §Fatia 4 -- por que ela virou
-// TRES (era a `sondagem-fatia-4.md` §2, absorvida em 13/08).
 
 // Opcoes do seletor de relacao. "todas" = sem filtro de relacao.
 const RELACOES = [
   { key: "todas", label: "Todas" },
   { key: "creator", label: "Que criei" },
   { key: "assignee", label: "Designadas a mim" },
-  // Spec 053, fatia D (D7): VOLTOU, agora que o botao "Seguir" existe no
-  // detalhe. Tinha saido em agosto por prometer uma lista que ninguem conseguia
-  // preencher. "Todas" continua incluindo as tarefas que a pessoa segue.
+  // "Todas" também inclui as tarefas que a pessoa segue.
   { key: "watcher", label: "Que sigo" },
 ] as const;
 
-// ⚠️ `TODOS_STATUS` SAIU DAQUI pelo mesmo motivo. Quem responde "todas as
-// colunas" agora e o proprio estado `colunas`, carregado da API.
 
 // Rotulo legivel do cabecalho de grupo (ex.: "Sexta-feira, 22 de agosto").
 function rotuloData(d: string): string {
@@ -110,73 +94,41 @@ function Minhas() {
   const [items, setItems] = useState<MyTaskItem[] | null>(null);
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  // Spec 031 (C14): `members` continua COMPLETO (resolve o nome de quem ja
-  // esta designado) e este conjunto so tira do seletor e marca a pilula como
-  // desativado. ⚠️ Este comentario citava `projetosPessoais` como o desenho
-  // gemeo -- ele saiu em 10/09 com o projeto pessoal, e este ficou como unico
-  // exemplo do padrao.
+  // `members` fica completo (resolve nomes); este conjunto só tira do seletor e marca a pílula.
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const [erro, setErro] = useState<string | null>(null);
   // null = nao truncou. Se a lista passar do teto de busca, vira aviso honesto
   // no lugar de perda silenciosa (mesmo padrao do quadro).
   const [truncadoTotal, setTruncadoTotal] = useState<number | null>(null);
 
-  // Colunas do quadro geral, vindas da API (Spec 036, fatia 4b).
+  // Colunas do quadro geral, vindas da API.
   // `null` = ainda carregando. `[]` = carregou e nao ha coluna -- estado
   // diferente, e a tela desenha os dois de formas diferentes.
   const [colunas, setColunas] = useState<Coluna[] | null>(null);
 
   // Filtros (client-side, sobre a lista ja carregada). Comecam "tudo visivel".
   const [relFiltro, setRelFiltro] = useState<string>("todas");
-  // ⚠️ ANTES ISTO ERA UM INICIALIZADOR DE `useState` chamando
-  // `statusPadraoMinhasTarefas()` -- rodava no PRIMEIRO RENDER, antes de
-  // qualquer fetch (`plan.md` §Fatia 4 -- por que ela virou TRES, "o ponto
-  // mais duro"; era a `sondagem-fatia-4.md` §5). Com as colunas vindo da API o
-  // dado nao existe nessa hora, entao o conjunto nasce `null` e e preenchido
-  // quando as colunas chegam. **A tela nao renderiza ate la** (decisao de
-  // 10/08), e o portao ja existia: ver `if (!items || !colunas)` mais abaixo.
+  // Nasce `null` e é preenchido quando as colunas chegam; a tela espera por elas.
   const [colunasOn, setColunasOn] = useState<Set<string> | null>(null);
-  // ⚠️ `column_id -> de onde ela vem`, sobre TODOS os quadros alcancaveis
-  // (fatia 5b-5b). Separado de `colunas` de proposito: `colunas` e o que a
-  // tela DESENHA (o quadro geral); o indice e o que ela SABE.
+  // `column_id -> origem` em todos os quadros alcançáveis; `colunas` é só o que a tela desenha.
   const [indice, setIndice] = useState<Map<string, OrigemDaColuna> | null>(null);
   // Arquivadas escondidas por padrao (paridade com o quadro). Sessao-only.
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
-  // Spec 031 (C3, D4-ter): esta tela nao tinha busca. Uma linha de pastilhas
-  // com "Busca:" numa tela e nao na outra e a mesma deriva que a fatia mata.
   const [busca, setBusca] = useState("");
 
   const [detalhe, setDetalhe] = useState<Task | null>(null);
   const [pilha, setPilha] = useState<Task[]>([]);
-  // Filhos COMPLETOS da tarefa focada (todas as subtarefas, nao so as minhas).
-  // minhas-tarefas so carrega minhas atribuicoes, entao o pai mostraria uma
-  // lista de subtarefas incompleta (bug: no quadro geral aparecem todas). Busca
-  // sob demanda por parent_task_id. null = ainda carregando -> cai no fallback
-  // de `items` (evita flash de lista vazia). O fetch keys por detalhe?.id (=
-  // id do foco); `focado` so existe depois das guardas, entao uso detalhe.
+  // Todos os filhos da tarefa focada (a lista só tem as minhas). `null` = carregando -> cai em `items`.
   const [filhosDoFocado, setFilhosDoFocado] = useState<Task[] | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
-  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
-  // proprio detalhe, e o modal so cria e duplica.
+  // Tarefa sendo duplicada (o modal desta tela só duplica).
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const [deepLinkFeito, setDeepLinkFeito] = useState(false);
   // Libera a ESCRITA do ?task= na URL. Separado do deepLinkFeito porque a
   // leitura e async: so vira true quando a abertura inicial resolve.
   const [urlLiberada, setUrlLiberada] = useState(false);
 
-  // ⚠️⚠️ OS DOIS RECORTES DA §4.3, E ELES SÃO INDEPENDENTES. Decisão dela,
-  // depois de eu propor tirar a visão de quadro e ela recusar:
-  //
-  //   LISTA  -> `tudo | por time raiz`. Mora na URL (`?time=`), porque é o
-  //             recorte DA TELA -- link compartilhável, botão Voltar.
-  //   QUADRO -> exige UM time. *"Kanban não espelha dois quadros ao mesmo
-  //             tempo"*: as colunas são as do quadro geral daquele time.
-  //
-  // ⚠️ E O DO QUADRO NÃO VAI NA URL, de propósito: `?time=` significa "o
-  // recorte desta tela", e o time do quadro é uma escolha DENTRO de uma das
-  // duas visões. Dois parâmetros disputando o mesmo sentido exigiriam uma
-  // regra de quem ganha -- e a própria visão (lista/quadro) já é sessão-only
-  // pelo mesmo motivo.
+  // Dois recortes independentes: a LISTA aceita "tudo" e vai na URL (`?time=`);
+  // o QUADRO exige um time (colunas de um quadro geral) e fica só na sessão.
   const {
     active,
     search,
@@ -189,13 +141,7 @@ function Minhas() {
 
   // Vista: lista (agrupada por prazo) x quadro (kanban por status). Sessao-only.
   const [vista, setVista] = useState<"lista" | "quadro">("lista");
-  // Mesmo seletor do quadro geral, mesmo comparador (`lib/ordenacao.ts`).
-  // ⚠️ So no modo QUADRO. No modo lista as tarefas ja vem agrupadas por dia
-  // de entrega, com cabecalho de data: um "Ordenar: prazo" ali nao teria o
-  // que fazer e um "Ordenar: prioridade" so reordenaria DENTRO do dia --
-  // dois rotulos prometendo mais do que entregam. Se a lista tiver que
-  // ordenar tambem, o agrupamento por data e que precisa sair, e isso e
-  // outra decisao.
+  // Ordenação (`lib/ordenacao.ts`) só no modo quadro; a lista já agrupa por dia.
   const [ordenacao, setOrdenacao] = useState<Ordenacao>("criacao");
   // Drag no modo quadro (mesmo padrao do Board).
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -205,18 +151,13 @@ function Minhas() {
   // Dois arrastes do mesmo card: so a resposta do ultimo vale (`lib/ultimaVez`).
   const vezDoArraste = useRef(criarUltimaVez()).current;
 
-  // --- Trava a vista QUADRO na altura da viewport (scroll por coluna) ---
-  // Mesma tecnica do componente Board: mede o topo real das colunas e trava a
-  // altura ate o rodape, cada coluna rola por dentro. So afeta a vista quadro
-  // (a lista segue com scroll normal de pagina). medirAltura sai cedo quando o
-  // container nao existe (vista lista) -> nada acontece ali.
+  // Trava a vista quadro na altura da viewport (cada coluna rola por dentro); na lista não faz nada.
   const colunasRef = useRef<HTMLDivElement>(null);
   const [alturaColunas, setAlturaColunas] = useState<number | null>(null);
   const medirAltura = useCallback(() => {
     const el = colunasRef.current;
     if (!el) return;
-    // Clamp em 0: pagina rolada pra baixo -> top negativo estourava a altura
-    // (innerHeight - top). Cobre o commit-durante-scroll; nao cobre o mobile.
+    // Clamp em 0: com a página rolada, o top negativo estourava a altura.
     const top = Math.max(0, el.getBoundingClientRect().top);
     const RODAPE = 24;
     const h = Math.max(240, Math.round(window.innerHeight - top - RODAPE));
@@ -230,34 +171,21 @@ function Minhas() {
     medirAltura();
   });
 
-  // ⚠️ O time do QUADRO é semeado pelo da lista, e não pisa numa escolha feita
-  // (`atual ?? ...`): trocar a lista para "tudo" não deve resetar o quadro que
-  // a pessoa estava olhando. Sem time na lista, cai no primeiro PREFERIDO --
-  // onde ela trabalha, e não o primeiro do alfabeto (defeito 3.1).
+  // O time do quadro é semeado pelo da lista sem pisar numa escolha feita;
+  // sem time na lista, cai no primeiro preferido da pessoa.
   useEffect(() => {
     const reserva = timeDaLista ?? timesDisponiveis[0]?.id ?? null;
     if (reserva) setTimeDoQuadro((atual) => atual ?? reserva);
   }, [timeDaLista, timesDisponiveis]);
 
   useEffect(() => {
-    // ⚠️⚠️ ESPERA A BARRA RESOLVER. `active === null` = "ainda não sei";
-    // `kind: "all"` e `kind: "none"` JÁ são respostas, e as duas dão
-    // `timeDaLista === null` -- que aqui significa "de todos os times", o modo
-    // que esta tela oferece de propósito.
+    // Espera a barra: `active === null` = ainda não sei; `timeDaLista === null` = todos os times.
     if (active === null) return;
-    // ⚠⚠ GUARDA DE CORRIDA (14/09). Sem ela, um pedido mais velho que
-    // respondesse depois do novo sobrescrevia a lista -- foi o que pos as
-    // tarefas do Marketing numa tela que dizia Comercial.
+    // Guarda de corrida: um pedido mais velho não sobrescreve o novo.
     let vivo = true;
     listAllMyAssignments(timeDaLista)
       .then((r) => {
         if (!vivo) return;
-        // ⚠️ O FILTRO DE CLIENTE SAIU AQUI (Spec 037, E5). Ele descartava
-        // os itens marcados pela ADR 0017 porque elas davam 404 no detalhe
-        // (o "bug E6"), e o comentario dizia "quando for tratar, troca este
-        // filtro". Foi tratado na origem: o backend nao manda mais esses
-        // itens, entao nao ha o que filtrar -- e lista e detalhe passaram a
-        // concordar.
         setItems(r.items);
         setTruncadoTotal(r.truncated ? r.total : null);
       })
@@ -267,29 +195,15 @@ function Minhas() {
     return () => {
       vivo = false;
     };
-    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
-    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
-    // em voo, e o último a responder vencia (defeito de 14/09).
+    // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeDaLista, active === null]);
 
   useEffect(() => {
-    // ⚠️ Guarda de corrida: o seletor do QUADRO troca `timeDoQuadro` sem
-    // recarregar a página, e as colunas do time anterior não podem chegar
-    // depois das do novo.
+    // Guarda de corrida: as colunas do time anterior não podem chegar depois das do novo.
     let vivo = true;
-    // Colunas do quadro geral E o indice de todas as colunas alcancaveis. O
-    // filtro padrao da tela sai das colunas: liga todas menos as de semantica
-    // DONE (ADR 0040 -- Cancelado CONTINUA aparecendo).
-    //
-    // ⚠️ O INDICE E O QUE FAZ TAREFA DE OUTRO QUADRO APARECER (fatia 5b-5b).
-    // Antes daqui a tela so conhecia as colunas do geral, e tarefa de quadro
-    // avulso sumia da LISTA em silencio e caia no contador `foraDaColuna` no
-    // kanban. Uma requisicao so, a mesma de antes.
-    // ⚠️⚠️ AS COLUNAS SÃO DO TIME DO QUADRO, e este é o defeito 3.3: a função
-    // fazia `quadros.find(q => q.is_default)` -- "o" padrão, no singular. Com
-    // dois times raiz existem dois, e a tela espelhava as colunas de um
-    // enquanto mostrava as tarefas do outro.
+    // Colunas do quadro geral do time do quadro e o índice de todas as alcançáveis.
+    // O filtro padrão liga todas menos as DONE (Cancelado continua aparecendo).
     quadroGeralComIndice(timeDoQuadro)
       .then(({ colunas: cs, indice: ix }) => {
         if (!vivo) return;
@@ -304,34 +218,24 @@ function Minhas() {
         setMembrosInativos(new Set(ms.filter((m) => !m.is_active).map((m) => m.id)));
       })
       .catch(() => {});
-    // Spec 022: alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
+    // Alimenta o chip de projeto e o seletor de "mudar projeto" no detalhe.
     listAllProjects({
-      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
-      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
-      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
-      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      // Só rotula: não recorta por time, senão some o selo de tarefa que a pessoa enxerga.
       teamId: null,
     })
       .then((r) => {
         setProjectNames(new Map(r.items.map((p) => [p.id, p.title])));
-        // Spec 031 (C13): guardado a parte -- o mapa de nomes precisa de TODOS
-        // (inclusive pessoal, pra resolver o nome de quem ja mora la), mas o
-        // seletor de "mudar projeto" nao deve OFERECER pessoal.
+        // O mapa de nomes tem todos; o seletor de "mudar projeto" não oferece pessoal.
       })
       .catch(() => {});
-    // ⚠️ `timeDoQuadro` NAS DEPENDÊNCIAS: trocar o time do quadro tem de
-    // rebuscar as COLUNAS, senão o kanban desenha as colunas do time anterior
-    // com os cards do novo -- e ninguém vê erro nenhum.
+    // `timeDoQuadro` nas dependências: trocar o time do quadro rebusca as colunas.
     return () => {
       vivo = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [timeDoQuadro]);
 
-  // Abre o detalhe de uma task pelo id, procurando na lista COMPLETA (items),
-  // nao na filtrada -- um filtro ativo nao deve furar o link. Se a task nao
-  // esta na lista (mencao/comentario em tarefa que nao e sua, ou tarefa fora
-  // da lente de time), avisa em vez de falhar em silencio.
+  // Abre o detalhe pelo id na lista completa (não na filtrada); fora da lista, avisa.
   const abrirTarefaDaLista = useCallback(
     async (id: string) => {
       if (items === null) return;
@@ -340,11 +244,7 @@ function Minhas() {
         avisar("Não foi possível abrir: essa tarefa não está na sua lista.");
         return;
       }
-      // Se for SUBTAREFA, abre no modo sub com "voltar" pro(s) pai(s) -- mesma
-      // UX de quando navego manualmente de um pai pra um filho. Monta a cadeia
-      // de ancestrais: cada pai pode nao estar na minha lista (posso estar so
-      // na sub), entao busca por id nesse caso. A pilha fica [raiz..paiDireto];
-      // voltarDetalhe tira do fim -> volta um nivel por vez ate a raiz.
+      // Subtarefa: monta a pilha de ancestrais [raiz..paiDireto], buscando os que não estão na lista.
       const pilhaPais: Task[] = [];
       const vistos = new Set<string>([t.id]); // guarda anti-ciclo
       let paiId = t.parent_task_id;
@@ -368,8 +268,7 @@ function Minhas() {
     [items]
   );
 
-  // Deep-link ao ENTRAR na pagina vindo de outra rota: le ?task=<id> depois
-  // que a lista carrega (uma vez). E6-safe: reusa o objeto ja carregado.
+  // Deep-link ao entrar: lê ?task=<id> uma vez, depois que a lista carrega.
   useEffect(() => {
     if (deepLinkFeito || items === null) return;
     setDeepLinkFeito(true);
@@ -378,19 +277,12 @@ function Minhas() {
       setUrlLiberada(true);
       return;
     }
-    // So libera a escrita da URL quando a abertura RESOLVER. abrirTarefaDaLista
-    // e async (pode esperar getTask pra montar a cadeia de pais); liberar antes
-    // deixaria o efeito de escrita rodar com detalhe=null e apagar o ?task=
-    // no meio do caminho -- um F5 nessa janela perderia a tarefa.
-    // finally e nao then: se a abertura falhar (tarefa fora da lista), a URL
-    // tambem precisa voltar a mandar, pra nao ficar travada mentindo.
+    // Só libera a escrita da URL quando a abertura resolver (antes, apagaria o ?task=);
+    // `finally` para liberar também quando falha.
     abrirTarefaDaLista(alvo).finally(() => setUrlLiberada(true));
   }, [items, deepLinkFeito, abrirTarefaDaLista]);
 
-  // Deep-link com a pagina JA ABERTA: o sino faz router.push da mesma rota
-  // (so muda a query), o que NAO remonta a pagina nem re-dispara o efeito de
-  // cima -> era o "clico e nao acontece nada". O sino tambem emite este evento,
-  // que abre o detalhe na hora, sem depender de remontar.
+  // Deep-link com a página já aberta: o sino emite este evento (router.push não remonta).
   useEffect(() => {
     function onAbrir(e: Event) {
       const id = (e as CustomEvent<{ id?: string }>).detail?.id;
@@ -400,24 +292,14 @@ function Minhas() {
     return () => window.removeEventListener("abrir-tarefa", onAbrir);
   }, [abrirTarefaDaLista]);
 
-  // Escrita da URL viva (?task=<id>): espelha a tarefa aberta. Cobre abrir,
-  // fechar, entrar em subtarefa e voltar -- todos passam por `detalhe`.
-  //
-  // Gated no urlLiberada (nao no deepLinkFeito): a leitura acima e async, e
-  // liberar cedo demais faria este efeito apagar o ?task= antes de a tarefa
-  // abrir. Ver o comentario do efeito de leitura.
-  //
-  // replaceState: o Voltar do navegador segue saindo da pagina, nao virando
-  // um "desfazer" de cada abertura de tarefa.
+  // Espelha a tarefa aberta em ?task=<id>, só depois de `urlLiberada`.
+  // `replaceState`: o Voltar continua saindo da página.
   useEffect(() => {
     if (!urlLiberada) return;
     sincronizarTaskNaUrl(detalhe?.id ?? null);
   }, [detalhe, urlLiberada]);
 
-  // Busca as subtarefas COMPLETAS do foco (todas, nao so as minhas) quando o
-  // detalhe muda. Sem include_archived (paridade com o padrao do quadro geral).
-  // Erro -> null (cai no fallback de items). Cap de 100 filhos diretos (limite
-  // do backend) -- suficiente; se um dia passar disso, so os 100 primeiros.
+  // Busca todas as subtarefas do foco (até 100, teto do backend); erro -> null (cai em `items`).
   useEffect(() => {
     const id = detalhe?.id;
     if (!id) {
@@ -441,9 +323,7 @@ function Minhas() {
   // --- abrir / navegar / fechar o detalhe (mesma logica do quadro) ---
   function abrirDetalhe(t: Task) {
     if (suprimirClique.current) return; // acabou de arrastar: nao abre
-    // Reusa a construcao de cadeia de pais: se `t` for subtarefa, abre no modo
-    // sub com "voltar" pro pai -- igual ao deep-link da notificacao. `t` veio da
-    // lista, entao esta em items (nao dispara o toast de "nao esta na lista").
+    // Reusa a montagem da cadeia de pais do deep-link.
     abrirTarefaDaLista(t.id);
   }
   function abrirSubtarefa(sub: Task) {
@@ -462,8 +342,7 @@ function Minhas() {
     setPilha([]);
   }
 
-  // Upsert preservando os campos que /me/assignments adiciona ao Task
-  // (relations) e o assignee_ids (mutacao nao devolve -- ADR 0025).
+  // Upsert preservando `relations` e `assignee_ids`, que a mutação não devolve.
   function aoUpsert(t: Task) {
     setItems((prev) => {
       if (!prev) return prev;
@@ -474,10 +353,7 @@ function Minhas() {
           ...t,
           relations: ["creator"],
           assignee_ids: t.assignee_ids ?? [],
-          // A resposta de criacao nao traz parent_title (so /me/assignments
-          // monta o lote). Como a subtarefa nasceu daqui, a mae e a task que
-          // esta aberta -- resolvemos localmente e o selo ja aparece certo,
-          // sem esperar recarregar a pagina.
+          // A criação não traz `parent_title`; a mãe é a tarefa aberta.
           parent_title:
             t.parent_task_id
               ? prev.find((x) => x.id === t.parent_task_id)?.title ?? null
@@ -489,17 +365,14 @@ function Minhas() {
         ...t,
         relations: existente.relations,
         assignee_ids: t.assignee_ids ?? existente.assignee_ids,
-        // Mutacao de task nao devolve parent_title -> preserva o local, mesma
-        // regra do assignee_ids (ADR 0025). Sem isto o selo sumiria ao editar.
+        // A mutação não devolve `parent_title`: preserva o local.
         parent_title: existente.parent_title,
       };
       return prev.map((x) => (x.id === t.id ? merged : x));
     });
   }
 
-  // Upsert que TAMBEM reflete na lista de filhos buscada do foco, pra o detalhe
-  // atualizar na hora (marcar/desmarcar subtarefa, criar subtarefa) sem esperar
-  // refetch. Atualiza in-place se ja existe; adiciona se for filho do foco atual.
+  // Upsert que também atualiza os filhos buscados do foco.
   function aoUpsertComFilhos(t: Task) {
     aoUpsert(t);
     setFilhosDoFocado((prev) => {
@@ -532,42 +405,21 @@ function Minhas() {
     if (!destino) return;
 
     const atual = (items ?? []).find((t) => t.id === taskId);
-    // ⚠️ `destino` E UM `column_id` (fatia 4c-2), nao mais uma chave de status.
+    // `destino` é um `column_id`.
     if (!atual || atual.column_id === destino) return;
 
-    // ⚠️ RECUSA CARD QUE MORA EM OUTRO QUADRO (fatia 5b-5b). O card ja nasce
-    // com `useDraggable({ disabled })`, entao no navegador ele nem levanta --
-    // esta guarda existe porque `disabled` e do dnd-kit e nao e testavel em
-    // jsdom, e porque uma so das duas seria uma trava com um guardiao so.
-    // Soltar aqui trocaria o QUADRO da tarefa, que e a fatia 5c e hoje volta
-    // 422 do backend, depois de o card pular na frente da pessoa e voltar.
+    // Recusa card de outro quadro (o backend daria 422). O `disabled` do dnd-kit não é testável em jsdom.
     const origemAtual = indice?.get(atual.column_id);
     if (!origemAtual || origemAtual.nomeDoQuadro !== null) return;
 
-    // A coluna tem de estar na lista desta tela. ⚠️ AQUI ISSO NAO E FORMALIDADE
-    // como no `Board.tsx`: `/minhas-tarefas` junta tarefas de QUALQUER quadro e
-    // desenha as colunas do quadro GERAL (`colunasDoQuadroGeral`, fatia 4b).
-    // No dia do quadro interno, arrastar uma tarefa de subtime para uma coluna
-    // do quadro geral seria um 422 do backend depois de o card ja ter pulado
-    // na frente da pessoa.
+    // A coluna tem de estar nesta tela: ela junta tarefas de vários quadros e desenha as do geral.
     const colunaDestino = (colunas ?? []).find((c) => c.id === destino);
     if (!colunaDestino) return;
 
     const colunaAnterior = atual.column_id;
 
-    // Cascata de conclusao (espelha o backend): arrastar um PAI pra coluna de
-    // conclusao conclui a subtree. Aqui items so tem MINHAS tasks -> cascateia
-    // as minhas subtarefas visiveis. Guarda o estado antigo pra reverter.
-    // Pula as que ja estao em coluna terminal e as arquivadas.
-    //
-    // DIVERGENCIA CONHECIDA: o backend conclui a subarvore INTEIRA no banco;
-    // este otimista so alcanca as minhas tasks carregadas. As demais (de outros
-    // responsaveis, ou fora do limite de exibicao) so aparecem no reload.
-    //
-    // ⚠️ GUARDA OS DOIS CAMPOS e mexe nos DOIS, igual ao `Board.tsx`: a
-    // checklist do detalhe le coluna e outros pontos ainda leem `status`.
-    // Deixar um dos dois para tras foi o defeito que a conferencia manual de
-    // 10/08 pegou. A metade `status` morre com o ultimo leitor dela.
+    // Cascata de conclusão otimista: só alcança as minhas subtarefas carregadas (o backend
+    // conclui a subárvore inteira). Mexe em `column_id` e `status`, que ainda têm leitores.
     const concluindo = colunaDestino.semantic === "DONE";
     // O confete sai de onde o card foi solto (o mesmo desenho do `Board.tsx`).
     const soltoEm = e.active.rect.current.translated;
@@ -579,8 +431,7 @@ function Minhas() {
     const anteriores = new Map<string, { coluna: string; status: string }>();
     if (concluindo) {
       for (const t of items ?? []) {
-        // ⚠️ A coluna REAL da subtarefa, pelo indice: ela pode viver em outro
-        // quadro que o desta tela, e `terminal()` tem de ler a semantica dela.
+        // Coluna real da subtarefa (pode ser de outro quadro), pelo índice.
         const colunaDela = indice?.get(t.column_id)?.coluna;
         if (
           t.path.startsWith(prefixo) &&
@@ -607,8 +458,7 @@ function Minhas() {
 
     const aindaEhOUltimo = vezDoArraste.nova(taskId);
     try {
-      // ⚠️ MANDA SO `column_id`: os dois campos juntos e 422 (ADR 0041, D3), e
-      // o status certo vem NA RESPOSTA.
+      // Só `column_id` (os dois juntos dão 422); o status vem na resposta.
       const atualizada = await updateTask(taskId, { column_id: destino });
       if (!aindaEhOUltimo()) return;
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
@@ -656,39 +506,19 @@ function Minhas() {
   }
   function limparTudo() {
     setRelFiltro("todas");
-    // Volta ao PADRAO da tela, nao a "tudo ligado": limpar filtro e voltar ao
-    // estado de abertura, e nele as concluidas nao aparecem.
+    // Volta ao padrão da tela (concluídas escondidas), não a "tudo ligado".
     setColunasOn(new Set(colunasPadraoMinhasTarefas(colunas ?? [])));
   }
 
-  // Arquivadas: escondidas por padrao. O backend de assignments INCLUI
-  // arquivadas na resposta, entao o filtro e no cliente -- o toggle liga/desliga
-  // sem refetch. `itemsBase` e a FONTE das duas vistas (lista e quadro).
-  // Detalhe/subtarefas seguem na lista COMPLETA `items` (mais abaixo): um
-  // filtro de view nao pode quebrar abrir uma task fora do filtro.
+  // Arquivadas escondidas por padrão, filtradas no cliente. `itemsBase` alimenta as duas vistas;
+  // detalhe e subtarefas usam `items` completo.
   const buscaNorm = normalizarBusca(busca);
 
   // ---------------------------------------------------------------------
-  // ⚠️ AS DUAS PERGUNTAS DE CADA CARD (fatia 5b-5b), resolvidas UMA vez.
-  //
-  //   `origem`       -- a coluna REAL da tarefa, no quadro onde ela mora.
-  //                     E ela que decide ALERTA DE PRAZO (`notify_deadline` e
-  //                     semantica sao propriedades da coluna de verdade) e o
-  //                     texto da tag.
-  //   `colunaDaTela` -- em qual das colunas do quadro GERAL este card e
-  //                     desenhado e filtrado. Sai de `colunaEquivalente`, que
-  //                     e a ADR 0042 escrita no front: exata primeiro, alvo da
-  //                     semantica depois.
-  //
-  // ⚠️ CONFUNDIR AS DUAS E O DEFEITO CLASSICO AQUI. Usar `colunaDaTela` para o
-  // prazo faria uma tarefa em "Aguardando cliente" (`notify_deadline: false`)
-  // de um quadro avulso ganhar alerta so porque a equivalente dela no geral e
-  // "Em Andamento". Usar `origem` para agrupar poria o card numa coluna que
-  // esta tela nao desenha, e ele sumiria.
-  //
-  // ⚠️ UM MAPA SO, e nao duas funcoes chamadas por card. `colunaEquivalente`
-  // varre o array de colunas; chama-la dentro do filtro, do agrupamento e do
-  // render seria tres varreduras por card a cada tecla digitada na busca.
+  // Duas perguntas por card, resolvidas uma vez num mapa:
+  //   `origem`       -- a coluna real da tarefa; decide alerta de prazo e o texto da tag.
+  //   `colunaDaTela` -- em qual coluna do quadro geral o card é desenhado e filtrado.
+  // Trocar uma pela outra dá alerta errado ou card que some.
   // ---------------------------------------------------------------------
   const posicaoDaTarefa = useMemo(() => {
     const m = new Map<
@@ -698,8 +528,7 @@ function Minhas() {
     if (!indice || !colunas) return m;
     for (const t of items ?? []) {
       const origem = indice.get(t.column_id);
-      // Sem origem = a coluna nao veio em quadro nenhum que a pessoa alcanca.
-      // Caso normal quando o quadro foi apagado ou ficou fora do alcance.
+      // Sem origem: quadro apagado ou fora do alcance.
       if (!origem) continue;
       m.set(t.id, {
         origem,
@@ -717,17 +546,7 @@ function Minhas() {
   // Aplica relacao + coluna sobre a lista carregada.
   const filtrados = useMemo(() => {
     return itemsBase.filter((t) => {
-      // ⚠️ FILTRA PELA COLUNA DA TELA, e nao pelo `column_id` cru (fatia
-      // 5b-5b). Os chips desta tela sao as colunas do quadro GERAL; o
-      // `column_id` de uma tarefa de quadro avulso nunca esta neles, entao a
-      // versao anterior (`colunasOn.has(t.column_id)`) escondia essa tarefa da
-      // LISTA em silencio -- sem contador, sem aviso, ao contrario do kanban.
-      //
-      // ⚠️ SEM COLUNA DA TELA, PASSA. Tarefa cuja coluna nao mapeia em nada
-      // (quadro fora de alcance, ou semantica sem alvo no geral) nao pode ser
-      // excluida por um chip que ela nao tem. Esconder seria repetir o defeito
-      // que esta linha existe para consertar; o principio desta tela e "card
-      // que some da tela tem de sumir com aviso".
+      // Filtra pela coluna da tela, não pelo `column_id` cru; sem coluna da tela, passa.
       const daTela = posicaoDaTarefa.get(t.id)?.colunaDaTela;
       const okStatus =
         colunasOn === null || daTela === undefined || colunasOn.has(daTela.id);
@@ -738,14 +557,8 @@ function Minhas() {
     });
   }, [itemsBase, colunasOn, relFiltro, buscaNorm, posicaoDaTarefa]);
 
-  // Agrupa por data de entrega (D, estilo Runrunit): so aparece o dia que tem
-  // tarefa; grupos em ordem cronologica; sem-prazo por ultimo. Agrupa sobre a
-  // lista FILTRADA. due_date e "YYYY-MM-DD" -> ordenacao por string ja e cronologica.
-  //
-  //
-  // ⚠️ POR DIA, e não por urgência (decisão dela, 21/10: "quero continuar com
-  // o formato de separar por data de entrega"). O redesign fica só no desenho
-  // da linha e na COR do cabeçalho: dia passado em vermelho, hoje em âmbar.
+  // Agrupa a lista filtrada por data de entrega (string "YYYY-MM-DD" já ordena);
+  // sem prazo por último.
   const grupos = useMemo(() => {
     const hoje = agoraNoWorkspace().data;
     const map = new Map<string, MyTaskItem[]>();
@@ -767,24 +580,7 @@ function Minhas() {
     return { comData, semData };
   }, [filtrados]);
 
-  // Modo QUADRO: filtra so por relacao (o status vira coluna, nao filtro) e
-  // agrupa por status.
-  //
-  // ⚠️ MIGRADA NA FATIA 4c-2 (10/08). O bloqueio abaixo, que era real, acabou
-  // quando o `PATCH /tasks/{id}` passou a aceitar `column_id` (fatia 5a, ADR
-  // 0041): agora o `id` do droppable E o `column_id`, o front manda a coluna e
-  // o servidor deriva o status. Fica o registro do que bloqueava, porque
-  // explica por que a 4b entregou so a vista de LISTA:
-  //
-  //   "arrastar chama `onDragEnd`, que manda `status`; se as colunas viessem
-  //    da API o destino seria `column_id`, e NAO ha como traduzir coluna ->
-  //    status no front -- `legacy_status` nao e exposto pelo `GET /boards`
-  //    (ADR 0033), e a semantica nao resolve porque QUATRO colunas padrao tem
-  //    `IN_PROGRESS`."
-  //
-  // ⚠️ O AVISO QUE CONTINUA VALENDO: arrastar NAO e testavel em jsdom. Os
-  // testes desta tela cobrem o agrupamento e o desenho; o `onDragEnd` daqui
-  // so tem conferencia manual, igual ao do `Board.tsx`.
+  // Modo quadro: filtra só por relação (o status vira coluna). Arrastar não é testável em jsdom.
   const porRelacao = useMemo(() => {
     return itemsBase.filter(
       (t) =>
@@ -793,23 +589,14 @@ function Minhas() {
     );
   }, [itemsBase, relFiltro, buscaNorm]);
 
-  // ⚠️ AGRUPA POR COLUNA (fatia 4c-2). `foraDaColuna` conta o que nao coube em
-  // coluna nenhuma, pelo mesmo motivo do `Board.tsx`: card que some da tela
-  // tem de somer com aviso. Aqui o caso e MAIS provavel que la -- esta tela
-  // mistura tarefas de quadros diferentes assim que o quadro interno existir,
-  // e as colunas vem do quadro GERAL (`colunasDoQuadroGeral`, fatia 4b).
+  // Agrupa por coluna; `foraDaColuna` conta o que não coube em nenhuma.
   const { porColuna, foraDaColuna } = useMemo(() => {
     const map: Record<string, MyTaskItem[]> = {};
     for (const c of colunas ?? []) map[c.id] = [];
-    // Ordena ANTES de distribuir: a distribuicao preserva a ordem, entao uma
-    // passada resolve todas as colunas (mesmo caminho do Board).
+    // Ordena antes de distribuir: a distribuição preserva a ordem.
     let fora = 0;
     for (const t of ordenar(porRelacao, ordenacao)) {
-      // ⚠️ AGRUPA PELA COLUNA DA TELA (fatia 5b-5b). A versao anterior usava
-      // `map[t.column_id]`, e tarefa de quadro avulso caia SEMPRE no `fora`:
-      // contada e nao desenhada. Agora `colunaEquivalente` a leva para a
-      // coluna do geral com a mesma semantica, e a TAG do card diz de onde ela
-      // veio -- sem a tag, o agrupamento pareceria defeito.
+      // Agrupa pela coluna da tela; a tag do card diz de onde a tarefa veio.
       const daTela = posicaoDaTarefa.get(t.id)?.colunaDaTela;
       const lista = daTela ? map[daTela.id] : undefined;
       if (lista) lista.push(t);
@@ -819,19 +606,13 @@ function Minhas() {
   }, [porRelacao, ordenacao, colunas, posicaoDaTarefa]);
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
-  // ⚠️ O PORTAO ESPERA OS DOIS (Spec 036, fatia 4b). Ele ja existia para
-  // `items`; `colunas` entrou aqui. E a decisao de 10/08: a tela NAO renderiza
-  // ate as colunas chegarem, em vez de pintar sem filtro e reordenar depois --
-  // lista que pisca mostrando concluidas que ninguem pediu e pior que meio
-  // segundo de "Carregando".
+  // Espera `items` e `colunas`, para não pintar sem filtro e reordenar depois.
   if (!items || !colunas) return <Esqueleto forma="colunas" rotulo="Carregando tarefas" />;
 
-  // Detalhe e subtarefas SEMPRE sobre a lista completa (um filtro ativo nao
-  // pode quebrar abrir/navegar uma task que esta fora do filtro atual).
+  // Detalhe e subtarefas sempre sobre a lista completa.
   const focado = detalhe ? items.find((t) => t.id === detalhe.id) ?? detalhe : null;
   const filhosFocado = focado ? items.filter((t) => t.parent_task_id === focado.id) : [];
-  // Filhos exibidos no detalhe: os COMPLETOS (buscados) quando prontos; enquanto
-  // carrega/erro, cai nos meus (items) pra nao piscar vazio. So os do foco atual.
+  // Filhos do detalhe: os buscados quando prontos; senão, os meus (`items`).
   const filhosParaDetalhe: Task[] =
     filhosDoFocado !== null && focado
       ? filhosDoFocado.filter((f) => f.parent_task_id === focado.id)
@@ -839,41 +620,20 @@ function Minhas() {
 
   const visiveis = vista === "quadro" ? porRelacao.length : filtrados.length;
   const todosLigados = (colunasOn?.size ?? 0) === colunas.length;
-  // Coluna de uma tarefa, pelo `column_id` que a Spec 036 fatia 3 passou a
-  // devolver na resposta. `undefined` nao deveria acontecer -- significaria
-  // tarefa apontando para coluna de outro quadro, o que a FK composta impede
-  // no banco (`invariantes.sql`, consulta 2).
-  // A coluna REAL de uma tarefa -- a do quadro onde ela mora, vinda do indice
-  // (fatia 5b-5b). ⚠️ NAO E `colunaPorId.get(t.column_id)`: aquele mapa so tem
-  // as colunas do quadro GERAL, entao tarefa de quadro avulso devolvia
-  // `undefined` e PERDIA o alerta de prazo -- o comentario de `dueTone` dizia
-  // que sem coluna "o lado seguro e nao alertar", o que era verdade quando
-  // "sem coluna" significava dado faltando, e deixou de ser quando passou a
-  // significar "outro quadro".
+  // Coluna real da tarefa, pelo índice (o `colunaPorId` só tem as colunas do quadro geral).
   const colunaPorId = new Map(colunas.map((c) => [c.id, c]));
   const colunaDe = (t: MyTaskItem): Coluna | undefined =>
     posicaoDaTarefa.get(t.id)?.origem.coluna ?? colunaPorId.get(t.column_id);
-  // A tag `Quadro · Coluna` da LISTA. `null` = nao ha o que dizer, e a tela cai
-  // na reserva por status (ver `rotuloDeColuna`).
+  // Tag `Quadro · Coluna` da lista; `null` = cai na reserva por status.
   const rotuloDe = (t: MyTaskItem): string | null =>
     rotuloDeColuna(posicaoDaTarefa.get(t.id)?.origem);
-  // A tag do CARD, no kanban. ⚠️ SO PARA TAREFA DE OUTRO QUADRO, e a diferenca
-  // para a lista e deliberada: no kanban o card ja esta DENTRO de uma coluna
-  // com o nome no cabecalho acima dele, entao repetir "Em Andamento" na tag e
-  // ruido, e pior -- some no meio das outras pastilhas do card. A tag so ganha
-  // sentido quando responde uma pergunta que o cabecalho NAO responde: "este
-  // card esta em Em Andamento, mas a coluna dele chama Em Revisão, e ela e do
-  // quadro Campanhas". Na lista nao ha cabecalho, entao la ela e sempre.
+  // Tag do card no kanban: só para tarefa de outro quadro (o cabeçalho já nomeia a coluna).
   const rotuloForaDoQuadro = (t: MyTaskItem): string | undefined => {
     const origem = posicaoDaTarefa.get(t.id)?.origem;
     if (!origem || origem.nomeDoQuadro === null) return undefined;
     return rotuloDeColuna(origem) ?? undefined;
   };
-  // ⚠️ SO ARRASTA CARD QUE MORA NO QUADRO DESTA TELA. `nomeDoQuadro === null`
-  // e exatamente isso. Enquanto mover tarefa entre quadros nao existir (fatia
-  // 5c), soltar uma tarefa de quadro avulso numa coluna do geral trocaria o
-  // quadro dela -- o backend recusa com 422, mas so depois de o card ja ter
-  // pulado na frente da pessoa e voltado.
+  // Só arrasta card do quadro desta tela (`nomeDoQuadro === null`).
   const arrastavel = (t: MyTaskItem): boolean =>
     posicaoDaTarefa.get(t.id)?.origem.nomeDoQuadro === null;
   const contagem =
@@ -881,17 +641,12 @@ function Minhas() {
 
   // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
   function linhaTarefa(t: MyTaskItem) {
-    // Spec 023: cor de prazo por-card (respeita status/arquivada). null = sem
-    // alerta. Barra lateral colorida + chip com o motivo.
+    // Cor de prazo do card (respeita status/arquivada); `null` = sem alerta.
     const col = colunaDe(t);
-    // Spec 036 fatia 4a: quem decide se ha alerta e a COLUNA
-    // (`notify_deadline` + semantica), nao mais uma lista de status cravada.
-    // Sem coluna resolvida nao ha como decidir -> sem alerta, que e o lado
-    // seguro (o contrario pintaria de vermelho por falta de dado).
+    // Quem decide o alerta é a coluna; sem coluna resolvida, sem alerta.
     const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
     const ids = t.assignee_ids ?? [];
-    // Redesign (fatia 7): cada tarefa e um cartao-linha, com o filete da cor da
-    // COLUNA a esquerda (a prancha), os selos no meio e a seta que diz "abre".
+    // Cartão-linha: filete da cor da coluna à esquerda, selos no meio, seta à direita.
     return (
       <FaixaClicavel
         key={t.id}
@@ -910,11 +665,7 @@ function Minhas() {
           }}
         />
         <div style={{ minWidth: 0, flex: 1 }}>
-          {/* Spec 031 (C6): titulo em UMA linha, com reticencias.
-              Antes ele quebrava em 2-3 linhas e a segunda linha encostava na
-              faixa de meta abaixo -- o "aparece por baixo de Responsavel".
-              `title` preserva o texto inteiro no hover, e o detalhe esta a um
-              clique. Lista com altura de linha uniforme e o ponto de ser lista. */}
+          {/* Título em uma linha com reticências; `title` mostra o texto inteiro. */}
           <div
             title={t.title}
             style={{
@@ -924,21 +675,14 @@ function Minhas() {
           >
             {t.title}
           </div>
-          {/* `minWidth: 0` deixa os filhos ENCOLHEREM. Sem isso o padrao e
-              `min-width: auto` = "nao encolho abaixo do meu conteudo", e a
-              pastilha longa empurra o resto da faixa pra fora. */}
+          {/* `minWidth: 0`: deixa os filhos encolherem em vez de empurrar a faixa. */}
           <div style={{ display: "flex", gap: 8, marginTop: 3, flexWrap: "wrap", alignItems: "center", minWidth: 0 }}>
-            {/* ⚠️ A TAG CARREGA AS DUAS INFORMACOES (fatia 5b-5b): o quadro
-                responde "onde mora", a coluna responde "por que este card esta
-                agrupado em Em Andamento se a coluna dele chama outra coisa".
-                `rotuloDeColuna` devolve `null` quando nao sabe, e a reserva
-                por status e decisao DESTA tela. */}
+            {/* Tag com quadro e coluna de origem; sem rótulo, cai no status. */}
             <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
               {rotuloDe(t) ?? t.status}
             </span>
             {t.parent_task_id && (
-              // Nomeia a mae quando o backend a resolveu. Cai no generico se
-              // parent_title vier null (mae fora da lente) -- nunca inventa.
+              // Nomeia a mãe quando o backend a resolveu; senão, rótulo genérico.
               <span
                 title={
                   t.parent_title
@@ -965,7 +709,7 @@ function Minhas() {
               </Badge>
             ))}
             {dueTone && t.due_date && (
-              // Redesign (fatia 5): o prazo em pilula, como o card do painel inicial.
+              // Prazo em pílula.
               <Badge tone="soft" size="sm" color={DEADLINE_COLOR[dueTone]} className="shrink-0">
                 {deadlineLabel(t.due_date, t.due_time)}
               </Badge>
@@ -1023,7 +767,7 @@ function Minhas() {
     return (
       <div
         style={{
-          // Um gap so entre controles (passada visual de 21/10): 8px.
+          // Um gap só entre controles: 8px.
           display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8,
           marginBottom: 18,
         }}
@@ -1045,7 +789,7 @@ function Minhas() {
           </select>
         </label>
 
-        {/* Spec 031 (C3, D4-ter): busca. A tela nao tinha. */}
+        {/* Busca. */}
         <input
           value={busca}
           onChange={(e) => setBusca(e.target.value)}
@@ -1057,8 +801,7 @@ function Minhas() {
           }}
         />
 
-        {/* Ordenacao: so no modo quadro, e FORA do bloco de filtros -- ela
-            nao esconde tarefa, so muda a ordem (mesma razao do quadro geral). */}
+        {/* Ordenação só no modo quadro, fora dos filtros: não esconde tarefa. */}
         {vista === "quadro" && (
           <select
             value={ordenacao}
@@ -1076,17 +819,7 @@ function Minhas() {
           </select>
         )}
 
-        {/* ⚠️⚠️ OS DOIS SELETORES DA §4.3, e o de cada visão aparece SÓ na
-            visão dele. Desenhar os dois de uma vez faria a tela oferecer duas
-            respostas para "qual time?" ao mesmo tempo -- e a pessoa ajustaria o
-            que não está olhando.
-
-            LISTA: tem "Tudo", e escreve na URL. É a única tela com "tudo",
-            porque é a única que atravessa times de propósito -- *"o time muda
-            com a área; o que é meu, não"*.
-
-            QUADRO: NÃO tem "Tudo". Kanban espelha as colunas de UM quadro
-            geral; com dois times não há conjunto de colunas que sirva. */}
+        {/* Um seletor de time por visão: a lista tem "Todos" e vai na URL; o quadro exige um time. */}
         {timesDisponiveis.length > 1 && (
           <select
             className="input"
@@ -1106,10 +839,7 @@ function Minhas() {
                 setTimeDoQuadro(e.target.value || null);
                 return;
               }
-              // ⚠️ `<a href>` E RECARGA TOTAL, como toda navegação deste app
-              // (registrado no topo do `AppShell`). Um `router.replace` aqui
-              // trocaria a URL sem recarregar, e metade das telas recarrega e
-              // metade não -- a mistura que aquele bloco proibiu.
+              // Recarga total, como toda navegação do app (ver `AppShell`).
               window.location.href = withTeam(
                 "/minhas-tarefas",
                 search ?? "",
@@ -1126,8 +856,7 @@ function Minhas() {
           </select>
         )}
 
-        {/* Toggle de vista (sessao-only). No quadro, as COLUNAS DA API viram
-            as colunas do kanban (fatia 4c-2; antes eram os status). */}
+        {/* Alterna lista/quadro (só na sessão); no quadro, as colunas da API viram o kanban. */}
         <div style={{ display: "inline-flex", gap: 4 }}>
           {(["lista", "quadro"] as const).map((v) => (
             <button
@@ -1154,11 +883,7 @@ function Minhas() {
             <span style={{ width: 1, height: 22, background: "var(--border)", flexShrink: 0 }} />
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-          {/* ⚠️ `colunas ?? []` e nao `colunas`: o guard de carregamento la em
-              cima ja garante que nao e null, mas este bloco vive dentro de
-              `barraFiltros()`, declarada DEPOIS do guard -- e o `tsc` perde o
-              narrowing em corpo de funcao. O `?? []` e inalcancavel na
-              pratica; trocar por `!` esconderia o dia em que o guard sair. */}
+          {/* `?? []`: o `tsc` perde o narrowing dentro de `barraFiltros()`; `!` esconderia o guard sumir. */}
           {(colunas ?? []).map((s) => {
             const on = colunasOn?.has(s.id) ?? false;
             return (
@@ -1224,26 +949,13 @@ function Minhas() {
           </>
         )}
 
-        {/* Spec 031 (C9): na vista LISTA o checkbox mora ao lado de "Limpar",
-            dentro da faixa de chips. Antes ele era irmao da faixa com
-            `marginLeft: auto`, e como a faixa e larga ele quebrava sozinho
-            numa terceira linha, encostado na direita, longe de tudo.
-            Na vista QUADRO nao ha faixa de chips -> ele volta pra esta linha. */}
+        {/* Na lista o checkbox fica junto de "Limpar"; no quadro (sem chips), nesta linha. */}
         {vista === "quadro" && arquivadasCheck}
       </div>
     );
   }
 
-  // ⚠️ NAO ha barra de pastilhas de filtro ativo aqui, e isso e DECISAO
-  // (Spec 031, C6 -- revoga o D4/D4-bis). Ela existe no Quadro porque la os
-  // filtros moram dentro de um popover FECHADO: a pastilha responde "o que
-  // esta ligado que eu nao estou vendo". Nesta tela todo controle esta visivel
-  // o tempo todo -- o select "Mostrar", o campo de busca, os 8 chips de status
-  // e o checkbox de arquivadas. A pastilha nao acrescentava informacao, so
-  // repetia o que estava dois centimetros acima.
-  //
-  // Se um dia algum controle daqui for recolhido, ela volta -- o
-  // `listaFiltrosAtivos` do lib continua servindo o Quadro.
+  // Sem pastilhas de filtro ativo: aqui todo controle já está visível.
 
   return (
     <div>
@@ -1266,12 +978,7 @@ function Minhas() {
       )}
 
       {items.length === 0 ? (
-        // ⚠⚠ A BARRA FICA MESMO SEM TAREFA (14/09, reportado na tela). Até aqui o
-        // vazio SUBSTITUÍA a barra inteira -- e desde a Spec 048 é nela que
-        // mora o seletor de time. Com a lista recortada pelo Comercial e zero
-        // tarefas lá, a tela sumia com a única porta de volta para o Marketing.
-        // Antes do recorte "zero tarefas" era "zero em todo lugar", e esconder
-        // os controles não custava nada; agora vazio é um estado de um time.
+        // A barra fica mesmo sem tarefa: é nela que mora o seletor de time.
         <div className="max-w-[1100px]">
           {barraFiltros()}
           <EmptyState
@@ -1307,8 +1014,7 @@ function Minhas() {
                 </button>
               </div>
             ) : (
-              // `Entrada` embrulha cada grupo: a lista chega escalonada também
-              // quando se volta do quadro (21/10), e não só na primeira vez.
+              // `Entrada` por grupo: a lista chega escalonada também ao voltar do quadro.
               <Entrada>
                 {[
                   ...grupos.comData.map((g) => ({ chave: g.data, titulo: rotuloData(g.data), tom: g.tom, tarefas: g.tarefas })),
@@ -1362,12 +1068,8 @@ function Minhas() {
                 {(colunas ?? []).map((c, i) => (
                   <ColunaMinhas key={c.id} ordem={i} coluna={c} count={porColuna[c.id]?.length ?? 0}>
                     {(porColuna[c.id] ?? []).map((t) => {
-                      // ⚠️ `?? []` e nao `!`: a coluna vem de um mapa e pode
-                      // faltar. Sem coluna o card nao desenha -- e o `!`
-                      // esconderia o dia em que isso passar a acontecer.
-                      // ⚠️ A COLUNA REAL da tarefa, e nao a coluna em que ela
-                      // esta desenhada: e ela que decide prazo e "parada ha X
-                      // dias" dentro do card.
+                      // `?? []`, não `!`: a coluna vem de um mapa e pode faltar.
+                      // Passa a coluna real da tarefa: ela decide prazo e "parada há X dias".
                       const col = colunaDe(t);
                       return col ? (
                         <CardArrastavelMinhas
@@ -1421,10 +1123,7 @@ function Minhas() {
       <TaskModal
         open={duplicando !== null}
         duplicarDe={duplicando}
-        // ⚠️ `filhosParaDetalhe` e nao `items`: esta tela lista SO as MINHAS
-        // tarefas, entao uma subtarefa de outra pessoa nao esta em `items` e
-        // a contagem sairia MENOR que a real. `filhosParaDetalhe` ja e a
-        // busca completa dos filhos do foco.
+        // `filhosParaDetalhe`, não `items`: `items` só tem as minhas e contaria menos.
         filhosDaOrigem={
           duplicando && focado?.id === duplicando.id ? filhosParaDetalhe : []
         }
@@ -1435,11 +1134,7 @@ function Minhas() {
         }}
         onSaved={(t) => {
           if (duplicando) {
-            // ⚠️ Abre a CÓPIA, não a origem. Sem isto o detalhe continua na
-            // tarefa original e a pessoa fica olhando a tela de onde saiu,
-            // sem sinal nenhum de que algo foi criado -- pior ainda quando a
-            // cópia é subtarefa, que não vira card no quadro (`depth !== 0`)
-            // e só existe dentro da checklist do pai.
+            // Abre a cópia, para mostrar que algo foi criado (subtarefa nem vira card).
             setDuplicando(null);
             aoSalvar(t);
             setPilha([]);
@@ -1490,24 +1185,10 @@ function Minhas() {
   );
 }
 
-// --- Kanban do minhas-tarefas (duplicado do Board de proposito: mantem o
-// quadro geral intocado). Coluna droppable + card draggable, reusando TaskCard. ---
+// --- Kanban desta tela (duplicado do Board de propósito): coluna droppable + card draggable. ---
 /**
- * Uma faixa clicável da lista — só a casca.
- *
- * ⚠️ O CONTORNO AZUL QUE CORRIA SAIU (decisão dela, 21/10: "quero só a
- * animaçãozinha mesmo, igual rolou no quadro geral"): a linha é `card-elev`,
- * sobe no hover como o card do quadro, e o foco de teclado vem da regra
- * global `[tabindex]:focus-visible`.
- *
- * ⚠️ E ELA LEVA SÓ `onAbrir` E `style`, e não a tarefa: passar `t` faria esta
- * casca conhecer o formato da linha, e aí ela deixaria de ser casca. O
- * conteúdo continua sendo montado em `linhaTarefa`, onde estão `colunaDe`,
- * `rotuloDe` e o resto do fechamento.
- *
- * ⚠️ O `onKeyDown` vem junto: a faixa é `role="button"`, então Enter e Espaço
- * TÊM de abrir. Deixá-lo em `linhaTarefa` faria a casca prometer um papel que
- * ela não cumpre.
+ * Uma faixa clicável da lista — só a casca (o conteúdo vem de `linhaTarefa`).
+ * É `role="button"`, então Enter e Espaço abrem.
  */
 function FaixaClicavel({
   onAbrir,
@@ -1551,20 +1232,14 @@ function ColunaMinhas({
   /** Posicao na fileira: a entrada escalona por coluna, nunca por card. */
   ordem?: number;
 }) {
-  // ⚠️ O `id` do droppable e o `column_id` (fatia 4c-2). E o que o `onDragEnd`
-  // recebe em `e.over.id`, e o que o PATCH agora aceita.
+  // O `id` do droppable é o `column_id` (chega em `e.over.id`).
   const { setNodeRef, isOver } = useDroppable({ id: coluna.id });
   const entrada = useEntrada(ordem);
   return (
     <motion.div
       ref={setNodeRef}
       {...entrada}
-      // ⚠️ ANCORA ESTAVEL DA COLUNA. O teste de montagem achava a coluna com
-      // `closest("div[style*='min-width']")` -- seletor que casa com QUALQUER
-      // div cujo estilo inline mencione min-width. Em 21/08 o titulo do card
-      // ganhou `minWidth: 0` (obrigatorio para ele encolher em vez de empurrar
-      // os avatares), e o `closest` passou a achar o PROPRIO TITULO. O teste
-      // nao acusou seletor frouxo: acusou "coluna errada".
+      // Âncora estável para o teste achar a coluna.
       data-coluna={coluna.id}
       style={{
         flex: 1, minWidth: 240, minHeight: 0, borderRadius: 10, padding: 4,
@@ -1613,17 +1288,11 @@ function CardArrastavelMinhas({
   projectName,
 }: {
   task: MyTaskItem;
-  // Fatia 5b-5b: `Quadro · Coluna` quando a tarefa mora em OUTRO quadro.
-  // ⚠️ `undefined` quando ela mora no quadro desta tela -- o cabecalho da
-  // coluna ja diz o nome, e repetir e ruido. Ver `rotuloForaDoQuadro`.
+  // `Quadro · Coluna` só quando a tarefa mora em outro quadro.
   rotuloDaColuna: string | undefined;
-  // ⚠️ `false` para tarefa de outro quadro: nao ha para onde arrastar enquanto
-  // mover entre quadros nao existir (fatia 5c).
+  // `false` para tarefa de outro quadro.
   arrastavel: boolean;
-  // Fatia 4c: o card decide prazo e "parada ha X dias" pela COLUNA. Esta tela
-  // ja carrega as colunas da API desde a 4b -- so o repasse era o que faltava.
-  // ⚠️ O KANBAN desta tela continua agrupando por STATUS: a migracao dele e a
-  // 4c-2, e nao muda nada aqui.
+  // O card decide prazo e "parada há X dias" pela coluna.
   coluna: Coluna;
   onAbrir: (task: Task) => void;
   members: Map<string, { name: string }>;

@@ -1,21 +1,6 @@
-"""Invariante de papel por nivel de time -- integracao (Spec 024).
+"""Papel por nivel de time, no banco: MANAGER so na raiz, SUPERVISOR so em subtime.
 
-A regra e ASSIMETRICA: ADMIN/MANAGER so na raiz; a raiz aceita os quatro
-papeis (estar so no time geral e estado valido -- Spec 003, dec. 7 e 17).
-
-Cobre os criterios de aceite 1-11 ponta a ponta:
-    1-2  create_member com papel fora do nivel
-    3    assign_to_team com papel fora do nivel
-    4    change_member_role promovendo em subtime
-    5    (move_member_subteam -- saiu com a rota em 17/09/2026)
-    6-7  TeamService.create/move -> 409 de dominio, NUNCA IntegrityError
-    8    workspace nunca fica sem raiz (ciclo continua barrando)
-    9    provisionamento/seed rodam limpos sob a invariante
-    10   indice unico recusa segunda raiz no banco
-    11   isolamento de tenant (raiz do A nao conflita com a do B)
-
-O criterio 6-7 e o motivo principal desta suite: sem os guards de dominio,
-o indice da Fatia 1 transforma essas rotas em HTTP 500.
+Os erros de dominio tem de sair como 409, nunca como IntegrityError (500).
 """
 
 from __future__ import annotations
@@ -71,7 +56,7 @@ def _cmd(team_id: uuid.UUID, role: UserTeamRole) -> CreateMemberCommand:
 
 
 # ------------------------------------------------------------------
-# 1-2. create_member
+# create_member
 # ------------------------------------------------------------------
 async def test_create_member_recusa_manager_em_subtime(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
@@ -89,12 +74,7 @@ async def test_create_member_recusa_manager_em_subtime(db) -> None:
 
 
 async def test_create_member_aceita_operator_na_raiz(db) -> None:
-    """Membro "do geral", sem subtime: estado projetado (Spec 003, dec. 7).
-
-    ⚠️ ERA PARAMETRIZADO COM SUPERVISOR TAMBEM, e a Spec 045 fatia D tirou:
-    supervisor deixou de caber na raiz. O caso do OPERATOR e o que sustenta o
-    estado projetado, e ele fica intacto.
-    """
+    """Membro so do time raiz, sem subtime, e estado valido."""
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         criado = await MemberService(db).create_member(
@@ -104,7 +84,6 @@ async def test_create_member_aceita_operator_na_raiz(db) -> None:
 
 
 async def test_create_member_recusa_supervisor_na_raiz(db) -> None:
-    """⭐ Spec 045, fatia D -- a metade nova da invariante, na porta 1."""
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         with pytest.raises(BusinessRuleError):
@@ -125,7 +104,7 @@ async def test_create_member_aceita_papel_correto_em_cada_nivel(db) -> None:
 
 
 # ------------------------------------------------------------------
-# 3. assign_to_team
+# assign_to_team
 # ------------------------------------------------------------------
 async def test_assign_to_team_recusa_papel_fora_do_nivel(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
@@ -138,9 +117,7 @@ async def test_assign_to_team_recusa_papel_fora_do_nivel(db) -> None:
             await svc.assign_to_team(
                 user_id=outro, team_id=sub, role=UserTeamRole.MANAGER
             )
-        # ⭐ SUPERVISOR na raiz -> NAO. Ate a Spec 045 fatia D esta linha
-        # afirmava o contrario ("SIM -- membro do geral"); quem faz papel de
-        # membro do geral agora e o OPERATOR, logo abaixo.
+        # SUPERVISOR na raiz -> nao
         with pytest.raises(BusinessRuleError):
             await svc.assign_to_team(
                 user_id=outro, team_id=raiz, role=UserTeamRole.SUPERVISOR
@@ -158,7 +135,7 @@ async def test_assign_to_team_recusa_papel_fora_do_nivel(db) -> None:
 
 
 # ------------------------------------------------------------------
-# 4. change_member_role
+# change_member_role
 # ------------------------------------------------------------------
 async def test_change_member_role_recusa_promocao_dentro_do_subtime(db) -> None:
     """Promover a MANAGER quem esta em subtime viola a invariante."""
@@ -197,21 +174,9 @@ async def test_change_member_role_permite_troca_dentro_do_mesmo_nivel(db) -> Non
 
 
 # ------------------------------------------------------------------
-# 6-7. TeamService: 409 de dominio, NUNCA IntegrityError
+# TeamService: erro de dominio, nunca IntegrityError
 # ------------------------------------------------------------------
-async def test_criar_SEGUNDA_area_agora_funciona(db) -> None:
-    """⭐⭐ Spec 046, fatia 2 -- a decisao da Camila de 31/08 virando codigo.
-
-    ⚠️⚠️ ESTE TESTE AFIRMAVA O CONTRARIO. Ele se chamava
-    `test_create_segunda_raiz_da_conflict_e_nao_integrity_error` e existia
-    para provar que a segunda raiz dava 409 e nao 500 -- ou seja, que a
-    checagem de dominio corria ANTES do indice unico.
-
-    As duas sairam juntas (a checagem em `TeamService.create`, o indice na
-    migration `0023`), e tinham de sair juntas: so o indice deixaria a
-    mensagem barrando com o banco liberado; so a checagem faria o
-    `IntegrityError` cru virar HTTP 500.
-    """
+async def test_criar_SEGUNDO_time_raiz_funciona(db) -> None:
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         nova = await TeamService(db).create(name="TI", slug="ti")
@@ -220,16 +185,11 @@ async def test_criar_SEGUNDA_area_agora_funciona(db) -> None:
     assert nova.id != raiz
 
 
-async def test_criar_area_exige_papel_de_ORGANIZACAO(db) -> None:
-    """⭐ §4.1: quem cria area e ADMIN/GESTOR de organizacao, nao MANAGER.
+async def test_criar_time_raiz_exige_papel_de_ORGANIZACAO(db) -> None:
+    """MANAGER nao cria time raiz, so subtime.
 
-    ⚠️ E A TRAVA MORA NO SERVICO, e nao na rota, porque `POST /teams` cria
-    area E subtime -- o que separa os dois e o `parent_team_id` do corpo, que
-    o `require_permission` da rota nao enxerga.
-
-    Sabotagem: tirar a checagem de `area.create` faz este teste passar a
-    permitir que um MANAGER de Marketing crie a area "TI" -- que e a
-    definicao de extrapolar a arvore dele.
+    A trava mora no servico: `POST /teams` cria os dois, e so o `parent_team_id`
+    do corpo os separa.
     """
     ws, raiz, sub, admin = await _mundo(db)
     gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
@@ -246,30 +206,13 @@ async def test_criar_area_exige_papel_de_ORGANIZACAO(db) -> None:
         svc = TeamService(db)
         with pytest.raises(AuthorizationError):
             await svc.create(name="TI", slug="ti")
-        # ⚠️ E o subtime continua liberado para ele -- a trava e sobre AREA,
-        # e nao sobre criar time. Sem esta metade, "MANAGER nao cria nada"
-        # passaria pelo teste acima e ninguem veria.
+        # Subtime continua liberado: a trava e so para time raiz.
         dele = await svc.create(name="Design", slug="design", parent_team_id=raiz)
     assert dele.parent_team_id == raiz
 
 
-async def test_promover_subtime_a_area_continua_recusado(db) -> None:
-    """⚠️ A RECUSA FICA, E A RAZAO MUDOU -- leia antes de "limpar" a linha.
-
-    Ate a Spec 046 isto era estrutural: so cabia uma raiz, e a checagem
-    existia para o indice unico nao virar HTTP 500. O indice caiu; o banco
-    aceitaria.
-
-    Continua recusado porque a operacao NAO ESTA DESENHADA (§6 da spec): um
-    subtime promovido leva a arvore inteira junto e vira area nova -- com
-    quadro geral proprio? com quais membros? o MANAGER de origem perde
-    alcance sobre gente que continua trabalhando com ele? Nenhuma dessas tem
-    resposta, e escolher calado seria pior que recusar.
-
-    ⚠️ O TIPO DO ERRO MUDOU DE `ConflictError` PARA `BusinessRuleError`, e
-    isso e proposital: nao ha mais conflito com nada -- ha uma operacao que
-    ninguem projetou.
-    """
+async def test_promover_subtime_a_time_raiz_continua_recusado(db) -> None:
+    """O banco aceitaria; a operacao e que nao esta desenhada."""
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         with pytest.raises(BusinessRuleError):
@@ -297,15 +240,10 @@ async def test_mover_subtime_entre_pais_continua_liberado(db) -> None:
 
 
 # ------------------------------------------------------------------
-# 8. o workspace nunca fica sem raiz
+# o workspace nunca fica sem raiz
 # ------------------------------------------------------------------
 async def test_mover_a_raiz_para_baixo_de_descendente_continua_barrado(db) -> None:
-    """Unica forma de orfanar o workspace seria pendurar a raiz num filho.
-
-    Ja e barrado pela deteccao de CICLO -- mas isso e consequencia
-    acidental de outra regra. Este teste trava o comportamento: se alguem
-    afrouxar o ciclo um dia, o workspace poderia ficar sem topo.
-    """
+    """Pendurar a raiz num filho deixaria o workspace sem topo; o ciclo barra."""
     ws, raiz, sub, admin = await _mundo(db)
     with _como_admin(ws, raiz, sub, admin):
         with pytest.raises(BusinessRuleError):
@@ -324,33 +262,15 @@ async def test_mover_a_raiz_para_baixo_de_descendente_continua_barrado(db) -> No
 
 
 # ------------------------------------------------------------------
-# 10-11. indice unico e isolamento de tenant
+# times raiz no banco e isolamento de tenant
 # ------------------------------------------------------------------
-async def test_o_banco_ACEITA_duas_areas_no_mesmo_workspace(db) -> None:
-    """⭐⭐ O guardiao da migration `0023`, e ele afirma o OPOSTO do anterior.
-
-    ⚠️⚠️ ESTE TESTE SE CHAMAVA `test_indice_recusa_segunda_raiz_direto_no_banco`
-    e dizia: *"Defesa em profundidade: mesmo contornando o service, o banco
-    recusa."* Ele era o guardiao do indice `team_unica_raiz_por_workspace`.
-
-    O indice saiu na fatia 2, entao o teste nao podia sobreviver como estava
-    -- e apaga-lo tambem estaria errado: ninguem saberia se o `DROP INDEX`
-    realmente rodou. Invertido, ele passa a guardar a migration.
-
-    ⚠️ ELE VAI DIRETO NO SQL DE PROPOSITO, sem passar pelo service, porque a
-    pergunta e sobre o SCHEMA. Se a `0023` for revertida sem que o modelo
-    acompanhe, o portao de drift acusa a divergencia -- mas so este teste
-    acusa que o banco de teste voltou a recusar.
-
-    ⚠️ E ELE E O QUE DESTRAVA A FATIA 4: os testes de duas areas de verdade
-    (nao mais em memoria, como `web/lib/areas.ts` precisou) so podem existir
-    depois desta linha passar.
-    """
+async def test_o_banco_ACEITA_dois_times_raiz_no_mesmo_workspace(db) -> None:
+    """Direto no SQL: a pergunta e sobre o schema, nao sobre o servico."""
     ws, raiz, _sub, _admin = await _mundo(db)
     await db.execute(
         text(
             "INSERT INTO team (id, workspace_id, parent_team_id, name, slug) "
-            "VALUES (gen_random_uuid(), :w, NULL, 'Area Dois', 'area-dois')"
+            "VALUES (gen_random_uuid(), :w, NULL, 'Raiz Dois', 'raiz-dois')"
         ),
         {"w": ws},
     )
@@ -369,13 +289,7 @@ async def test_o_banco_ACEITA_duas_areas_no_mesmo_workspace(db) -> None:
 
 
 async def test_o_slug_continua_unico_por_workspace(db) -> None:
-    """⚠️ O QUE O INDICE REMOVIDO **NAO** GUARDAVA, e que segue guardado.
-
-    Cair a raiz unica nao abriu a porta para duas areas com o mesmo endereco:
-    quem impede isso e `uq_team_workspace_slug`, que vale em qualquer nivel.
-    O indice que saiu falava de QUANTIDADE, nao de nome -- e sem este teste,
-    "removi o indice errado" passaria despercebido.
-    """
+    """`uq_team_workspace_slug` impede dois times com o mesmo slug, em qualquer nivel."""
     ws, raiz, _sub, _admin = await _mundo(db)
     with pytest.raises(IntegrityError):
         await db.execute(
@@ -390,7 +304,7 @@ async def test_o_slug_continua_unico_por_workspace(db) -> None:
 
 
 async def test_raiz_de_workspaces_diferentes_nao_conflita(db) -> None:
-    """O indice e por workspace: cada tenant tem a SUA raiz."""
+    """Cada tenant tem a sua raiz."""
     ws_a, raiz_a, _sub_a, _admin_a = await _mundo(db)
     ws_b, raiz_b, _sub_b, _admin_b = await _mundo(db)
     assert raiz_a != raiz_b
@@ -409,12 +323,7 @@ async def test_raiz_de_workspaces_diferentes_nao_conflita(db) -> None:
 
 
 async def test_o_banco_recusa_vinculo_ADMIN(db) -> None:
-    """Migration 0031: ADMIN saiu do tipo `user_team_role`.
-
-    A regra de nivel recusa ADMIN no servico; isto e a mesma regra no banco,
-    para que nenhum caminho fora do servico (SQL a mao, script de seed) traga
-    de volta o vinculo que a Spec 045 aposentou.
-    """
+    """ADMIN nao existe em `user_team_role`: nem SQL a mao traz o vinculo de volta."""
     ws, raiz, _sub, _admin = await _mundo(db)
     pessoa = await f.make_user(db, workspace_id=ws)
     with pytest.raises(DBAPIError, match="user_team_role"):

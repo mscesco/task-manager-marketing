@@ -23,7 +23,7 @@ const TIMES = [
 ];
 
 describe("destinosDoMover", () => {
-  it("agrupa por area: geral, lentes de subtime e avulsos", () => {
+  it("agrupa por time raiz: geral, lentes de subtime e avulsos", () => {
     const d = destinosDoMover(
       [
         quadro("g-mkt", "Geral", "mkt", true),
@@ -32,7 +32,7 @@ describe("destinosDoMover", () => {
       ],
       TIMES,
     );
-    expect(d.map((x) => [x.area, x.rotulo])).toEqual([
+    expect(d.map((x) => [x.rootTeam, x.rotulo])).toEqual([
       ["Comercial", "Quadro geral · Comercial"],
       ["Marketing", "Quadro geral · Marketing"],
       ["Marketing", "Lente · Design"],
@@ -45,9 +45,9 @@ describe("destinosDoMover", () => {
     });
   });
 
-  it("sem o Quadro geral da area (fora do alcance), nem lente nem avulso dela", () => {
+  it("sem o Quadro geral do time (fora do alcance), nem lente nem avulso dele", () => {
     const d = destinosDoMover([quadro("g-mkt", "Geral", "mkt", true)], TIMES);
-    expect(d.some((x) => x.area === "Comercial")).toBe(false);
+    expect(d.some((x) => x.rootTeam === "Comercial")).toBe(false);
   });
 });
 
@@ -68,7 +68,7 @@ describe("destinoAtual", () => {
 });
 
 describe("corpoDoMover", () => {
-  const geral = { chave: "g", rotulo: "", area: "", board_id: "g", team_id: null };
+  const geral = { chave: "g", rotulo: "", rootTeam: "", board_id: "g", team_id: null };
   const lente = { ...geral, chave: "g:seo", team_id: "seo" };
   it("principal manda o quadro, e o time so na lente", () => {
     expect(corpoDoMover(geral, "principal", null)).toEqual({ board_id: "g" });

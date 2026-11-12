@@ -1,12 +1,7 @@
 """Repository da entidade Team.
 
-Team possui workspace_id, entao herda o BaseRepository: as
-queries ja nascem filtradas pelo tenant corrente. Aqui
-adicionamos apenas o que e especifico de equipes.
-
-IMPORTANTE: toda query customizada parte de `_base_select()`
--- nunca de um `select(Team)` solto -- para nao perder o
-filtro de tenant.
+Toda query customizada parte de `_base_select()`, nunca de um `select(Team)`
+solto, para nao perder o filtro de tenant.
 """
 
 from __future__ import annotations
@@ -24,14 +19,7 @@ from app.db.repository import BaseRepository
 
 @dataclass(frozen=True)
 class TeamContagens:
-    """O que aponta para um time. Zero em tudo => removivel (Spec 029).
-
-    ⚠️ QUADROS E FORMULARIOS DESDE 16/10 (auditoria). Os dois seguram o time
-    por FK RESTRICT (`board_team`, `solicitation_form_team`) e nao eram
-    contados: a tela mostrava tudo zerado, oferecia "remover", e o `DELETE`
-    estourava com 500 -- nos dois caminhos, porque o esvaziar tambem nao os
-    movia. Contam com a lixeira, pelo mesmo motivo das tarefas.
-    """
+    """O que aponta para um time (FK RESTRICT). Zero em tudo => removivel."""
 
     tarefas: int
     projetos: int
@@ -58,12 +46,7 @@ class TeamRepository(BaseRepository[Team]):
     model = Team
 
     async def slug_exists(self, slug: str) -> bool:
-        """True se ja existe uma equipe com este slug no workspace.
-
-        O schema tem UNIQUE(workspace_id, slug); esta checagem
-        antecipa o conflito com uma mensagem de dominio clara,
-        em vez de deixar estourar um IntegrityError cru.
-        """
+        """True se o slug ja existe no workspace (antecipa o IntegrityError)."""
         stmt = (
             self._base_select()
             .with_only_columns(Team.id)
@@ -74,12 +57,7 @@ class TeamRepository(BaseRepository[Team]):
         return result.scalar_one_or_none() is not None
 
     async def list_all(self) -> list[Team]:
-        """Lista todas as equipes do workspace, ordenadas por nome.
-
-        Equipes sao poucas por workspace -- nao paginamos. Se
-        um dia um workspace tiver centenas de equipes, troca-se
-        por list_page (ja disponivel no BaseRepository).
-        """
+        """Todos os times do workspace, por nome. Sem paginacao: sao poucos."""
         stmt = self._base_select().order_by(Team.name)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -90,18 +68,12 @@ class TeamRepository(BaseRepository[Team]):
     async def collect_ancestor_ids(
         self, team_id: uuid.UUID, *, max_depth: int = 50
     ) -> list[uuid.UUID]:
-        """Sobe a arvore a partir de `team_id` e devolve a lista de
-        ancestrais (do pai direto ate a raiz), na ordem.
+        """Ancestrais de `team_id`, do pai direto ate a raiz.
 
-        Usado pelo TeamService para detectar ciclos antes de
-        gravar um novo parent. Se o caminho passar de
-        `max_depth` (50 por padrao), aborta -- isso so deve
-        acontecer se a arvore ja estiver corrompida no banco,
-        e e melhor falhar alto do que entrar em loop.
+        Passar de `max_depth` so acontece com arvore corrompida: levanta.
         """
         ancestors: list[uuid.UUID] = []
         current_id: uuid.UUID | None = team_id
-        # Conjunto para detectar loops em arvore corrompida.
         seen: set[uuid.UUID] = set()
         for _ in range(max_depth):
             if current_id is None or current_id in seen:
@@ -114,53 +86,24 @@ class TeamRepository(BaseRepository[Team]):
             )
             row = (await self.session.execute(stmt)).scalar_one_or_none()
             if row is None:
-                # Time corrente nao existe mais no workspace
-                # (FK quebrada): para por aqui.
                 return ancestors
             if row in seen:
                 return ancestors
             ancestors.append(row)
             current_id = row
-        # Ultrapassou max_depth -- arvore provavelmente corrompida.
         raise RuntimeError(
             f"Arvore de equipes excedeu profundidade maxima ({max_depth}). "
             "Possivel ciclo no banco."
         )
 
-    # ⚠️⚠️ AQUI MORAVA `root_exists()`, e ela nao virou `roots_of_workspace()`
-    # -- foi REMOVIDA, na Spec 046 fatia 2.
-    #
-    # Ela respondia "ja existe um time raiz?" e sustentava as duas checagens
-    # que barravam a segunda raiz (`TeamService.create` e `.move`). Com o
-    # indice `team_unica_raiz_por_workspace` fora (migration `0023`), nenhuma
-    # das duas pergunta mais isso: criar area virou questao de PERMISSAO, e
-    # promover subtime a area continua recusado por nao estar desenhado.
-    #
-    # ⚠️ NAO A RECRIE "por precaucao". Uma consulta que responde "existe
-    # alguma raiz?" so tem uma leitura util num mundo de raiz unica; num
-    # mundo de N areas a pergunta certa e sempre QUAL, e essa e `root_of()`,
-    # que sobe pelos pais e ja existe em `team_scope`.
-
     # ----------------------------------------------------
-    # Dependencias (Spec 029) -- o que impede remover um time
+    # Dependencias -- o que impede remover um time
     # ----------------------------------------------------
     async def contagens(self, team_id: uuid.UUID) -> TeamContagens:
         """Conta tudo o que aponta para `team_id`, numa query so.
 
-        ⚠️ **Sem filtro de soft delete, de proposito.** `task` e `project`
-        tem `deleted_at`, mas o registro na lixeira sumiu da TELA, nao do
-        BANCO: a foreign key continua ativa e o `DELETE` do time seria
-        recusado por `fk_task_team` / `project_team` (ambas RESTRICT).
-
-        Se esta contagem filtrasse `deleted_at IS NULL`, a guarda diria
-        "vazio", a tela habilitaria o botao, e a transacao estouraria com
-        IntegrityError -- erro incompreensivel para quem esta na tela.
-        Medido em 29/07: o subtime "CRM e Automacao" tem 3 tarefas vivas e
-        7 na lixeira. Contando so as vivas, dez tarefas viram tres.
-
-        Por isso NAO usamos `_base_select()` aqui: ele filtra soft delete
-        automaticamente. O filtro de tenant e aplicado a mao, em cada
-        subconsulta -- que e a outra metade do que `_base_select()` faz.
+        Conta tambem a lixeira: registro soft-deletado ainda segura a FK.
+        Por isso nao usa `_base_select()`; o filtro de tenant vai a mao.
         """
         tenant = require_tenant()
         ws = tenant.workspace_id
@@ -191,26 +134,13 @@ class TeamRepository(BaseRepository[Team]):
         )
 
     async def remove(self, team: Team) -> None:
-        """Apaga a linha do time (hard delete).
-
-        `Team` nao tem `deleted_at` -- nao ha soft delete de equipe. Quem
-        decide SE pode apagar e o TeamService; aqui so executa. O banco e a
-        segunda barreira: `fk_task_team`, `project_team` e `fk_team_parent`
-        sao RESTRICT e recusariam a operacao se a guarda falhasse.
-        """
+        """Hard delete. Quem decide se pode e o TeamService; as FKs RESTRICT seguram o resto."""
         await self.session.delete(team)
 
     async def contagens_em_lote(self) -> dict[uuid.UUID, TeamContagens]:
-        """`contagens` para TODOS os times do workspace, em UMA query.
+        """`contagens` de todos os times do workspace, em uma query (evita N+1).
 
-        Alimenta a listagem da tela de gestao (Spec 029/Fatia 4): sem isto,
-        desenhar 10 linhas custaria 10 idas ao banco (N+1). Mesmo padrao em
-        lote do ADR 0025.
-
-        A autoridade continua sendo a checagem no clique: estes numeros
-        envelhecem entre o carregamento da tela e o botao. Servem para
-        INFORMAR e para desabilitar o obvio, nao para autorizar -- medido em
-        29/07, um subtime passou de 0 para 2 membros em vinte minutos.
+        So informa a listagem; quem autoriza e a checagem no DELETE.
         """
         tenant = require_tenant()
         ws = tenant.workspace_id
@@ -262,20 +192,13 @@ class TeamRepository(BaseRepository[Team]):
         }
 
     # ----------------------------------------------------
-    # Esvaziamento (Spec 029 / Fatia 3)
+    # Esvaziamento
     # ----------------------------------------------------
-    async def areas_ids(self) -> list[uuid.UUID]:
-        """As AREAS do workspace (times sem pai), em ordem ESTAVEL por nome.
+    async def root_team_ids(self) -> list[uuid.UUID]:
+        """Os times raiz do workspace, em ordem estavel por nome.
 
-        ⚠️ A ORDENACAO E O PONTO, e nao enfeite -- mesma decisao de
-        `web/lib/areas.ts`, e pelo mesmo motivo: sem `ORDER BY`, o Postgres
-        nao promete ordem nenhuma, e qualquer codigo que pegue "a primeira"
-        passa a olhar para outra area depois de um `VACUUM`.
-
-        ⚠️ QUEM PRECISAR DE **UMA** AREA A PARTIR DAQUI TEM DE TRATAR O CASO
-        DE N -- e a mesma regra que o front encapsulou em `soleRootTeam`. Se
-        voce esta prestes a escrever `(await areas_ids())[0]`, pare: e
-        exatamente o `teams.find(...)` que a fatia 1 tirou do front.
+        Pode haver varios: quem precisa de um so tem de tratar o caso de N,
+        nunca pegar `[0]`.
         """
         stmt = (
             self._base_select()
@@ -285,25 +208,10 @@ class TeamRepository(BaseRepository[Team]):
         )
         return list((await self.session.execute(stmt)).scalars().all())
 
-    async def area_de(self, team_id: uuid.UUID) -> uuid.UUID | None:
-        """A AREA (raiz) da arvore de `team_id`. `None` se o time nao existe.
+    async def root_team_id_of(self, team_id: uuid.UUID) -> uuid.UUID | None:
+        """O time raiz da arvore de `team_id` (ele mesmo, se ja e raiz). `None` se nao existe.
 
-        ⚠️⚠️ ELA SE CHAMAVA `root_id()` E NAO RECEBIA NADA -- devolvia "a raiz
-        do workspace", com a docstring *"Destino fixo do esvaziamento (D5)"*.
-        Isso era verdade enquanto havia uma raiz. Com N areas (Spec 046) a
-        pergunta sem argumento nao tem resposta, e a versao velha escolheria
-        UMA delas: esvaziar um subtime do Marketing podia empurrar as tarefas
-        para o TI. Sem erro e sem teste vermelho.
-        Trocar o nome junto com o argumento e proposital -- `root_id(team_id)`
-        continuaria lendo como "a raiz", que e a ideia errada.
-
-        ⚠️ SOBE PELOS PAIS, e nao filtra `parent_team_id IS NULL`: e a mesma
-        semantica de `team_scope.root_of`, e a unica que sobrevive a arvores
-        irmas. Um time que JA e area devolve a si mesmo.
-
-        ⚠️ REUSA `collect_ancestor_ids`, que ja tem a trava de profundidade
-        (`max_depth`) contra ciclo no banco. Uma consulta recursiva nova aqui
-        duplicaria essa protecao ou -- pior -- a esqueceria.
+        Sobe pelos pais, como `team_scope.root_of`.
         """
         team = await self.get_by_id(team_id)
         if team is None:
@@ -311,18 +219,11 @@ class TeamRepository(BaseRepository[Team]):
         if team.parent_team_id is None:
             return team.id
         ancestrais = await self.collect_ancestor_ids(team_id)
-        # O ultimo da lista e a raiz daquela arvore. Lista vazia so aconteceria
-        # com `parent_team_id` apontando para fora do workspace, que a FK
-        # composta impede.
+        # O ultimo ancestral e a raiz.
         return ancestrais[-1] if ancestrais else team.id
 
     async def tarefas_do_time(self, team_id: uuid.UUID) -> list[Task]:
-        """Tarefas do time, INCLUINDO as que estao na lixeira.
-
-        As soft-deletadas precisam vir: elas seguram `fk_task_team` e o
-        `DELETE` do time falharia sem reatribui-las. Elas nao sao arquivadas
-        (ja estao fora de tudo) -- so trocam de `team_id`. Ver o service.
-        """
+        """Tarefas do time, incluindo a lixeira: elas tambem seguram `fk_task_team`."""
         tenant = require_tenant()
         stmt = select(Task).where(
             Task.workspace_id == tenant.workspace_id, Task.team_id == team_id
@@ -366,12 +267,7 @@ class TeamRepository(BaseRepository[Team]):
         return list((await self.session.execute(stmt)).scalars().all())
 
     async def vinculos_do_time(self, team_id: uuid.UUID) -> list[UserTeam]:
-        """Vinculos user<->team deste time.
-
-        `fk_userteam_team` e CASCADE -- sem tratar isto, apagar o time
-        sumiria com os vinculos calado, e as pessoas perderiam o acesso sem
-        nenhum rastro.
-        """
+        """Vinculos deste time. A FK e CASCADE: sem tratar, apagar o time os some calado."""
         tenant = require_tenant()
         stmt = select(UserTeam).where(
             UserTeam.workspace_id == tenant.workspace_id,

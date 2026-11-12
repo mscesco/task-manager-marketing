@@ -1,8 +1,4 @@
-"""Schemas (DTOs) de request/response do modulo workspaces.
-
-Fronteira da API: validam entrada e moldam saida. Nao sao
-entidades de dominio nem models ORM.
-"""
+"""Schemas de request/response do modulo workspaces."""
 
 from __future__ import annotations
 
@@ -54,67 +50,33 @@ class TeamResponse(BaseModel):
 
 
 class TeamListItem(TeamResponse):
-    """Time na listagem: TeamResponse + o que impede remove-lo (Spec 029).
+    """Time na listagem, com o que impede remove-lo e o que quem pergunta pode.
 
-    As contagens vem em LOTE (uma query para a pagina inteira) e existem para
-    a tela INFORMAR -- "14 tarefas, 2 membros" -- e desabilitar o botao obvio.
-    Elas NAO autorizam nada: a checagem que vale roda no DELETE, porque estes
-    numeros envelhecem entre carregar a tela e clicar.
+    As contagens so informam a tela; quem autoriza e o DELETE.
     """
 
     tarefas: int = 0
     projetos: int = 0
     membros: int = 0
     filhos: int = 0
-    #: Auditoria de 16/10: tambem seguram o time (FK RESTRICT).
+    #: Tambem seguram o time (FK RESTRICT).
     quadros: int = 0
     formularios: int = 0
-    #: Quem pergunta pode EDITAR este time? (Spec 049, fatia F)
-    #:
-    #: ⚠️⚠️ O CADEADO VEM DO SERVIDOR, e nao da tela -- mesma regra da Spec 047
-    #: §3.1 (`can_edit_role` do vinculo). O front so sabe "o que" a pessoa
-    #: pode, nunca "onde"; com o SUPERVISOR editando o proprio subtime, a tela
-    #: que olhasse so `subteam.update` desenharia o lapis em TODOS os subtimes,
-    #: e todos menos um dariam 403. Calculado pela mesma pergunta do PATCH.
-    #:
-    #: ⚠️ OBRIGATORIO, sem default: quem monta um `TeamListItem` tem de responder.
+    #: Os `can_*` vem do servidor porque `me.permissions` diz "o que", nao
+    #: "onde". Cada um repete a pergunta da rota correspondente; sem default.
     can_update: bool
-    #: Quem pergunta pode CRIAR PROJETO neste time? (Spec 051, fatia A)
-    #:
-    #: ⚠️ A tela de projetos escolhe a area pela lista de raizes da pessoa, e
-    #: para quem e MANAGER no Marketing e OPERATOR no Comercial as duas
-    #: aparecem -- mas so numa ela cria. Sem isto o seletor ofereceria o
-    #: Comercial e o POST daria 403. Mesma pergunta do `ProjectService.create`.
+    #: Mesma pergunta do `ProjectService.create`.
     can_create_project: bool
-    #: Quem pergunta pode APAGAR este time? (Spec 051, fatia D)
-    #:
-    #: ⚠️ O gerente passou a apagar subtime da PROPRIA arvore. A tela olhava
-    #: `subteam.delete` em `me.permissions` -- "em algum lugar" -- e desenharia a
-    #: lixeira em todo subtime do workspace. Mesma pergunta de
-    #: `TeamService._assert_apaga_subtime`; raiz nunca (a regra recusa).
+    #: Mesma pergunta de `TeamService._assert_apaga_subtime`; raiz nunca.
     can_delete: bool
-    #: Quem pergunta pode CRIAR BASE neste time? (Spec 056, fatia B)
-    #:
-    #: ⚠️ So time RAIZ (D6) -- e o supervisor de um subtime a recebe na raiz
-    #: dele (D3). Mesma pergunta e mesma ordem do `BaseService.create`: subtime
-    #: e 422 antes do verbo, entao aqui e `False` para todo subtime.
+    #: Mesma pergunta do `BaseService.create`: `False` para todo subtime.
     can_create_base: bool
-    #: Quem pergunta pode CRIAR FORMULARIO de solicitacao neste time? (08/10)
-    #:
-    #: Mesma pergunta do `SolicitationFormService.criar_formulario`
-    #: (`form.create` NESTE time). Subtime vale (decisao dela, 08/10): o
-    #: formulario de um subtime manda as solicitacoes para a fila DELE. Sem
-    #: este campo, a tela listava todos os times do workspace -- e o gestor do
-    #: Marketing via o Comercial, para ouvir 403 ao salvar.
+    #: Mesma pergunta do `SolicitationFormService.criar_formulario`.
     can_create_form: bool
 
 
 class TeamCreateRequest(BaseModel):
-    """Criacao de uma equipe.
-
-    `parent_team_id` opcional: se ausente/null, a equipe nasce
-    como raiz; se informado, nasce como subtime daquele pai.
-    """
+    """Criacao de time. Sem `parent_team_id` nasce raiz."""
 
     name: str = Field(min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=120, pattern=_SLUG_PATTERN)
@@ -122,13 +84,9 @@ class TeamCreateRequest(BaseModel):
 
 
 class TeamUpdateRequest(BaseModel):
-    """Edicao de uma equipe (Spec 029/D6).
+    """Edicao de time. O slug nao e editavel (identificador estavel).
 
-    O SLUG NAO ENTRA aqui, de proposito: ele e unico no workspace e serve de
-    identificador estavel. Editar o rotulo e barato; editar o identificador
-    so cria chance de colisao.
-
-    `description` ausente preserva o valor atual; string vazia limpa.
+    `description` ausente preserva o valor; string vazia limpa.
     """
 
     name: str = Field(min_length=1, max_length=255)
@@ -136,26 +94,15 @@ class TeamUpdateRequest(BaseModel):
 
 
 class TeamMoveRequest(BaseModel):
-    """Move uma equipe para um novo pai.
-
-    `new_parent_id=None` torna a equipe raiz.
-    """
+    """Move um time para um novo pai (`None` e recusado pelo servico)."""
 
     new_parent_id: uuid.UUID | None = None
 
 
 class PreviaRemocaoResponse(BaseModel):
-    """O que sai junto se o time for esvaziado e removido (Spec 029/D3-B).
+    """O que sai junto se o time for esvaziado e removido.
 
-    `tarefas_vivas` sao arquivadas e movidas para a AREA da propria arvore;
-    `tarefas_na_lixeira` so trocam de time (ja estao fora de tudo, mas
-    seguram a foreign key). Numeros do MOMENTO DA CHAMADA -- os da listagem
-    podem ter envelhecido.
-
-    ⚠️ ESTA DOCSTRING DIZIA "movidas para o time principal", e a Spec 046
-    tornou a frase ambigua: com N areas, QUAL principal? O destino sempre foi
-    -- e agora precisa dizer que e -- a raiz da MESMA arvore. Esvaziar um
-    subtime do Marketing nunca empurra nada para o TI.
+    Tudo vai para a raiz da mesma arvore; `tarefas_vivas` sao tambem arquivadas.
     """
 
     model_config = {"from_attributes": True}
@@ -168,12 +115,10 @@ class PreviaRemocaoResponse(BaseModel):
     projetos: int
     membros: int
     filhos: int
-    # Spec 046, fatia 3 (§4.2): a tela precisa NOMEAR o destino antes de
-    # confirmar. `None` quando o time e a propria area -- ai nao ha destino, e
-    # a operacao ja e recusada.
+    # `None` quando o time ja e raiz (nao ha destino; a remocao e recusada).
     destino_team_id: uuid.UUID | None = None
     destino_nome: str | None = None
-    #: Auditoria de 16/10: sobem para a area junto (incluindo os apagados).
+    #: Sobem para a raiz junto, incluindo os apagados.
     quadros: int = 0
     formularios: int = 0
 

@@ -1,28 +1,7 @@
 "use client";
-// components/PillSelect.tsx
-// O seletor de permissão — Spec 047, revisão de 09/09.
-//
-// ⚠️⚠️ MESMA FORMA DO SELETOR DE COLUNA E DE PRIORIDADE do detalhe de tarefa
-// (`TaskDetail.tsx`), por pedido da Camila: *"o seletor de permissões quero
-// igual o seletor que tem no detalhe de tarefa"*. Pílula que abre um painel
-// suspenso, opções com `role="option"`, a atual destacada em `--accent-soft`.
-//
-// ⚠️ E ISSO NÃO É SÓ ESTÉTICA. Era um `<select>` nativo, e um `<select>` no
-// meio de uma gaveta de administração se parece com um campo de formulário —
-// algo que você preenche e depois envia. A pílula se parece com o que É: o
-// valor atual, clicável. É o mesmo argumento que fez a pílula virar controle
-// na Spec 039 (F6).
-//
-// ⚠️⚠️ ESCOLHER **NÃO** GRAVA por conta própria: ele só devolve a escolha.
-// No seletor de coluna, clicar aplica na hora porque errar a coluna se desfaz
-// num clique; aqui errar o cargo dá alcance no sistema inteiro, em silêncio.
-// Quem chama decide se propõe (com Salvar) ou aplica.
-//
-// ⚠️⚠️ O PAINEL ERA `absolute` E NASCIA RECORTADO. As gavetas têm
-// `overflow-y-auto`, então o painel do seletor de papel da organização
-// aparecia cortado e deslocado para fora da gaveta — *"o seletor de papéis da
-// organização ficou bugado"*. Agora ele usa `AnchoredPanel`, que é `fixed`,
-// mede o gatilho e anima a entrada E a saída.
+// Seletor de permissão em pílula, com a forma do seletor de coluna do detalhe.
+// Escolher não grava: só devolve a escolha, e quem chama decide se propõe ou
+// aplica. O painel é o `AnchoredPanel` (`fixed`, porque as gavetas rolam).
 
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -36,14 +15,7 @@ import AnchoredPanel, {
 export type PillOption<T extends string> = {
   readonly id: T;
   readonly label: string;
-  /**
-   * Manda na ÁRVORE inteira, e não só onde está — a bolinha cheia.
-   *
-   * ⚠️ No seletor de coluna, o ponto colorido é a cor QUE A PESSOA ESCOLHEU
-   * para a coluna. Papel não tem cor no produto, e inventar uma seria pintar
-   * uma hierarquia que o modelo não tem. O que existe de real para mostrar
-   * ali é isto, e espelha `COMMAND_ROLES` de `auth/domain/team_scope.py`.
-   */
+  /** Manda na árvore inteira (a bolinha cheia); espelha `COMMAND_ROLES` do backend. */
   readonly commands?: boolean;
 };
 
@@ -57,7 +29,7 @@ export default function PillSelect<T extends string>({
   value: T;
   options: readonly PillOption<T>[];
   disabled?: boolean;
-  /** Vai no `aria-label` — precisa nomear o TIME, senão há vários iguais. */
+  /** Vai no `aria-label`; precisa nomear o time, senão há vários iguais. */
   label: string;
   onSelect: (id: T) => void;
 }) {
@@ -75,16 +47,7 @@ export default function PillSelect<T extends string>({
       <button
         ref={anchorRef}
         type="button"
-        // ⚠️⚠️ `pill-target` É A FORMA DO ALVO, e ela vivia aqui como
-        // `borderRadius: 999` inline: o anel de foco segue o raio do ELEMENTO
-        // que o recebe, e sem isto um selo em forma de pílula ganhava um
-        // retângulo duro em volta — *"aqui ainda tá ruim o contorno do
-        // seletor"*.
-        //
-        // ⚠️ A CORREÇÃO GANHOU NOME em 10/09, e o motivo é que ela reapareceu
-        // duas vezes: a pílula de papel de organização e a de área na busca
-        // nasceram sem ela, cada uma com o mesmo retângulo. Uma correção
-        // anônima, escrita à mão num arquivo, não se propaga.
+        // `pill-target`: o anel de foco segue o raio do elemento que o recebe.
         className="tappable pill-target"
         disabled={disabled}
         aria-haspopup="listbox"
@@ -105,9 +68,7 @@ export default function PillSelect<T extends string>({
         </Badge>
       </button>
 
-      {/* ⚠️ `AnimatePresence` é o que permite a SAÍDA animada: sem ele o React
-          desmonta o nó na hora e o `exit` nunca roda. Abrir suave e sumir seco
-          é pior do que não animar. */}
+      {/* `AnimatePresence` permite a saída animada (`exit`). */}
       <AnimatePresence>
         {isOpen && box && (
           <AnchoredPanel
@@ -116,11 +77,7 @@ export default function PillSelect<T extends string>({
             aria-label={label}
             minWidth={200}
           >
-            {/* ⚠️ A ORDEM É A DA LISTA RECEBIDA, que vem de `papeisAtribuiveis`
-                — do mais alto para o mais baixo. Ordenar alfabeticamente poria
-                "Gerente" antes de "Operador" por acaso e obrigaria a LER cada
-                linha em vez de mirar. É a mesma razão pela qual a lista de
-                prioridade segue a ordem do enum, e não o alfabeto. */}
+            {/* Ordem da lista recebida (do papel mais alto ao mais baixo), não alfabética. */}
             {options.map((o) => {
               const selecionada = o.id === value;
               return (

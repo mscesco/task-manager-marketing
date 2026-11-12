@@ -1,38 +1,7 @@
 "use client";
-// components/TeamScreen.tsx
-// A tela de pessoas e estrutura — Spec 047; unificada em 09/09.
-//
-// ⚠️⚠️ ESTA É A ÚNICA TELA DE PESSOAS DO PRODUTO. Havia uma segunda,
-// `/membros`, com estrutura própria — sem alternador, sem a visão de subtimes
-// — e a Camila resolveu em 09/09: *"adorei a tela que tava com o título
-// 'marketing área' (…) aquela tela é a que eu quero que mostre quando eu
-// abrisse o membros"*. A rota `/membros` deixou de existir; a entrada de menu
-// virou "Time" e leva à área da pessoa.
-//
-// ⚠️ E ISSO NÃO É ECONOMIA DE CÓDIGO, é a §5 da spec: *"duas telas listando
-// pessoas, com regras diferentes, é o começo do próximo defeito de contador"*.
-// As duas já dividiam a TABELA; o que divergia era tudo em volta, e ia
-// divergir de novo na próxima mudança.
-//
-// ⚠️ EU JÁ ERREI ISTO UMA VEZ, e vale ficar escrito: em vez de mandar
-// `/membros` para a tela do time, inventei aqui um terceiro nível
-// ("organização", com `teamId = null`) que ninguém pediu — e que duplicava a
-// `/organizacao`. Ela desfez: a tela é do TIME, e o menu é um atalho.
-//
-// A divisão de dentro:
-//
-//     o alternador   escolhe o ASSUNTO   (pessoas ou estrutura)
-//     as abas        escolhem o RECORTE  (ativos, convidados, inativos)
-//     o lápis        abre a GAVETA       (a única porta de edição)
-//
-// ⚠️ E O BOTÃO DE AÇÃO SEGUE O ALTERNADOR, por decisão dela: *"o botão de novo
-// membro muda de acordo com o toggle"*. Dois botões fixos, um deles sempre
-// fora de assunto, é o que a troca evita.
-//
-// ⚠️ TODA DECISÃO MORA EM `lib/teamScreen.ts` e `lib/memberState.ts`,
-// testadas. `app/` está fora do `include` do vitest, e é por isso que esta
-// tela mora em `components/`: as regras mais delicadas (quem aparece, quem é
-// "convidado") são justamente as que não dão erro quando saem erradas.
+// Tela de pessoas e estrutura de um time (raiz ou subtime).
+// Alternador escolhe o assunto (pessoas/estrutura); abas, o recorte; o lápis abre a gaveta.
+// As regras ficam em `lib/teamScreen.ts` e `lib/memberState.ts`.
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -92,15 +61,10 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   const [me, setMe] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
-  // ⚠️ Os avisos viraram uma PILHA no canto (`Toasts`). O aviso inline
-  // empurrava a tela para baixo justamente quando a pessoa olhava para a
-  // linha que acabou de mudar.
+  // Avisos em pilha no canto (`Toasts`), para não empurrar a tela.
   const avisar = useAvisar();
 
-  // ⚠️⚠️ O ESTADO DA TELA MORA NA URL, e não só em `useState`: *"se eu
-  // recarrego a tela, ela não lembra onde eu estava"*. Na URL ele sobrevive ao
-  // F5 E vira link — mandar "olha os inativos do Marketing" passa a ser
-  // possível, o que estado em memória nunca daria.
+  // O estado da tela mora na URL: sobrevive ao F5 e vira link.
   const inicial = lerEstadoDaTela();
   const [view, setView] = useState<View>(inicial.view);
   const [tab, setTab] = useState<MemberState>(inicial.tab);
@@ -108,11 +72,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   const [criando, setCriando] = useState(false);
   const [revelado, setRevelado] = useState<RevealedPassword | null>(null);
   const [gavetaDeTime, setGavetaDeTime] = useState<Team | null>(null);
-  // ⚠️⚠️ A GAVETA DA PESSOA MORA AQUI, e não na tabela. Ela era da tabela,
-  // e por isso só existia para quem vinha da tabela: da gaveta do SUBTIME,
-  // que lista as mesmas pessoas com o cargo, não havia caminho nenhum -- a
-  // Camila tentou trocar a permissão ali e não conseguiu (09/09). Com a tela
-  // como dona, as duas portas entregam a MESMA gaveta.
+  // A gaveta da pessoa é da tela, para a tabela e a gaveta do subtime abrirem a mesma.
   const [gavetaDePessoa, setGavetaDePessoa] = useState<Member | null>(null);
 
   const carregar = useCallback(async () => {
@@ -151,9 +111,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
     [teamId, teams, members],
   );
 
-  // ⚠️ DOIS RECORTES, e a ordem importa para os números: a BUSCA define o
-  // universo em que as abas contam. Contando as abas sobre todo mundo, buscar
-  // "ana" mostraria "Convidados 7" com uma Ana só na tela.
+  // A busca define o universo em que as abas contam.
   const filtrando = busca.trim() !== "";
   const buscadas = useMemo(
     () => (filtrando ? rows.filter((r) => matchesSearch(busca, r.member)) : rows),
@@ -184,28 +142,14 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
     );
   }
 
-  const ehArea = team?.parent_team_id === null;
-  // ⚠️⚠️ O CAMINHO DE VOLTA, pedido dela em 10/09: *"essa tela de subtime
-  // precisa de algum botão pra voltar"*. E ela chegou nesta tela por um CARTÃO
-  // -- não há "voltar" óbvio quando a navegação foi para dentro.
-  //
-  // ⚠️ SOBE UM NÍVEL, e não usa o histórico do navegador: `history.back()`
-  // levaria para onde a pessoa VEIO, que pode ser o quadro, a busca, ou nada
-  // (aba nova). Um link para o PAI é sempre o mesmo lugar, e é o que a
-  // hierarquia promete. Numa ÁREA ele não aparece: não há acima.
+  const isRoot = team?.parent_team_id === null;
+  // Voltar sobe um nível (link para o pai), não usa o histórico do navegador.
   const pai = team?.parent_team_id
     ? teams.find((t) => t.id === team.parent_team_id) ?? null
     : null;
 
-  // ⚠️⚠️ E NUMA ÁREA O NÍVEL DE CIMA É A ORGANIZAÇÃO, achado dela em 10/09:
-  // *"se eu vou para a tela de time de /organizacao, não tem botão de voltar
-  // para a organização"*. A primeira versão deste link tratava "não tenho pai"
-  // como "não há acima" -- e há: a grade de áreas é de onde ela veio.
-  //
-  // ⚠️ SÓ PARA QUEM ALCANÇA AQUELA TELA, e o teste é o MESMO do `AppShell`
-  // (`org_role` não nulo) -- não `roles`, que junta os dois níveis e faria um
-  // ADMIN de time ganhar um link para um 403. Quem não administra a
-  // organização nunca esteve lá, e para essa pessoa a área É o topo.
+  // Num time raiz, o nível de cima é a organização, só para quem a alcança
+  // (`org_role` não nulo, como no `AppShell`).
   const podeVerOrganizacao = podeAbrirOrganizacao(me);
   const voltar = pai
     ? { href: `/times/${pai.id}`, label: pai.name }
@@ -232,19 +176,15 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
         title={
           <span className="inline-flex items-center gap-2">
             {team ? team.name : "Time"}
-            {/* ⚠️ Diz o NÍVEL, porque a tela é a mesma para os dois e o
-                conteúdo muda: numa área aparece a árvore inteira; num
-                subtime, só ele e o que está abaixo. */}
+            {/* Diz o nível: num time raiz aparece a árvore inteira. */}
             {team && (
               <Badge tone="outline" size="sm">
-                {ehArea ? "Time" : "Subtime"}
+                {isRoot ? "Time" : "Subtime"}
               </Badge>
             )}
           </span>
         }
-        // ⚠️ "N de M", nunca só N. A §3.2: o defeito de 27/07 foi o cabeçalho
-        // divergindo do corpo, e mostrar só o filtrado apaga a informação de
-        // que existe mais.
+        // "N de M", nunca só N.
         count={
           visiveis.length === rows.length
             ? rows.length
@@ -275,11 +215,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
         />
       )}
 
-      {/* ---- O ALTERNADOR ------------------------------------------------
-          ⚠️ COMPONENTE DIFERENTE das abas de baixo, e não a mesma coisa com
-          outra cor: aqui a pastilha é UM `<motion.div layout />` que anda; lá
-          o indicador são duas instâncias que o `layoutId` interpola. A forma
-          distinta é o que separa "troquei de assunto" de "recortei a lista". */}
+      {/* Alternador: pastilha única que anda, diferente das abas de baixo. */}
       <div className="mb-4">
         <Toggle
           aria-label="O que ver"
@@ -287,9 +223,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           onSelect={(v) => {
             setView(v);
             gravarEstadoDaTela({ view: v, tab });
-            // ⚠️ Fecha o formulário ao virar a chave: ele pertence ao assunto
-            // anterior, e deixá-lo aberto criaria uma área a partir de um
-            // formulário que a pessoa abriu para cadastrar gente.
+            // Fecha o formulário ao virar a chave: ele pertence ao assunto anterior.
             setCriando(false);
           }}
           sides={[
@@ -299,11 +233,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
         />
       </div>
 
-      {/* ---- A TROCA DE ASSUNTO ------------------------------------------
-          ⚠️ A tela inteira ENTRA subindo e SAI subindo, e não é enfeite: virar
-          a chave troca todo o conteúdo abaixo do alternador — de uma tabela de
-          pessoas para uma grade de times. Sem transição, a troca lê-se como
-          "a página recarregou", e o olho perde onde estava. */}
+      {/* Troca de assunto com transição, para não parecer recarga. */}
       {loading ? (
         <Loading />
       ) : (
@@ -317,8 +247,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
           >
             {view === "people" ? (
               <>
-                {/* ⚠️ `Reveal` e não `{criando && …}`: o formulário empurra a
-                    tabela para baixo, e sem transição a lista SALTA. */}
+                {/* `Reveal`: sem transição, a tabela salta. */}
                 <Reveal show={criando && team !== null}>
                   {team && (
                     <NewMember
@@ -336,11 +265,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                   )}
                 </Reveal>
 
-                {/* ---- A BUSCA ---------------------------------------------
-                    ⚠️ ELA VALE NOS TRÊS NÍVEIS. Nasceu na organização, onde
-                    "onde está a Fulana?" não tem outra resposta; mas numa área
-                    com dezenas de pessoas a pergunta é a mesma. Deixá-la só num
-                    nível seria a divergência que esta unificação veio matar. */}
+                {/* Busca, nos dois níveis. */}
                 <label className="mb-4 block max-w-[420px]">
                   <span className="label flex items-center gap-1.5">
                     <Search size={14} aria-hidden="true" /> Encontrar pessoa
@@ -359,11 +284,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                   <div className="muted">Ninguém com esse nome ou e-mail.</div>
                 ) : (
                   <>
-                    {/* ---- AS ABAS DE ESTADO ------------------------------
-                        ⚠️ A contagem fica NA ABA, e não só no cabeçalho: é ela
-                        que responde "quem ainda não entrou?" antes do clique.
-                        ⚠️ E `0` aparece — `count: 0` mostra "0", ao contrário
-                        de `undefined`. Uma aba sem número lê-se como "não sei". */}
+                    {/* Abas com contagem; `count: 0` mostra "0". */}
                     <div className="mb-3">
                       <Tabs
                         aria-label="Estado das pessoas"
@@ -406,13 +327,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                             rows={visiveis}
                             middleColumn={middleColumn}
                             count={`${visiveis.length} de ${rows.length} pessoas`}
-                            // ⚠️⚠️ SÓ PARA QUEM TEM O QUE FAZER LÁ DENTRO:
-                            // *"Rafael é só operator e ainda tem a opção de
-                            // editar o membro, mesmo não podendo fazer nada na
-                            // tela, tem algum propósito?"*. Não tinha. A
-                            // pergunta é `temAcaoPossivel`, que já existe e é
-                            // testada -- e é POR LINHA, porque um supervisor
-                            // alcança uns e não outros.
+                            // Só para quem tem o que fazer (`temAcaoPossivel`), por linha.
                             podeAbrir={(row) =>
                               temAcaoPossivel(
                                 scope,
@@ -453,9 +368,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
                       <SubteamCardTile
                         key={c.team.id}
                         card={c}
-                        // ⚠️ Spec 049, fatia F: o lápis também abre para quem EDITA
-                        // este subtime sem ter alcance amplo -- o supervisor, no
-                        // dele. Quem decide é o servidor (`can_update`).
+                        // O lápis também abre para quem edita este subtime; decide o servidor (`can_update`).
                         canManage={podeMexerEmTimes || podeEditar(c.team)}
                         onEdit={() => setGavetaDeTime(c.team)}
                       />
@@ -484,18 +397,13 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
               avisar(texto);
               await carregar();
             }}
-            // ⚠️⚠️ RECARREGA SEM FECHAR. Adicionar gente é operação em SÉRIE, e
-            // fechar a gaveta a cada uma obrigava a reabrir o time -- foi o que
-            // ela relatou em 09/09. O `carregar()` traz a lista nova, e a
-            // `AnimatePresence` de lá faz a linha entrar deslizando.
+            // Recarrega sem fechar: adicionar gente é operação em série.
             onRefresh={carregar}
           />
         )}
       </AnimatePresence>
 
-      {/* ⚠️ A GAVETA DESENHA A PRÓPRIA senha provisória, desde 09/09 -- o
-          bloco azul aparecia aqui, ATRÁS dela. O `revelado` desta tela agora
-          serve só ao CADASTRO, que acontece sem gaveta nenhuma aberta. */}
+      {/* A gaveta desenha a própria senha provisória; esta só serve ao cadastro. */}
       <AnimatePresence>
         {gavetaDePessoa && (
           <MemberDrawer
@@ -524,14 +432,7 @@ export default function TeamScreen({ teamId }: { teamId: string }) {
   );
 }
 
-/**
- * A coluna do meio da tabela.
- *
- * ⚠️ É uma CONSTANTE, e não uma função de nível: a tabela é compartilhada com
- * outra tela (`MembersTable` recebe `middleColumn` como parâmetro justamente
- * por isso), mas aqui o recorte é sempre um time — então o que ela responde é
- * sempre a mesma pergunta: *que cargo esta pessoa tem NESTE time?*
- */
+/** Coluna do meio da tabela: o cargo da pessoa neste time. */
 const middleColumn = {
   title: "Cargo aqui",
   render: (r: { cargoAqui: MemberRole | null }) =>
@@ -544,13 +445,7 @@ const middleColumn = {
     ),
 };
 
-/**
- * O vazio de cada aba diz POR QUE está vazio.
- *
- * ⚠️ "Nenhum resultado" numa aba filtrada é a mensagem que faz a pessoa achar
- * que perdeu registros — o mesmo mal-estar do defeito de contador de 27/07,
- * numa forma mais barata.
- */
+/** O vazio de cada aba diz por que está vazio. */
 function emptyStateText(tab: MemberState): string {
   switch (tab) {
     case "active":
@@ -562,14 +457,7 @@ function emptyStateText(tab: MemberState): string {
   }
 }
 
-/**
- * Cadastrar pessoa nova, já NESTE time.
- *
- * ⚠️ NÃO HÁ SELETOR DE TIME AQUI, e a ausência é a tela toda: o time é aquele
- * em que se está. Um `<select>` de time neste formulário significaria que a
- * tela não sabe do que fala — foi o que a versão com nível de "organização"
- * precisava, e ela não existe mais.
- */
+/** Cadastrar pessoa nova já neste time (sem seletor de time). */
 function NewMember({
   team,
   scope,
@@ -586,10 +474,8 @@ function NewMember({
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
 
-  // ⚠️⚠️ AS OPÇÕES VÊM DE `papeisAtribuiveis`, COM O NÍVEL DESTE TIME. É o
-  // formulário que mais custa errar: escolher um papel impossível, preencher
-  // nome e e-mail e só então levar 409 é a forma mais cara de descobrir a
-  // regra. Numa área não cabe SUPERVISOR; num subtime não cabe MANAGER.
+  // Opções de `papeisAtribuiveis` com o nível deste time:
+  // no time raiz não cabe SUPERVISOR; num subtime não cabe MANAGER.
   const opcoes = papeisAtribuiveis(
     scope,
     isAdmin,
@@ -708,13 +594,7 @@ function NewMember({
   );
 }
 
-/**
- * Criar um SUBTIME dentro do time aberto.
- *
- * ⚠️ CRIAR ÁREA NÃO MORA AQUI: área é raiz, e criar raiz é ato de organização
- * (`area.create`, que só os papéis de organização têm — Spec 046 §4.1). O
- * lugar dela é a `/organizacao`.
- */
+/** Criar um subtime dentro do time aberto. Time raiz se cria na `/organizacao`. */
 function NewSubteam({
   parent,
   onCancel,
@@ -741,9 +621,7 @@ function NewSubteam({
           autoFocus
           onChange={(e) => {
             setNome(e.target.value);
-            // ⚠️ Sugere o identificador enquanto a pessoa não o editar à mão.
-            // O backend só aceita `^[a-z0-9-]+$`; sem isto, digitar "CRM e
-            // Automação" devolveria 422 e ela teria de adivinhar a regra.
+            // Sugere o identificador até a pessoa editá-lo; o backend só aceita `^[a-z0-9-]+$`.
             if (!slugTocado) setSlug(sugereSlug(e.target.value));
           }}
         />

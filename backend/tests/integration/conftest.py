@@ -1,20 +1,9 @@
-"""Harness dos testes de INTEGRACAO (Entrega 5) -- contra Postgres real.
+"""Harness dos testes de integracao contra Postgres real.
 
-ESTRATEGIA (ADR 0014):
-    - banco de teste descartavel (container `db-test` do compose); o initdb
-      so cria as extensoes (`schema/00_test_extensions.sql`);
-    - bootstrap 1x por sessao: `alembic upgrade head` desde o baseline
-      (ADR 0022) usando DATABASE_URL=TEST_DATABASE_URL;
-    - isolamento por teste: conexao com transacao externa + AsyncSession com
-      join_transaction_mode="create_savepoint"; o UoW.commit() do codigo vira
-      SAVEPOINT e o rollback externo desfaz TUDO ao fim do teste.
-
-A suite so roda se TEST_DATABASE_URL estiver setada -- senao os testes de
-integracao sao PULADOS (a suite de logica pura continua rodando em qualquer
-lugar). Marcador: @pytest.mark.integration (registrado no pyproject).
-
-Bootstrap roda via subprocess `alembic` (caminho online/asyncpg do env.py;
-nao precisa de psycopg2).
+Banco descartavel (`db-test`), `alembic upgrade head` 1x por sessao, e cada
+teste roda numa transacao externa com savepoint: o commit do codigo vira
+SAVEPOINT e o rollback final desfaz tudo. Sem TEST_DATABASE_URL os testes sao
+pulados (no CI, falham).
 """
 
 from __future__ import annotations
@@ -42,7 +31,6 @@ from app.modules.auth.domain.permissions import (
     permissions_for_roles,
 )
 
-# o baseline (ADR 0022): o banco de teste nasce dele e o upgrade aplica o resto
 SCHEMA_BASE_REVISION = "0001_baseline_v5"
 
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
@@ -52,10 +40,7 @@ TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 def _bootstrapped_db_url() -> str:
     """Sobe o schema no banco de teste 1x por sessao. Pula se sem URL."""
     if not TEST_DATABASE_URL:
-        # ⚠️ NO CI, FALTAR A URL E ERRO, e nao "pular" (auditoria de 16/10).
-        # O skip sai com codigo 0: se alguem renomeasse a variavel no
-        # `ci.yml`, os testes de visibilidade sumiriam e o check continuaria
-        # verde. O GitHub Actions define `CI=true`; local continua pulando.
+        # No CI pular sairia com codigo 0 e esconderia a suite inteira.
         if os.getenv("CI"):
             pytest.fail("TEST_DATABASE_URL ausente no CI -- a suite de integracao nao rodaria.")
         pytest.skip(
@@ -64,8 +49,6 @@ def _bootstrapped_db_url() -> str:
             "--rm -e TEST_DATABASE_URL=... api-dev pytest -m integration"
         )
     env = {**os.environ, "DATABASE_URL": TEST_DATABASE_URL}
-    # Entrega 8 (ADR 0022): banco de teste nasce VAZIO; o baseline 0001
-    # constroi o schema inteiro. Sem stamp, sem dump -- so upgrade head.
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"], env=env, check=True
     )
@@ -116,28 +99,11 @@ def acting_as(
     team_tree: tuple[TeamNode, ...] = (),
     org_role: str | None = None,
 ) -> Iterator[TenantContext]:
-    """Seta o TenantContext do teste (reusa tenant_scope do app).
+    """Seta o TenantContext do teste com as permissoes montadas como na requisicao.
 
-    ⚠️⚠️ AS PERMISSOES SAO MONTADAS **COM ESCOPO**, por `permissions_for_actor`
-    -- o mesmo caminho de `get_tenant_context`. Ate 09/09 este helper passava
-    um `frozenset` de `permissions_for_roles`, e isso tornava INVISIVEL nos
-    testes toda regra escopada por time.
-
-    O motivo esta escrito em `TenantContext.has_permission_in`: quando
-    `permissions` nao tem `can_in` (ou seja, e um `frozenset`), ele CAI PARA A
-    PERGUNTA AMPLA, de proposito e fail-open. Com um `frozenset` aqui,
-    "tem `team.manage` NAQUELA arvore" respondia igual a "tem `team.manage`
-    em algum lugar" -- e um teste de duas areas passaria verde com a regra
-    errada.
-
-    ⚠️ E o comentario de la ja anunciava esta troca: *"E fail-OPEN (...)
-    enquanto houver uma raiz so, as duas respostas coincidem em todo caso
-    real. A fatia D estreita isto quando o cadastro permitir."* O cadastro
-    permitiu na Spec 046; a troca e esta.
-
-    ⚠️ `org_role` entra como parametro proprio porque papel de ORGANIZACAO nao
-    tem time (Spec 045, fatia B) -- quem administra a organizacao alcanca
-    tudo, e isso nao sai de `memberships`.
+    Com `team_tree`, as permissoes sao escopadas por time (`permissions_for_actor`).
+    Sem ela, caem na pergunta ampla: teste sobre escopo tem de passar `team_tree`,
+    senao fica verde com a regra errada.
     """
     roles = frozenset(m.role for m in memberships) | (
         frozenset({org_role}) if org_role else frozenset()
@@ -146,42 +112,18 @@ def acting_as(
         workspace_id=workspace_id,
         user_id=user_id,
         roles=roles,
-        # ⚠️⚠️ SO ESCOPA QUANDO A ARVORE FOI DECLARADA, e isto e uma escolha,
-        # nao um atalho. `permissions_for_actor` concede ao papel de COMANDO o
-        # time do vinculo MAIS OS DESCENDENTES -- e sem `team_tree` nao ha de
-        # onde tirar descendente nenhum. Um MANAGER da raiz ficaria com
-        # `team.manage` SO na raiz e seria recusado ao mexer num subtime.
-        #
-        # Dezenas de testes antigos nao passam `team_tree` porque nunca
-        # precisaram: a pergunta deles nao e sobre escopo. Escopar todos de uma
-        # vez quebraria 31 deles por um motivo que nao e o assunto de nenhum.
-        #
-        # ⚠️ E A REGRA PARA QUEM ESCREVE TESTE NOVO: se a sua pergunta e sobre
-        # ESCOPO -- quem alcanca qual arvore --, PASSE `team_tree`. Sem ela o
-        # contexto cai na pergunta ampla (`has_permission_in` e fail-open com
-        # `frozenset`), e o teste fica verde com a regra errada.
+        # Sem arvore nao ha descendentes para conceder ao papel de comando.
         permissions=(
             permissions_for_actor(
                 memberships=memberships, tree=team_tree, org_role=org_role
             )
             if team_tree
-            # ⚠️ AS DUAS PARCELAS, como em `get_tenant_context`. Ate 19/10 o
-            # admin dos testes sem arvore era um vinculo ADMIN de TIME, e
-            # `permissions_for_roles` o mapeava; com o ADMIN so de organizacao
-            # (migration 0031), sem a segunda parcela ele nao podia nada.
+            # ADMIN e papel de organizacao: sem a segunda parcela nao pode nada.
             else permissions_for_roles(roles) | permissions_for_org_role(org_role)
         ),
         memberships=memberships,
         team_tree=team_tree,
-        # ⚠️⚠️ SEM ESTA LINHA, TODA REGRA DE PAPEL DE ORGANIZACAO FICAVA
-        # INVISIVEL NOS TESTES. O `org_role` entrava so em `roles` e em
-        # `permissions_for_actor` -- `require_tenant().org_role` respondia
-        # `None` mesmo com `acting_as(..., org_role="ADMIN")`.
-        #
-        # Achado em 10/09, escrevendo a abertura do anti-lockout para quem
-        # administra a organizacao: o teste falhava com a regra CERTA. E a
-        # mesma classe do defeito que este helper ja registra logo acima --
-        # o contexto do teste diferindo do contexto da requisicao.
+        # Sem isto `require_tenant().org_role` seria None nos testes.
         org_role=org_role,
     ) as ctx:
         yield ctx
