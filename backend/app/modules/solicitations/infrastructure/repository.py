@@ -1,16 +1,7 @@
 """Repository de Solicitacao.
 
-DOIS caminhos de acesso, de proposito:
-
-1. AUTENTICADO (fila de triagem): `SolicitationRepository` herda o
-   BaseRepository -- filtro de tenant automatico + assercao. E o
-   caminho de list/get/review.
-
-2. PUBLICO (criacao pelo formulario): NAO ha TenantContext -- nao
-   existe usuario logado. `insert_public` recebe o workspace_id
-   EXPLICITO (resolvido por slug na service) e faz um session.add
-   direto. E a UNICA escrita fora do BaseRepository neste modulo,
-   e e insert-only: nenhum dado de tenant e LIDO sem contexto.
+Dois caminhos: a fila autenticada (BaseRepository, com tenant) e
+`insert_public`, a unica escrita sem TenantContext (insert-only, rota publica).
 """
 
 from __future__ import annotations
@@ -38,43 +29,11 @@ class SolicitationRepository(BaseRepository[Solicitation]):
     def _base_select(
         self, *, include_deleted: bool = False
     ) -> Select[tuple[Solicitation]]:
-        """O de sempre, MAIS o recorte por time do FORMULARIO (Spec 043, A).
+        """Tenant + recorte pelo time do formulario. Toda leitura passa por aqui.
 
-        ⚠️⚠️ ESTA E A MUDANCA MAIS PERIGOSA DA FATIA, e ela nao tem meio-termo:
-        frouxo demais mostra a um time a solicitacao de outro; apertado demais
-        esconde a fila de quem devia triar. Por isso ela mora AQUI, no unico
-        lugar por onde toda leitura passa (`list_batches`, os dois contadores e
-        o `get_by_id` do BaseRepository), e nao repetida em cada consulta.
-
-        A regra, com as palavras da Camila (22/08): *"a fila e de acordo com o
-        formulario e o time que a pessoa criou a solicitacao"*. A solicitacao
-        NAO tem time -- ele vem por `solicitation.form_id ->
-        solicitation_form.team_id`.
-
-        ⚠️⚠️ O `JOIN` E `LEFT`, E ISSO NAO E ESTILO. Solicitacao sem
-        `form_id` e historico legitimo: tudo o que foi enviado antes desta
-        fatia, e qualquer uma cujo formulario tenha sido apagado depois. Um
-        `JOIN` interno as apagaria da fila **em silencio** -- sem erro, sem
-        aviso, sem ninguem notar que a fila encolheu. Ha teste so para isso.
-
-        ⚠️ E ORFA CONTINUA VISIVEL A QUEM TEM `solicitation.review` NO
-        WORKSPACE. Nao ha time para comparar, entao a alternativa seria
-        esconde-la de todo mundo -- que e perder trabalho pendente por causa de
-        um vinculo que o produto nem exigia quando ela chegou.
-
-        ⚠️ ADMIN NAO GANHA CLAUSULA NENHUMA. `visible_team_ids` devolve `None`
-        para ADMIN, e `None` aqui significa "sem filtro de time" -- o mesmo
-        contrato que o `board_repository` ja usa. Trata-lo como conjunto vazio
-        esconderia a fila inteira do unico papel que enxerga tudo.
-
-        ⚠️⚠️ O `JOIN` PASSOU A SER INCONDICIONAL NA SPEC 048 (fatia D), e antes
-        ele só entrava para não-ADMIN. O motivo é o recorte por time
-        (`_recorte_de_time`): ele também precisa de `SolicitationForm` no FROM,
-        e juntar a mesma tabela duas vezes é erro de SQLAlchemy. Com o `JOIN`
-        condicional, o recorte funcionaria para quem não administra e
-        explodiria para quem administra -- o oposto do que se quer testar.
-        O custo é um LEFT JOIN por PK numa consulta que o ADMIN faz; medido em
-        zero linhas a mais, porque é LEFT.
+        A solicitacao nao tem time: ele vem de `form_id -> solicitation_form.team_id`.
+        O JOIN e LEFT para nao sumir com a orfa (sem formulario), e incondicional
+        porque `_recorte_de_time` tambem precisa de `SolicitationForm` no FROM.
         """
         stmt = (
             super()
@@ -85,22 +44,8 @@ class SolicitationRepository(BaseRepository[Solicitation]):
                 & (SolicitationForm.workspace_id == Solicitation.workspace_id),
             )
         )
-        # ⚠️⚠️ Spec 051, fatia B: O RECORTE E O VERBO, E NAO A LENTE. Ate aqui
-        # era `visible_team_ids` -- "onde a pessoa trabalha". Com uma pessoa em
-        # duas arvores (MANAGER no Marketing, OPERATOR no Comercial) a lente
-        # inclui o Comercial, a rota ve `solicitation.read` no Marketing, e ela
-        # lia e triava a fila do Comercial. A pergunta certa e "em que times ela
-        # le solicitacao?" -- e so ela, porque e a unica porta de toda leitura
-        # (ver acima). Triar ainda confere `solicitation.review` no servico.
-        #
-        # ⚠️⚠️ E A ORFA (sem formulario) SAIU DE QUEM NAO E DA ORGANIZACAO --
-        # decisao da Spec 048 que o codigo nao cumpria. O aviso acima ("orfa
-        # continua visivel a quem tem `solicitation.review` no workspace") era
-        # verdade com uma arvore so; com varias, "no workspace" virava "qualquer
-        # gerente de qualquer area", e a orfa nao tem time para dizer de qual.
-        # Quem a ve agora e so quem le em TODOS os times (`None`): o papel de
-        # organizacao. O `LEFT JOIN` continua: para eles, sumir com ela seria
-        # perder trabalho pendente.
+        # Recorta pelo verbo (`solicitation.read`), nao pela lente. A orfa so
+        # aparece para quem le em todos os times (`None`): o papel de organizacao.
         leitura = require_tenant().teams_with_permission("solicitation.read")
         if leitura is None:  # organizacao (ou contexto legado com o verbo)
             return stmt
@@ -109,32 +54,10 @@ class SolicitationRepository(BaseRepository[Solicitation]):
     def _recorte_de_time(
         self, team_id: uuid.UUID | None
     ) -> list[ColumnElement[bool]]:
-        """O recorte da TELA: a fila do time que a pessoa está olhando.
+        """O recorte da tela: a fila do time olhado e dos seus descendentes.
 
-        ⚠️⚠️ ISTO NAO E A LENTE, E CONFUNDIR OS DOIS CONSERTA METADE. A lente
-        (no `_base_select`) responde *"posso ver?"* -- e para papel de
-        organizacao ela e `None`, ou seja ela NAO tira a fila do Comercial da
-        tela de quem administra. Este recorte responde *"estou olhando qual
-        time?"*, e vale para todos. Mesma dupla que a listagem de projetos
-        precisou em 11/09, pelo mesmo motivo.
-
-        ⚠️ `None` = SEM RECORTE, e e resposta legitima (a fila da organizacao
-        inteira). Nao ha default: ver a assinatura de `list_batches`.
-
-        ⚠️ O TIME E SEUS DESCENDENTES. Formulario pode pertencer a um subtime,
-        e pedir a raiz e receber so o que e dela esconderia a fila daquele
-        subtime de quem olha a raiz.
-
-        ⚠️⚠️ E A ORFA (§4.4). Solicitacao sem `form_id` -- historico de antes da
-        Spec 043, ou formulario apagado depois -- nao tem time para comparar.
-        Decisao da spec: **ela fica visivel para papel de organizacao**, que e
-        quem pode adota-la; sai da fila de time, nao do produto. Excluí-la de
-        todas as filas seria perder trabalho pendente por causa de um vinculo
-        que o produto nem exigia quando ela chegou.
-
-        ⚠️ A VERRUGA, dita: para quem administra, a orfa aparece na fila de
-        TODO time -- ela nao e de nenhum. A alternativa era nao aparecer em
-        nenhuma, e ai ninguem a adota.
+        Diferente da permissao do `_base_select` ("posso ver?"). `None` = sem
+        recorte. Para papel de organizacao a orfa aparece em toda fila de time.
         """
         if team_id is None:
             return []
@@ -149,41 +72,19 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         self,
         *,
         params: PageParams,
-        # ⚠️ `filtro` MANTEM o default, e `team_id` NAO tem. A diferenca nao e
-        # descuido: a ausencia de `filtro` significa "todos os status", que e
-        # uma resposta obvia e que nenhum chamador erra em silencio. A ausencia
-        # de recorte de time significa "a organizacao inteira" -- e um chamador
-        # que a receba sem querer mostra a fila de outro time.
+        # `team_id` sem default de proposito: omitir mostraria a organizacao inteira.
         filtro: str | None = None,
         team_id: uuid.UUID | None,
         search: str | None = None,
         form_id: uuid.UUID | None = None,
         without_task: bool = False,
     ) -> tuple[list[Solicitation], int]:
-        """Pagina por ENVIO, nao por linha.
+        """Pagina por envio (lote), nao por linha. Devolve (linhas, total_de_lotes).
 
-        A fila e lida por SUBMISSAO: um envio de 4 categorias e UM card,
-        nao 4 soltos. Paginar por linha quebraria envios ao meio entre
-        paginas (metade na pagina 1, metade na 2).
-
-        Estrategia em 2 tempos:
-          1. seleciona os batch_id da pagina, ordenados pelo envio mais
-             recente (max(created_at) do lote);
-          2. traz TODAS as linhas desses lotes, em batch_seq.
-
-        Devolve (linhas, total_de_lotes). O agrupamento em si e feito na
-        camada de servico -- o repositorio so garante o recorte correto.
-
-        `filtro` (semantica de LOTE: o envio entra se QUALQUER demanda
-        dele casar):
-            PENDING/APPROVED/REJECTED -- envio com ao menos uma nesse status
-            ACTIVE                    -- aprovada OU em andamento (15/10)
-            SEM_TAREFA                -- envio com aprovada sem tarefa criada
-            None                      -- todos
-
-        `without_task` (15/10) soma "e sem tarefa" a qualquer filtro: a mesma
-        demanda tem de casar os dois. `search` e `form_id` recortam os
-        envios, e valem para os contadores das abas (`count_by_tab`).
+        Dois tempos: os `batch_id` da pagina, depois todas as linhas deles.
+        `filtro` vale por lote: o envio entra se qualquer demanda casar
+        (PENDING/APPROVED/REJECTED, ACTIVE, SEM_TAREFA, ou None = todos).
+        `without_task` soma "e sem tarefa" na mesma demanda.
         """
         recorte = self._recorte_de_time(team_id)
         alvo = (
@@ -231,11 +132,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             (
                 await self.session.execute(
                     self._base_select()
-                    # ⚠️ O RECORTE TAMBEM AQUI. Este e o segundo tempo da
-                    # consulta (traz as linhas dos lotes da pagina), e ele
-                    # repete o `_base_select` -- repetir o base e esquecer o
-                    # recorte devolveria linhas de outro time dentro de um lote
-                    # que passou pelo filtro.
+                    # O recorte de novo, ou viriam linhas de outro time no lote.
                     .where(*recorte)
                     .where(Solicitation.batch_id.in_(ids))
                     .order_by(
@@ -258,16 +155,9 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         filtro: str | None = None,
         without_task: bool = False,
     ) -> dict[str, int]:
-        """Os numeros das abas da fila (15/10), em DEMANDAS e nao em envios
-        -- o mesmo que o "7 pendentes" de sempre.
+        """Os numeros das abas, em demandas, com a mesma busca e filtros da lista.
 
-        ⚠️ COM A MESMA BUSCA, O MESMO FORMULARIO E A MESMA CAIXINHA "SO SEM
-        TAREFA" DA LISTA: o numero da aba diz o que a aba vai mostrar. A
-        caixinha nao vale em Pendentes e Rejeitadas (nada ali tem tarefa).
-
-        `WITHOUT_TASK` e o selo ao lado da caixinha: quantas sem tarefa NA ABA
-        ATUAL (`filtro`), e nao na fila inteira. (Revisao de 16/10: com
-        "Concluidas" aberta, o selo contava as aprovadas tambem.)
+        `WITHOUT_TASK` conta as sem tarefa na aba atual (`filtro`), nao na fila toda.
         """
         fila = (
             self._base_select()
@@ -300,10 +190,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
     async def form_options(
         self, team_id: uuid.UUID | None
     ) -> list[tuple[uuid.UUID, str]]:
-        """Os formularios que tem pedido nesta fila -- as opcoes do filtro
-        (15/10). Vem da fila, e nao da lista de formularios: quem tria pode nao
-        ter permissao de gerir formulario, e formulario sem pedido nao filtra
-        nada."""
+        """Os formularios que tem pedido nesta fila: as opcoes do filtro."""
         stmt = (
             self._base_select()
             .where(*self._recorte_de_time(team_id))
@@ -320,9 +207,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             self._base_select()
             .where(*self._recorte_de_time(team_id))
             .where(
-                # ⚠️ MESMO CONJUNTO DO FILTRO, obrigatoriamente: o badge conta
-                # o que a lista mostra. Um contador que diverge da lista e pior
-                # que nao ter contador -- por isso a regra mora em `_sem_tarefa`.
+                # Mesma regra do filtro: o badge conta o que a lista mostra.
                 _sem_tarefa(Solicitation)
             )
             .subquery()
@@ -334,15 +219,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         team_id: uuid.UUID | None,
         created_between: tuple[datetime, datetime] | None = None,
     ) -> int:
-        """Total de PENDING da fila que a tela mostra (badge da aba).
-
-        ⚠️ O `team_id` NAO TEM DEFAULT, nos tres metodos de leitura, pelo
-        mesmo motivo que a Spec 046 fatia 4 usou em
-        `default_board_and_column_for_status`: um `= None` deixaria todo
-        chamador existente compilando e ERRADO em silencio -- o badge contando
-        a organizacao inteira ao lado de uma lista recortada por time. Sem
-        default, o `pytest` aponta cada chamador.
-        """
+        """Total de PENDING da fila que a tela mostra. `team_id` sem default de proposito."""
         stmt = select(func.count()).select_from(
             self._base_select()
             .where(*self._recorte_de_time(team_id))
@@ -358,11 +235,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         team_id: uuid.UUID | None,
         created_between: tuple[datetime, datetime] | None = None,
     ) -> datetime | None:
-        """Quando chegou a PENDING mais antiga da fila (Spec 058, card 6).
-
-        ⚠️ O MESMO recorte de `count_pending`: o card diz "3 pendentes, a mais
-        antiga ha 5 dias", e os dois numeros tem de ser da mesma fila.
-        """
+        """Quando chegou a PENDING mais antiga. Mesmo recorte de `count_pending`."""
         fila = (
             self._base_select()
             .where(*self._recorte_de_time(team_id))
@@ -374,20 +247,16 @@ class SolicitationRepository(BaseRepository[Solicitation]):
         return (await self.session.execute(stmt)).scalar_one()
 
 
-#: "Em andamento" na fila (15/10): aceita e ainda nao concluida.
+#: "Em andamento" na fila: aceita e ainda nao concluida.
 ACTIVE = frozenset({"APPROVED", "IN_PROGRESS"})
 #: As abas onde a caixinha "so sem tarefa" vale (nas outras, nada tem tarefa).
 _ABAS_COM_TAREFA = frozenset({"ACTIVE", "DONE", "ALL"})
 
 
 def _sem_tarefa(c: Any) -> ColumnElement[bool]:
-    """Aceita e sem tarefa criada -- a UNICA definicao (a lista, o filtro
-    `SEM_TAREFA`, a caixinha e os dois contadores usam esta).
+    """Aceita (qualquer dos status aceitos) e sem tarefa criada -- a unica definicao.
 
-    ⚠️ OS TRES ACEITOS, e nao so APPROVED (Spec 043, fatia D): mover um pedido
-    para "em andamento" nao pode tira-lo daqui -- o filtro existe para achar o
-    que foi aceito e nunca virou tarefa. `c` e o model ou as colunas de uma
-    subconsulta (`.c`)."""
+    `c` e o model ou as colunas de uma subconsulta (`.c`)."""
     return c.status.in_(sorted(ACEITOS)) & c.task_created_at.is_(None)
 
 
@@ -401,11 +270,9 @@ def _da_aba(c: Any, aba: str) -> ColumnElement[bool]:
 
 
 def _sem_acento(coluna: Any, termo: str) -> ColumnElement[bool]:
-    """`termo` dentro de `coluna`, sem diferenciar maiuscula nem acento -- a
-    mesma dobra das outras buscas do projeto (`task_repository`), no Postgres.
+    """`termo` dentro de `coluna`, sem diferenciar maiuscula nem acento.
 
-    ⚠️ `%` e `_` ESCAPADOS, e nao apagados (revisao de 16/10): apagar o `_`
-    fazia `maria_souza@...` virar `mariasouza@...` e nao achar nada."""
+    `%` e `_` sao escapados, nao apagados (senao `maria_souza` nao casa)."""
     escapado = termo.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     return func.unaccent(func.lower(coluna)).like(
         func.unaccent(func.lower(f"%{escapado}%")), escape="\\"
@@ -415,11 +282,8 @@ def _sem_acento(coluna: Any, termo: str) -> ColumnElement[bool]:
 def _busca(
     search: str | None, form_id: uuid.UUID | None
 ) -> list[ColumnElement[bool]]:
-    """Busca e formulario da fila (15/10).
-
-    A busca casa nome, e-mail ou PROTOCOLO -- o protocolo e o comeco do
-    `batch_id` em maiusculas, que e o que o solicitante leva embora.
-    """
+    """Busca e formulario da fila. A busca casa nome, e-mail ou protocolo
+    (o comeco do `batch_id`)."""
     out: list[ColumnElement[bool]] = []
     termo = (search or "").strip()
     if termo:
@@ -440,8 +304,7 @@ def _busca(
 def _criada_entre(
     intervalo: tuple[datetime, datetime] | None,
 ) -> list[ColumnElement[bool]]:
-    """O filtro de periodo da tela inicial (Spec 058, 15/10): as que CHEGARAM
-    no periodo -- `[inicio, fim)`, ja convertido para instantes pelo chamador."""
+    """As que chegaram em `[inicio, fim)` (instantes ja convertidos pelo chamador)."""
     if intervalo is None:
         return []
     inicio, fim = intervalo
@@ -461,11 +324,7 @@ def insert_public(
     workspace_id: uuid.UUID,
     solicitation: Solicitation,
 ) -> Solicitation:
-    """Insert da rota publica: workspace explicito, sem TenantContext.
-
-    Insert-only. A leitura da fila continua passando pelo
-    BaseRepository (caminho 1).
-    """
+    """Insert da rota publica: workspace explicito, sem TenantContext."""
     solicitation.workspace_id = workspace_id
     session.add(solicitation)
     return solicitation

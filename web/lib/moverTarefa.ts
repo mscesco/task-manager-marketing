@@ -1,10 +1,4 @@
-/**
- * Spec 062 -- o que o modal "Mover…" oferece e o que ele manda.
- *
- * FRONTEIRA (Spec 027): decisao em `lib/`, funcao pura. O `MoverTarefa.tsx`
- * so desenha. ⚠️ NAO E SEGURANCA: o servidor confere alcance e criacao no
- * destino; aqui so montamos as opcoes e o corpo.
- */
+// O que o modal "Mover…" oferece e o corpo que ele manda. Não é segurança: o servidor confere o destino.
 
 import type { Quadro, Team } from "./api";
 import { STATUSES } from "./status";
@@ -14,20 +8,17 @@ export type Destino = {
   /** Chave estavel do `<select>`: `board_id` ou `board_id:team_id` (lente). */
   readonly chave: string;
   readonly rotulo: string;
-  /** O nome da area, para agrupar no `<optgroup>`. */
-  readonly area: string;
+  /** O nome do time raiz, para agrupar no `<optgroup>`. */
+  readonly rootTeam: string;
   readonly board_id: string;
   /** So na lente de subtime; `null` = o time do proprio quadro. */
   readonly team_id: string | null;
 };
 
 /**
- * Os destinos, agrupados por area: o Quadro geral, a lente de cada subtime
- * (o Quadro geral com o time do subtime) e os quadros avulsos.
- *
- * ⚠️ SO QUADROS QUE A PESSOA ALCANCA: `quadros` vem de `GET /boards`, que ja
- * corta pela lente. A lente de subtime so aparece se o Quadro geral da area
- * apareceu.
+ * Destinos agrupados por time raiz: Quadro geral, lente de cada subtime e
+ * quadros avulsos. `quadros` (de `GET /boards`) já vem cortado pelo alcance;
+ * sem o Quadro geral do time, nem lente nem avulso dele aparecem.
  */
 export function destinosDoMover(
   quadros: readonly Quadro[],
@@ -52,12 +43,12 @@ export function destinosDoMover(
     .slice()
     .sort((a, b) => pt(nome(a.team_id), nome(b.team_id)));
   for (const geral of gerais) {
-    const area = nome(geral.team_id);
+    const rootTeam = nome(geral.team_id);
     out.push({
       chave: geral.id,
-      // A area no rotulo: com o `<select>` fechado, o `<optgroup>` nao aparece.
-      rotulo: `Quadro geral · ${area}`,
-      area,
+      // O time no rótulo: com o `<select>` fechado, o `<optgroup>` não aparece.
+      rotulo: `Quadro geral · ${rootTeam}`,
+      rootTeam,
       board_id: geral.id,
       team_id: null,
     });
@@ -69,7 +60,7 @@ export function destinosDoMover(
       out.push({
         chave: `${geral.id}:${sub.id}`,
         rotulo: `Lente · ${sub.name}`,
-        area,
+        rootTeam,
         board_id: geral.id,
         team_id: sub.id,
       });
@@ -82,7 +73,7 @@ export function destinosDoMover(
       out.push({
         chave: q.id,
         rotulo: porId.get(q.team_id)?.parent_team_id ? `${q.name} · ${nome(q.team_id)}` : q.name,
-        area,
+        rootTeam,
         board_id: q.id,
         team_id: null,
       });
@@ -116,7 +107,7 @@ export type AchadoDaBusca = {
   caminho: string[];
 };
 
-/** "Campanha de Natal › Redes sociais › Instagram" -- a decisao 5. */
+/** "Campanha de Natal › Redes sociais › Instagram". */
 export function caminhoDoAchado(a: AchadoDaBusca): string {
   return [...a.caminho, a.title].join(" › ");
 }
@@ -158,10 +149,7 @@ const ROTULO_DO_STATUS: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label]),
 );
 
-/**
- * As frases da previa, na ordem da spec. Vazio quando nada muda (o botao
- * "Mover" fica desligado e a tela diz por que).
- */
+/** As frases da prévia. Vazio quando nada muda. */
 export function frasesDaPrevia(p: PreviaDoMover): string[] {
   if (!p.mudou) return [];
   const frases: string[] = [];
@@ -179,7 +167,7 @@ export function frasesDaPrevia(p: PreviaDoMover): string[] {
   } else if (!p.projeto_antes && p.projeto_depois) {
     frases.push(`Entra no projeto "${p.projeto_depois}".`);
   }
-  // O quadro de destino sem a coluna do status muda o status (ADR 0042).
+  // Destino sem a coluna do status muda o status.
   for (const m of p.status_muda) {
     const de = ROTULO_DO_STATUS[m.de] ?? m.de;
     const para = ROTULO_DO_STATUS[m.para] ?? m.para;

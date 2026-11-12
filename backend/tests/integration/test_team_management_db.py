@@ -1,13 +1,8 @@
-"""Spec 029 / Fatia 1 -- criar, editar e remover time VAZIO, pela ROTA.
+"""Criar, editar, esvaziar e remover time, pela rota (o `require_permission` e
+parte do que se testa).
 
-Por que pela rota e nao pelo service: a licao da Spec 028 foi que 12 testes
-de service continuaram verdes com o gate da rota revertido. Aqui o gate E o
-objeto de teste (D1), entao o teste precisa atravessar o `require_permission`.
-
-O caso que mais importa e o `test_nao_remove_time_com_tarefa_na_lixeira`:
-tarefa com `deleted_at` sumiu da tela mas mantem a foreign key, e o banco
-recusaria o DELETE. Se a guarda filtrar soft delete, a tela promete algo que
-a transacao nao entrega.
+Tarefa na lixeira (`deleted_at`) segura a FK: a guarda de "time vazio" a conta,
+senao a tela prometeria um DELETE que o banco recusa.
 """
 
 from __future__ import annotations
@@ -56,9 +51,8 @@ def _client(db, ctx: TenantContext) -> AsyncClient:
 async def _mundo(db, *, papel: str = "ADMIN"):
     """Workspace com raiz + um subtime vazio, e um ator no papel pedido.
 
-    ⚠️ `papel="ADMIN"` e ADMIN DE ORGANIZACAO (`org_role`), sem vinculo de
-    time: desde a 0031 ADMIN nao existe mais em `user_team`. Os outros papeis
-    entram como vinculo na raiz.
+    `papel="ADMIN"` e ADMIN de organizacao, sem vinculo; os outros entram como
+    vinculo na raiz.
     """
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
@@ -77,8 +71,7 @@ async def _mundo(db, *, papel: str = "ADMIN"):
         workspace_id=ws,
         user_id=ator,
         roles=frozenset({papel}),
-        # ⚠️ `permissions_for_actor`, e nao `permissions_for_roles`: o mapa
-        # plano so conhece papel de TIME e ignoraria o ADMIN de organizacao.
+        # `permissions_for_actor`: o mapa plano ignoraria o ADMIN de organizacao.
         permissions=permissions_for_actor(
             memberships=vinculos, tree=floresta, org_role=org_role
         ),
@@ -95,10 +88,10 @@ async def _existe(db, team_id: uuid.UUID) -> bool:
 
 
 # ---------------------------------------------------------------
-# D1 -- quem pode o que
+# Quem pode o que
 # ---------------------------------------------------------------
 async def test_manager_cria_subtime(db) -> None:
-    """D1: criar desceu de workspace.manage (ADMIN) para team.manage."""
+    """MANAGER cria subtime (`team.manage`)."""
     ws, raiz, _sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
     async with _client(db, ctx) as c:
@@ -115,14 +108,7 @@ async def test_manager_cria_subtime(db) -> None:
 
 
 async def test_manager_remove_subtime_da_propria_arvore(db) -> None:
-    """⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia D).
-
-    Ate 16/09 este teste se chamava `test_manager_nao_remove` e afirmava o D1
-    da Spec 029: remover era so do ADMIN. A Camila decidiu (decisao 4) que o
-    gerente apaga subtime da PROPRIA arvore, como o Mapa de 10/09 ja dizia. A
-    metade negativa -- subtime de OUTRA arvore segue 403 -- mora na matriz
-    (`subteam.delete[vazio do Comercial]`), que tem as duas arvores.
-    """
+    """O gerente apaga subtime da propria arvore. A outra arvore (403) esta na matriz."""
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
     async with _client(db, ctx) as c:
@@ -141,7 +127,7 @@ async def test_admin_remove_time_vazio(db) -> None:
 
 
 # ---------------------------------------------------------------
-# D6 -- editar mexe no nome, nunca no slug
+# Editar mexe no nome, nunca no slug
 # ---------------------------------------------------------------
 async def test_manager_edita_nome_slug_nao_muda(db) -> None:
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
@@ -154,7 +140,7 @@ async def test_manager_edita_nome_slug_nao_muda(db) -> None:
     assert resp.status_code == 200
     corpo = resp.json()
     assert corpo["name"] == "Copywriting"
-    # O slug do payload e IGNORADO -- nao esta no schema de entrada.
+    # O slug do payload e ignorado: nao esta no schema de entrada.
     assert corpo["slug"] == "copy"
 
 
@@ -175,7 +161,7 @@ async def test_editar_sem_descricao_preserva_a_atual(db) -> None:
 
 
 # ---------------------------------------------------------------
-# D3 -- so remove time vazio. A contagem INCLUI a lixeira.
+# So remove time vazio. A contagem inclui a lixeira.
 # ---------------------------------------------------------------
 async def test_nao_remove_time_com_tarefa_viva(db) -> None:
     ws, _raiz, sub, ator, ctx = await _mundo(db)
@@ -190,11 +176,8 @@ async def test_nao_remove_time_com_tarefa_viva(db) -> None:
 
 
 async def test_nao_remove_time_com_tarefa_na_lixeira(db) -> None:
-    """O furo do D3: soft delete some da tela, nao do banco.
-
-    A FK `fk_task_team` continua ativa, entao o banco recusaria o DELETE.
-    Se a guarda filtrasse `deleted_at IS NULL`, a resposta seria 204 seguido
-    de IntegrityError -- e nao um 409 com mensagem util.
+    """Tarefa na lixeira segura a FK `fk_task_team`: a resposta e 409, e nao 204
+    seguido de IntegrityError.
     """
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     task = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
@@ -223,7 +206,7 @@ async def test_nao_remove_time_com_projeto(db) -> None:
 
 
 async def test_nao_remove_time_com_membro(db) -> None:
-    """`user_team` e CASCADE -- sem esta guarda os vinculos sumiriam calados."""
+    """`user_team` e CASCADE: sem a guarda os vinculos sumiriam calados."""
     ws, _raiz, sub, _ator, ctx = await _mundo(db)
     outro = await f.make_user(db, workspace_id=ws)
     await f.add_member(
@@ -247,15 +230,11 @@ async def test_nao_remove_time_com_filho(db) -> None:
 
 
 # ---------------------------------------------------------------
-# D5 -- a raiz e intocavel pela tela, inclusive para ADMIN
+# A raiz e intocavel pela tela, inclusive para ADMIN
 # ---------------------------------------------------------------
 async def test_admin_nao_remove_raiz(db) -> None:
-    """A recusa tem de vir da guarda de RAIZ, nao da de "nao vazio".
-
-    A raiz sempre tem pelo menos um subtime e um membro, entao um 409 sozinho
-    nao prova nada: se a guarda de raiz sumisse, a contagem recusaria do mesmo
-    jeito e o teste seguiria verde pelo motivo errado. (Foi o que a sabotagem
-    dessa guarda revelou.) Por isso conferimos a MENSAGEM.
+    """A recusa vem da guarda de raiz, e nao da de "nao vazio": por isso confere a
+    mensagem (a raiz nunca esta vazia).
     """
     _ws, raiz, _sub, _ator, ctx = await _mundo(db)
     await db.commit()
@@ -305,7 +284,7 @@ async def test_remover_time_inexistente_404(db) -> None:
 
 
 # ---------------------------------------------------------------
-# Contagens em lote na listagem (Spec 029 / Fatia 4)
+# Contagens em lote na listagem
 # ---------------------------------------------------------------
 async def test_listagem_traz_contagens_em_lote(db) -> None:
     """A tela precisa saber quem esta vazio sem uma query por linha."""
@@ -316,8 +295,7 @@ async def test_listagem_traz_contagens_em_lote(db) -> None:
         db, workspace_id=ws, user_id=outro, team_id=sub, role="OPERATOR"
     )
     vazio = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="vazio")
-    # O ator e ADMIN de organizacao, sem vinculo; a raiz ganha um membro a mao
-    # para a contagem dela nao ser um zero que nao prova nada.
+    # O ator nao tem vinculo; a raiz ganha um membro para a contagem provar algo.
     na_raiz = await f.make_user(db, workspace_id=ws)
     await f.add_member(
         db, workspace_id=ws, user_id=na_raiz, team_id=raiz, role="OPERATOR"
@@ -339,10 +317,8 @@ async def test_listagem_traz_contagens_em_lote(db) -> None:
 
 
 async def test_contagem_da_listagem_inclui_a_lixeira(db) -> None:
-    """Mesma regra do DELETE: soft delete some da tela, nao do banco.
-
-    Se a listagem contasse so as vivas, a tela habilitaria o botao de remover
-    num time que o banco recusa -- o furo do D3, agora pelo outro lado.
+    """A contagem inclui a lixeira, como o DELETE: senao a tela ofereceria remover
+    um time que o banco recusa.
     """
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     task = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
@@ -357,14 +333,14 @@ async def test_contagem_da_listagem_inclui_a_lixeira(db) -> None:
 
 
 # ===============================================================
-# Fatia 3 -- esvaziar e remover (D3-B)
+# Esvaziar e remover
 # ===============================================================
 async def _conta(db, sql: str, **p) -> int:
     return (await db.execute(text(sql), p)).scalar_one()
 
 
 async def test_esvaziar_preserva_tarefas_e_arquiva(db) -> None:
-    """O criterio que separa esta spec de "apagar tarefas": o dado sobrevive."""
+    """Esvaziar arquiva as tarefas, nao as apaga."""
     ws, raiz, sub, ator, ctx = await _mundo(db)
     t = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
@@ -402,11 +378,7 @@ async def test_esvaziar_grava_historico_archived(db) -> None:
 
 
 async def test_esvaziar_move_tarefa_da_lixeira_sem_arquivar(db) -> None:
-    """A soft-deletada precisa migrar (segura a FK), mas nao vira 'arquivada'.
-
-    Sem a migracao, `fk_task_team` recusaria o DELETE e a transacao inteira
-    cairia -- o time nunca sairia.
-    """
+    """A tarefa na lixeira migra (segura a FK) mas nao vira arquivada."""
     ws, raiz, sub, ator, ctx = await _mundo(db)
     t = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.execute(
@@ -480,10 +452,9 @@ async def test_esvaziar_sobe_membro_e_rebaixa_supervisor(db) -> None:
 
 
 async def test_supervisor_de_OUTRO_subtime_nao_ganha_a_raiz(db) -> None:
-    """Auditoria de 21/10 (item 11). Ana, OPERATOR no Copy e SUPERVISOR em
-    Midias, virava OPERATOR na raiz -- a inversao que o resto recusa (409 em
-    toda mudanca seguinte do cadastro dela). A lente de SUPERVISOR ja inclui a
-    raiz: ela continua vendo o que subiu."""
+    """SUPERVISOR de outro subtime nao vira OPERATOR na raiz (o papel na raiz nao
+    pode ser menor que no subtime). A lente de SUPERVISOR ja inclui a raiz.
+    """
     ws, raiz, sub, _ator, ctx = await _mundo(db)
     midias = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="midias")
     ana = await f.make_user(db, workspace_id=ws)
@@ -505,11 +476,8 @@ async def test_supervisor_de_OUTRO_subtime_nao_ganha_a_raiz(db) -> None:
 
 
 async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
-    """Sem esta regra, criar o vinculo duplicado violaria o UNIQUE.
-
-    Caso real medido em 29/07: a pessoa que opera a tela e MANAGER na raiz e
-    OPERATOR num subtime ao mesmo tempo (a raiz nao conta na regra de "um
-    subtime por pessoa").
+    """Quem ja esta na raiz so perde o subtime: criar o vinculo de novo violaria o
+    UNIQUE.
     """
     ws, raiz, sub, ator, ctx = await _mundo(db, papel="MANAGER")
     # o proprio ator tambem entra no subtime -> vinculo duplo
@@ -540,12 +508,7 @@ async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
 
 
 async def test_esvaziar_o_time_onde_o_ator_e_membro(db) -> None:
-    """O caso que `move_member_subteam` reprovaria (removida em 17/09/2026).
-
-    Ela tinha uma trava de "um membro nao pode mover a si mesmo", que dispara
-    ANTES de qualquer outra checagem. Se o esvaziamento reusasse aquela
-    funcao, quem esta no time nunca conseguiria remove-lo.
-    """
+    """Esvaziar o time onde o proprio ator e membro."""
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     await f.add_member(
         db, workspace_id=ws, user_id=ator, team_id=sub, role="OPERATOR"
@@ -583,12 +546,7 @@ async def test_esvaziar_recusa_a_raiz(db) -> None:
 
 
 async def test_manager_esvazia_subtime_da_propria_arvore(db) -> None:
-    """Mesmo gate do DELETE simples: e a mesma acao destrutiva.
-
-    ⚠️⚠️ MUDOU DE LADO NA SPEC 051 (fatia D), junto com o teste do DELETE --
-    ate 16/09 era `test_manager_nao_esvazia` (403). Ver
-    `test_manager_remove_subtime_da_propria_arvore`.
-    """
+    """Mesmo gate do DELETE simples: e a mesma acao destrutiva."""
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
     async with _client(db, ctx) as c:
@@ -625,17 +583,10 @@ async def test_previa_conta_vivas_e_lixeira_separadas(db) -> None:
 
 
 async def test_falha_no_meio_nao_deixa_time_semi_esvaziado(db) -> None:
-    """Atomicidade: erro depois de arquivar nao pode deixar rastro.
-
-    Simulamos o pior caso -- a operacao chega ao fim e o commit falha. Sem
-    transacao unica, as tarefas ficariam arquivadas e o time continuaria de
-    pe, um estado que ninguem sabe consertar pela tela.
-    """
+    """Falha no commit nao deixa time semi-esvaziado: e uma transacao so."""
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     t = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
-    # O id ANTES do rollback: `session.rollback()` expira os objetos ORM, e ler
-    # `t.id` depois dispara um refresh preguicoso -> MissingGreenlet. Armadilha
-    # conhecida do projeto; este teste esbarrou nela de primeira.
+    # Ler o id antes do rollback: depois, o refresh preguicoso da MissingGreenlet.
     task_id = t.id
     await db.commit()
 
@@ -661,7 +612,7 @@ async def test_falha_no_meio_nao_deixa_time_semi_esvaziado(db) -> None:
     assert await _existe(db, sub), "e o time continua de pe"
 
 # ---------------------------------------------------------------
-# Auditoria de 16/10 -- quadro e formulario seguram o time
+# Quadro e formulario seguram o time
 # ---------------------------------------------------------------
 async def _formulario(db, ws, team_id) -> uuid.UUID:
     from app.db.models import SolicitationForm
@@ -677,8 +628,9 @@ async def _formulario(db, ws, team_id) -> uuid.UUID:
 
 
 async def test_subtime_com_quadro_ou_formulario_nao_sai_pelo_delete_e_diz_por_que(db) -> None:
-    """A contagem nao via quadro nem formulario: tela zerada, "remover"
-    oferecido, e o DELETE estourava em 500 na FK RESTRICT."""
+    """Subtime com quadro ou formulario e recusado com 409 explicado, e nao 500 na
+    FK RESTRICT.
+    """
     ws, _raiz, sub, _ator, ctx = await _mundo(db)
     await f.make_board(db, workspace_id=ws, team_id=sub, name="Interno")
     await _formulario(db, ws, sub)
@@ -693,10 +645,10 @@ async def test_subtime_com_quadro_ou_formulario_nao_sai_pelo_delete_e_diz_por_qu
     assert (detalhes["quadros"], detalhes["formularios"]) == (1, 1)
 
 
-async def test_esvaziar_leva_quadros_e_formularios_para_a_area(db) -> None:
-    """O esvaziar tambem nao os movia: o DELETE do fim estourava e a transacao
-    inteira voltava -- o subtime nunca saia. Nome repetido na area ganha o
-    nome do subtime; o apagado sobe como esta."""
+async def test_esvaziar_leva_quadros_e_formularios_para_a_raiz(db) -> None:
+    """Esvaziar move quadros e formularios para a raiz. Nome repetido na raiz ganha
+    o nome do subtime; o apagado sobe como esta.
+    """
     from app.db.models import Board, SolicitationForm
 
     ws, raiz, sub, _ator, ctx = await _mundo(db)
@@ -726,8 +678,7 @@ async def test_esvaziar_leva_quadros_e_formularios_para_a_area(db) -> None:
 
 
 async def test_esvaziar_arquiva_a_subarvore(db) -> None:
-    """Uma filha de OUTRO time ficava viva embaixo da mae arquivada (a
-    consulta 11 do `invariantes.sql`)."""
+    """Esvaziar arquiva a subarvore, inclusive filha de outro time."""
     ws, raiz, sub, ator, ctx = await _mundo(db)
     mae = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     filha = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=raiz, parent=mae)

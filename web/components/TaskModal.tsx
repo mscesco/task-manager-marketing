@@ -1,14 +1,6 @@
 "use client";
-// components/TaskModal.tsx
-// Modal de CRIAR e DUPLICAR tarefa.
-//  - sem `duplicarDe` -> criar    (POST /tasks, pin do time raiz no api.ts)
-//  - com `duplicarDe` -> duplicar (POST /tasks/{id}/duplicate)
-//
-// ⚠️ EDITAR SAIU DAQUI na Spec 052, fatia D (pedido dela, 16/09, no modelo do
-// Trello): titulo, descricao e links se editam no proprio `TaskDetail`, e
-// coluna, prioridade, datas, projeto e responsaveis ja eram das pilulas. O
-// modal de editar repetia tudo isso num segundo lugar.
-// O time NAO aparece de proposito: o quadro define o time (ADR 0001).
+// Modal de CRIAR (sem `duplicarDe`) e DUPLICAR (com `duplicarDe`) tarefa.
+// Editar é no `TaskDetail`. O time não aparece: quem define é o quadro.
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, useCallback } from "react";
 import { Plus, X } from "lucide-react";
@@ -69,9 +61,7 @@ import SeletorDePessoas from "@/components/SeletorDePessoas";
 import { pessoasOferecidas } from "@/lib/seguidores";
 const PRIORITIES = ["LOW", "MEDIUM", "HIGH", "URGENT"] as const;
 
-// Gatilho compacto redondo (mesmo padrao do detalhe): troca o despejo de 30
-// chips por um "+" que abre a lista com busca. Duplicado de proposito -- se
-// virar mais lugares, extrai pra um modulo compartilhado.
+// Gatilho redondo "+" que abre a lista com busca (mesmo padrão do detalhe).
 const GATILHO_STYLE: CSSProperties = {
   width: 26,
   height: 26,
@@ -103,144 +93,74 @@ export default function TaskModal({
   open: boolean;
   onClose: () => void;
   onSaved: (task: Task) => void;
-  defaultProjectId?: string | null; // criar dentro deste projeto (Entrega 11)
+  defaultProjectId?: string | null; // criar dentro deste projeto
   /**
-   * O time da tarefa nova, decidido pelo QUADRO. `null` = esta tela nao cria
-   * tarefa do zero (so duplica).
-   *
-   * ⚠️⚠️ OBRIGATORIA, e um OBJETO (`lib/escopoTarefa.ts`). Ate 11/09 era
-   * `defaultTeamId?: string | null` -- opcional, e carregando dois
-   * significados numa unica string (qual time, e se esconde o seletor de
-   * projeto). O `Board` nunca lhe deu a raiz, e no quadro geral de um time
-   * raiz o seletor de responsavel voltou a oferecer a organizacao inteira.
-   *
-   * Sendo obrigatoria, o `tsc` aponta os quatro chamadores em vez de deixar
-   * cada tela decidir por omissao -- que foi como o defeito entrou.
+   * Time da tarefa nova, decidido pelo quadro (`lib/escopoTarefa.ts`).
+   * `null` = esta tela não cria do zero, só duplica. Obrigatória para o `tsc`
+   * apontar todo chamador.
    */
   newTaskTeam: NewTaskTeam | null;
-  /**
-   * Em QUAL quadro a tarefa de topo nasce (Spec 036, fatia 5b-6).
-   *
-   * ⚠️ `null` = Quadro geral, que e o comportamento de sempre. So a tela de um
-   * quadro AVULSO preenche.
-   */
+  /** Quadro onde a tarefa de topo nasce; `null` = Quadro geral. */
   defaultBoardId?: string | null;
   /**
-   * O nome do quadro, para o cabecalho. `null` = nao mostra nada.
-   *
-   * ⚠️ ISTO NAO E ENFEITE, E A ADR 0034 PEDE POR ESCRITO. Enquanto mover
-   * tarefa entre quadros nao existir (fatia 5c), tarefa criada no quadro
-   * errado so se conserta APAGANDO e recriando -- perdendo comentarios,
-   * historico, subtarefas e designacoes. Uma pessoa com dois quadros no mesmo
-   * time nao tem como saber em qual esta criando se a tela nao disser.
-   *
-   * ⚠️ EXPLICITO, E NAO INFERIDO. O modal NAO deriva o nome de
-   * `defaultBoardId` por conta propria: ele nao tem a lista de quadros, e
-   * buscar uma para escrever uma linha de cabecalho poria uma requisicao no
-   * caminho de abrir modal.
+   * Nome do quadro para o cabeçalho (`null` = não mostra). Vem do chamador: o
+   * modal não tem a lista de quadros.
    */
   nomeDoQuadro?: string | null;
-  // Spec 033: presente => modo DUPLICAR. O modal abre pre-preenchido a partir
-  // daqui.
+  // Presente => modo DUPLICAR, pré-preenchido daqui.
   duplicarDe?: Task | null;
-  // Filhas DIRETAS da origem, pra contar o rotulo da caixa (D7). Vem do
-  // chamador porque quem tem a arvore e o quadro, nao o modal.
+  // Filhas diretas da origem, para o rótulo da caixa de subtarefas.
   filhosDaOrigem?: Task[];
 }) {
   const duplicando = !!duplicarDe;
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  // O texto com que o modal ABRIU (vazio, ou o da copia na duplicacao): "sujo"
-  // e diferir dele. Sem isto a duplicacao, que ja abre preenchida, pediria
-  // confirmacao a quem nao digitou nada.
+  // Texto com que o modal abriu; "sujo" é diferir dele (a cópia já abre preenchida).
   const textoInicial = useRef({ title: "", description: "" });
   const sujo =
     title.trim() !== textoInicial.current.title.trim() ||
     description.trim() !== textoInicial.current.description.trim();
-  // Spec 052, fatia B: links com nome. Na criacao nao ha lista salva: o que
-  // estiver no editor e o que vai.
+  // Links com nome: na criação, o que estiver no editor é o que vai.
   const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[]>([]);
   const [tentouSalvarLinks, setTentouSalvarLinks] = useState(false);
   const [priority, setPriority] = useState<string>("MEDIUM");
   const [dueDate, setDueDate] = useState("");
-  /**
-   * Spec 038, fatia A.
-   *
-   * ⚠️ NAO ENTRA EM `motivoNaoCria`. A trava de criacao exige titulo,
-   * responsavel e PRAZO (decisao da equipe) -- data de inicio e informacao
-   * de planejamento, e exigi-la mudaria a regra de quem pode criar tarefa,
-   * que nao e o que esta fatia faz.
-   */
+  // Opcional: não entra em `motivoNaoCria`.
   const [startDate, setStartDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
-  // Seletor de projeto: so ao CRIAR fora de um projeto fixo (quadro geral).
-  // Num quadro PROPRIO (`internal`: subtime ou quadro avulso) a task de topo
-  // nasce INTERNA por decisao do modelo -> esconder o seletor. Sem isto, dava
-  // pra criar uma task com team_id=subtime E project_id=projeto-da-raiz (o
-  // backend aceita, pois o subtime e descendente da raiz), e essa task sumia
-  // do quadro geral e aparecia so no projeto + como "Interna" no subtime.
-  // ⚠️ Ao DUPLICAR o seletor some: a cópia herda o projeto da origem
-  // (critério 8 -- cópia de subtarefa nasce irmã, e irmã fora do projeto
-  // do pai é combinação que o backend recusa).
-  //
-  // ⚠️ `internal`, e NAO `teamId`. Sao coisas diferentes desde 11/09: no quadro
-  // geral da raiz a tarefa TEM time (a raiz) e mesmo assim o seletor de projeto
-  // aparece. Ver `NewTaskTeam` em `lib/escopoTarefa.ts`.
+  // Seletor de projeto só ao criar no quadro geral. Em quadro próprio
+  // (`internal`) a tarefa nasce interna; na cópia herda o projeto da origem.
+  // Usa `internal`, não `teamId`: no quadro geral da raiz há time e há seletor.
   const mostrarSeletorProjeto =
     !duplicando && !defaultProjectId && !newTaskTeam?.internal;
   const [projetos, setProjetos] = useState<Project[]>([]);
   const [projetoSel, setProjetoSel] = useState(""); // "" => avulsa
 
-  // Spec 021: responsaveis na criacao (so no modo CRIAR). invalidIds = quem o
-  // backend recusou no 422 -> fica marcado em vermelho, com a selecao preservada.
+  // Responsáveis na criação. `invalidIds` = recusados no 422, marcados em vermelho.
   const [membros, setMembros] = useState<Member[]>([]);
-  // Id do time raiz -- necessario pra distinguir "tarefa geral" (todo mundo
-  // alcanca) de "tarefa interna de subtime" (so o subtime alcanca).
+  // Time raiz: distingue tarefa geral de tarefa interna de subtime.
   const [rootTeamId, setRootTeamId] = useState<string | null>(null);
   const [assigneeIds, setAssigneeIds] = useState<string[]>([]);
-  // Spec 053, fatia D (D6): seguidores na criacao. NASCEM VAZIOS -- ninguem
-  // segue automaticamente, nem quem cria (D3). Selecao local ate o "Criar".
+  // Seguidores na criação: nascem vazios, seleção local até o "Criar".
   const [watcherIds, setWatcherIds] = useState<string[]>([]);
   const [buscaSeg, setBuscaSeg] = useState("");
   const [invalidSeg, setInvalidSeg] = useState<Set<string>>(new Set());
   const [invalidIds, setInvalidIds] = useState<Set<string>>(new Set());
-  // Picker com busca (popover): abre/fecha, termo, e ref pra clique-fora.
-  // Spec 033: a caixa das subtarefas (D7). `levarResponsaveis` (D13) =
-  // D13, e manda SO nas subtarefas -- os do pai estao no campo acima, que a
-  // pessoa edita direto.
+  // Caixa "levar subtarefas" da duplicação.
   const [levarSubtarefas, setLevarSubtarefas] = useState(true);
-  // ⚠️ A caixa "Levar os responsáveis" (D13) SAIU em 05/08 com a ADR 0031.
-  // Desmarcá-la significava "crie N subtarefas sem ninguém", que é o estado
-  // que a ADR proíbe. O que era a caixa virou o passo 2 abaixo: quem não pode
-  // herdar, a pessoa resolve subtarefa a subtarefa. Recolocar a caixa desfaz
-  // a ADR -- não é preferência de tela.
+  // Passo 2 da duplicação: responsáveis de cada subtarefa que não pode herdar.
   const [escolhasSub, setEscolhasSub] = useState<Record<string, string[]>>({});
-  // ⚠️ Os avisos pós-cópia e o de links não salvos eram `window.alert`. Agora
-  // vão para a pilha do app, que sobrevive ao modal se fechar logo depois.
   const avisar = useAvisar();
   const [puladasSub, setPuladasSub] = useState<Set<string>>(new Set());
   const [abertoResp, setAbertoResp] = useState(false);
   /**
-   * Onde desenhar o painel de responsáveis, em coordenadas de VIEWPORT.
-   *
-   * ⚠️ ELE PRECISA SER `position: fixed`, E O MOTIVO É O CARD DO MODAL. O card
-   * tem `maxHeight: 88vh` + `overflowY: auto`, e um filho `absolute` é
-   * RECORTADO por esse overflow. Com o campo de Responsáveis perto do rodapé,
-   * o painel abria cortado e a Camila tinha de rolar o modal para escolher
-   * alguém -- que foi o pedido dela em 22/08: "dá pra deixar o seletor
-   * sobreposto pra eu não ter que ficar descendo a tela?".
-   *
-   * ⚠️ `fixed` ESCAPA DO RECORTE porque o card não tem `transform`, `filter`
-   * nem `contain` -- qualquer um dos três faria dele o bloco de contenção e o
-   * recorte voltaria, em silêncio. Se alguém animar o modal com `transform`,
-   * é aqui que quebra.
-   *
-   * ⚠️ E O PAINEL CONTINUA FILHO DO WRAPPER no DOM, sem portal. É o que
-   * mantém o clique-fora (`respWrapRef.current.contains`) e o foco
-   * funcionando -- um portal exigiria refazer os dois.
+   * Posição do painel de responsáveis, em coordenadas de viewport. Precisa ser
+   * `fixed`: o card do modal tem overflow e recortaria um `absolute`. Só escapa
+   * do recorte enquanto o card não tiver `transform`, `filter` ou `contain`.
+   * Sem portal, para manter o clique-fora e o foco.
    */
   const [posResp, setPosResp] = useState<{
     top: number;
@@ -251,16 +171,7 @@ export default function TaskModal({
   const [buscaResp, setBuscaResp] = useState("");
   const respWrapRef = useRef<HTMLDivElement>(null);
 
-  /**
-   * Mede onde o painel de responsáveis cabe, e vira para CIMA quando não cabe
-   * embaixo.
-   *
-   * ⚠️ NÃO DÁ PARA TESTAR ISTO EM jsdom: sem layout, todo
-   * `getBoundingClientRect` volta zerado, e virar para cima nunca dispararia.
-   * O portão possível é "o painel é `fixed`"; o resto é olho humano, e está
-   * escrito aqui para quem for mexer saber o que conferir na tela: campo no
-   * rodapé do modal, janela baixa, e o painel com mais gente do que cabe.
-   */
+  /** Mede onde o painel cabe e vira para cima quando não cabe embaixo (não testável em jsdom). */
   const medirResp = useCallback(() => {
     const el = respWrapRef.current;
     if (!el) return;
@@ -269,9 +180,7 @@ export default function TaskModal({
     const LARGURA = 300;
     const espacoAbaixo = window.innerHeight - r.bottom - MARGEM;
     const espacoAcima = r.top - MARGEM;
-    // Vira para cima só quando embaixo é apertado E em cima é melhor. Sem a
-    // segunda metade, um campo no meio de uma janela baixa ficaria pulando de
-    // lado a cada pixel de rolagem.
+    // Só vira com embaixo apertado E em cima melhor, senão pula a cada rolagem.
     const paraCima = espacoAbaixo < 220 && espacoAcima > espacoAbaixo;
     const maxAltura = Math.max(160, Math.min(360, paraCima ? espacoAcima : espacoAbaixo));
     setPosResp({
@@ -286,9 +195,7 @@ export default function TaskModal({
     });
   }, []);
 
-  // ⚠️ `scroll` COM CAPTURE, e não no `window`: quem rola é o CARD do modal, e
-  // evento de rolagem de elemento não sobe. Sem o capture, o painel ficaria
-  // parado enquanto o campo âncora sai de baixo dele.
+  // `scroll` com capture: quem rola é o card do modal, e esse evento não sobe.
   useEffect(() => {
     if (!abertoResp) return;
     medirResp();
@@ -319,9 +226,7 @@ export default function TaskModal({
     setInvalidSeg(new Set());
     setErro(null);
     setLevarSubtarefas(true);
-    // ⚠️ As flags de "ja respondeu" precisam ZERAR junto: sem isto, reabrir o
-    // modal pra outra tarefa pre-preencheria na hora, com o alcance da tarefa
-    // ANTERIOR ainda em memoria.
+    // Zera as flags de "já respondeu", senão reabrir pré-preenche com o alcance anterior.
     setMembrosResolvidos(false);
     setRootResolvido(false);
     setAlcanceResolvido(false);
@@ -329,16 +234,8 @@ export default function TaskModal({
     setTentouSalvarLinks(false);
   }, [open]);
 
-  // Carrega projetos comuns pro seletor (so quando ele aparece).
-  //
-  // ⚠️ ESCOLHER, e por isso RECORTA pelo time. Foi aqui que ela viu o defeito:
-  // *"estão aparecendo projetos de outro time raiz"*. A rota nunca filtrou por
-  // time -- o escopo dela era o workspace inteiro (ver `list_page` no
-  // `project_service.py`).
-  //
-  // ⚠️ `newTaskTeam.teamId` E O TIME CERTO AQUI sem nenhuma conta extra: este
-  // seletor so aparece quando `internal` e falso, e `internal` falso quer dizer
-  // exatamente "a tarefa nasce no quadro geral da raiz". Logo o time e a raiz.
+  // Projetos do seletor, recortados pelo time. Aqui `teamId` é a raiz: o
+  // seletor só aparece quando `internal` é falso.
   useEffect(() => {
     if (!open || !mostrarSeletorProjeto) return;
     listProjects({ size: 100, teamId: newTaskTeam?.teamId ?? null })
@@ -353,25 +250,16 @@ export default function TaskModal({
       .then((ms) => setMembros(ms.filter((m) => m.is_active)))
       .catch(() => {})
       .finally(() => setMembrosResolvidos(true));
-    // ⚠️ SO NO CAMINHO LEGADO (07/10): quem traz o time da tarefa nova
-    // (`newTaskTeam`, vindo de `/quadro/<time>`) nunca usa a raiz -- ver o
-    // `timeAlvo` abaixo. Perguntar mesmo assim levantava `AreaIndefinidaError`
-    // a cada abertura com varias raizes, e o Next 15 passou a mostrar isso na
-    // tela.
+    // Com `newTaskTeam.teamId` a raiz não é usada (ver `timeAlvo`); perguntar
+    // levantaria com várias raízes.
     if (newTaskTeam?.teamId) {
       setRootResolvido(true);
       return;
     }
-    // Memoizado no api.ts. Falha => segue null e `foraDoEscopo` devolve
-    // conjunto vazio (nao esconde ninguem), que e o comportamento antigo.
+    // Falha => segue null, e ninguém é escondido.
     getRootTeamId()
       .then(setRootTeamId)
-      // ⚠️ Spec 046, fatia 1: era `.catch(() => {})`. Com mais de uma área
-      // `getRootTeamId` levanta, e o comportamento de queda continua sendo o
-      // antigo (segue `null`, `foraDoEscopo` devolve conjunto vazio, ninguém
-      // é escondido) -- mas agora ele aparece no console em vez de sumir.
-      // Fatia 4: a área vem de fora e esta chamada some.
-      .catch((e) => console.error("TaskModal: área indefinida", e))
+      .catch((e) => console.error("TaskModal: time indefinido", e))
       .finally(() => setRootResolvido(true));
   }, [open, newTaskTeam?.teamId]);
 
@@ -390,50 +278,21 @@ export default function TaskModal({
   // Fecha o picker de responsaveis ao clicar fora (padrao EmojiPicker/detalhe).
   useFecharAoClicarForaDe(respWrapRef, abertoResp, () => setAbertoResp(false));
 
-  // Membros filtrados pela busca do picker, ordenados por nome.
-  // Bloqueio do botao: exige titulo, responsavel e prazo. A mensagem vai no
-  // `title` do botao, para a pessoa saber o que falta antes de tentar.
+  // Bloqueio do botão: exige título, responsável e prazo; o motivo vai no `title`.
   const motivoBloqueio = motivoNaoCria({ titulo: title, assigneeIds, dueDate });
 
-
-  // ⚠️ ESCOPO DE TIME NA CRIACAO.
-  // A tarefa nova ja nasce com time decidido no QUADRO, e chega aqui pronto em
-  // `newTaskTeam.teamId` -- subtime, quadro avulso, ou a raiz que a tela
-  // recebeu pela URL. E o mesmo valor que vai no pin do `createTask`
-  // (`lib/api.ts`). Logo da pra saber, antes de oferecer, quem vai alcancar a
-  // tarefa.
-  //
-  // Antes esta lista era TODO MUNDO e o comentario acima do campo dizia "o
-  // backend valida escopo e recusa os invalidos com 422". Recusava mesmo --
-  // depois de a pessoa escolher, escrever o resto e apertar Salvar.
-  // Spec 034 (Fatia 5): quem alcanca vem do BACKEND, pela mesma regra do
-  // POST de designacao -- agora por TIME, porque a tarefa ainda nao existe.
-  //
-  // ⚠️ Ate 03/08 isto era `foraDoEscopo(...)`, que so tinha `team_id` e nunca
-  // papel. Reportado com captura: criando tarefa no quadro do subtime "CRM e
-  // Automacao", a GESTORA sumia do seletor. `timeDaTarefaNova` continua sendo
-  // quem decide QUAL time perguntar -- ela espelha o pin do `createTask`.
-  //
-  // `null` = ainda carregando (ou falhou) => nao esconde ninguem, com o 422
-  // do backend ainda de pe.
-  // ⚠️ O `?? rootTeamId` SOBREVIVE, mas agora e SO o caminho legado: `/quadro`
-  // sem time na URL, onde `getRootTeamId()` ainda e a unica resposta -- e onde
-  // ela levanta se houver mais de uma raiz (Spec 046). Quem chega por
-  // `/quadro/<time>` traz `teamId` pronto e nunca depende dele.
+  // Quem alcança o time da tarefa nova vem do backend, pela mesma regra da
+  // designação. `timeDaTarefaNova` espelha o pin do `createTask`; `rootTeamId`
+  // só entra em `/quadro` sem time na URL. `null` = carregando ou falhou, não
+  // esconde ninguém.
   const timeAlvo = timeDaTarefaNova(newTaskTeam?.teamId ?? null, rootTeamId);
   const [alcancamTime, setAlcancamTime] = useState<Set<string> | null>(null);
-  // ⚠️ `alcancamTime === null` e AMBIGUO: significa "ainda carregando" E
-  // "falhou". O pre-preenchimento precisa distinguir os dois -- esperar pelo
-  // primeiro, seguir no segundo -- senao ou preenche cedo demais (com o
-  // conjunto de excluidos vazio, furando a D9) ou nunca preenche.
+  // `alcancamTime === null` é "carregando" ou "falhou"; esta flag separa os dois
+  // para o pré-preenchimento esperar um e seguir no outro.
   const [alcanceResolvido, setAlcanceResolvido] = useState(false);
   const [membrosResolvidos, setMembrosResolvidos] = useState(false);
-  // ⚠️ `rootTeamId` tambem vem da rede. Sem esta flag, no PRIMEIRO render
-  // `timeAlvo` e null (raiz ainda desconhecida) e o codigo concluia "nao ha
-  // alcance a esperar" -- pre-preenchia na hora, com o conjunto de excluidos
-  // vazio, exatamente o furo da D9 que a espera existe pra fechar. Medido em
-  // 04/08 por um teste com promessa controlada; com mock instantaneo o
-  // defeito nao aparece.
+  // `rootTeamId` também vem da rede: sem esta flag, o primeiro render
+  // pré-preencheria sem o alcance.
   const [rootResolvido, setRootResolvido] = useState(false);
 
   useEffect(() => {
@@ -455,16 +314,14 @@ export default function TaskModal({
     setAlcanceResolvido(false);
     listMembersDoTime(timeAlvo)
       .then((ms) => {
-        // Guarda de corrida: abrir o modal em quadros diferentes em sequencia
-        // pode fazer a resposta do time ANTERIOR chegar depois.
+        // Guarda de corrida: a resposta de um time anterior pode chegar depois.
         if (vivo) setAlcancamTime(new Set(ms.map((m) => m.id)));
       })
       .catch(() => {
         if (vivo) setAlcancamTime(null);
       })
       .finally(() => {
-        // `finally`: falha tambem RESOLVE. Sem isto o modal ficaria em branco
-        // pra sempre quando `listMembersDoTime` cai.
+        // Falha também resolve, senão o modal fica em branco.
         if (vivo) setAlcanceResolvido(true);
       });
     return () => {
@@ -481,31 +338,10 @@ export default function TaskModal({
     return fora;
   }, [alcancamTime, membros]);
 
-  // Spec 033 -- pre-preenchimento do modo DUPLICAR.
-  //
-  // ⚠️⚠️ ESTE EFEITO APLICA UMA VEZ SO, e a guarda de `ref` NAO e otimizacao.
-  //
-  // DEFEITO ENCONTRADO NA TELA em 04/08: a primeira versao nao tinha a
-  // guarda, e as dependencias mudam DEPOIS que o modal ja esta aberto --
-  // `alcancamTime` chega da rede, `membros` chega da rede, e `filhosDaOrigem`
-  // e um array montado inline no chamador (Board.tsx:1009), ou seja,
-  // referencia NOVA a cada render do pai. Cada uma dessas mudancas rodava o
-  // efeito de novo e fazia `setTitle`/`setAssigneeIds` por cima do que a
-  // pessoa tinha acabado de digitar. Medido: o titulo voltava pra "Cópia de
-  // X" mesmo depois de reescrito, e responsavel removido reaparecia.
-  //
-  // ⚠️ Nenhum portao pegava. Os testes de componente passavam props com
-  // referencia ESTAVEL (um `const` no arquivo de teste), entao o efeito
-  // rodava uma vez e o defeito nao existia ali. Prop instavel vinda do
-  // chamador real e um caso que so a tela mostra.
-  //
-  // ESPERA as duas buscas RESOLVEREM antes de aplicar: sem o alcance, um
-  // responsavel sem acesso entraria marcado e a pessoa levaria 422 no salvar
-  // nomeando alguem que ela talvez nem conheca (D9).
-  //
-  // ⚠️ `filhosDaOrigem` NAO entra nas dependencias. A contagem de subtarefas
-  // e calculada a parte (`subtarefasVivas`); trazer o array pra ca so
-  // reintroduziria a instabilidade de referencia que causou o defeito.
+  // Pré-preenchimento da duplicação. Aplica UMA vez (guarda de `ref`): as
+  // dependências mudam depois de aberto e sobrescreveriam o que a pessoa digitou.
+  // Espera as duas buscas resolverem para não marcar quem não alcança.
+  // `filhosDaOrigem` fica fora das dependências: o chamador passa array novo a cada render.
   const permitidosNaCopia = useMemo(
     () =>
       new Set(
@@ -532,10 +368,7 @@ export default function TaskModal({
         priority: duplicarDe.priority,
         assignee_ids: duplicarDe.assignee_ids ?? [],
       },
-      // ⚠️ Lista de QUEM PODE, montada a partir dos membros que o modal
-      // realmente carregou (já sem inativos) menos quem não alcança. Quem
-      // sumiu da lista -- desativado, removido do workspace -- simplesmente
-      // não está aqui, e é isso que fecha o 422 da tarefa antiga.
+      // Membros carregados (sem inativos) menos quem não alcança.
       permitidosNaCopia,
       []
     );
@@ -543,7 +376,7 @@ export default function TaskModal({
     setTitle(v.title);
     setDescription(v.description);
     setPriority(v.priority);
-    // D5: as duas datas ficam vazias. Ver lib/duplicacaoTarefa.
+    // As duas datas ficam vazias. Ver lib/duplicacaoTarefa.
     setDueDate(v.dueDate);
     setAssigneeIds(v.assigneeIds);
     copiaPrePreenchida.current = duplicarDe.id;
@@ -558,8 +391,7 @@ export default function TaskModal({
   const membrosFiltrados = useMemo(() => {
     const q = buscaResp.trim().toLowerCase();
     return membros
-      // Quem ja foi escolhido fica, mesmo fora do escopo: senao a pessoa nao
-      // teria como DESMARCAR (a caixa dela sumiria marcada).
+      // Quem já foi escolhido fica, mesmo fora do escopo, para poder desmarcar.
       .filter((m) => !foraDoEscopoAqui.has(m.id) || assigneeIds.includes(m.id))
       .filter((m) => (q ? m.name.toLowerCase().includes(q) : true))
       .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
@@ -599,14 +431,8 @@ export default function TaskModal({
     [filhosDaOrigem]
   );
 
-  // PASSO 2 (ADR 0031). Toda a regra mora em lib/duplicacaoSubtarefas; aqui
-  // só se pergunta e se desenha.
-  //
-  // ⚠️ Depende de `permitidosNaCopia`, que só fica correto depois que
-  // `membros` e `alcancamTime` chegam da rede. Antes disso a lista de quem
-  // pode está vazia e TUDO aparece pendente -- por isso o bloco só é
-  // renderizado com as duas buscas resolvidas. Falhar fechado aqui é de
-  // propósito: pendente a pessoa resolve na tela; passar batido é 422.
+  // Passo 2 da duplicação (regra em lib/duplicacaoSubtarefas). Só fica correto
+  // depois que `membros` e `alcancamTime` chegam: antes disso tudo aparece pendente.
   const linhasSub = useMemo(
     () => linhasDasSubtarefas(filhosDaOrigem, permitidosNaCopia),
     [filhosDaOrigem, permitidosNaCopia]
@@ -622,23 +448,17 @@ export default function TaskModal({
       ? motivoNaoDuplicar(linhasSub, escolhasSub, puladasSub)
       : null;
 
-  // As decisões são da CÓPIA aberta: trocar de origem zera. Sem isto, escolha
-  // feita para a subtarefa de uma tarefa vazaria para a duplicação seguinte.
+  // Trocar de origem zera as decisões.
   useEffect(() => {
     setEscolhasSub({});
     setPuladasSub(new Set());
   }, [duplicarDe?.id, open]);
 
-  // ⚠️ A trava do passo 2 entra no MESMO caminho que já explica o botão
-  // travado (`motivoBloqueio` -> `title` do botão). Um segundo mecanismo de
-  // bloqueio seria uma segunda regra para a pessoa descobrir sozinha.
-  // Declarado AQUI, e não junto do `motivoBloqueio`, porque `linhasSub`
-  // depende de `permitidosNaCopia`, que é definido depois dele.
+  // A trava do passo 2 usa o mesmo caminho do `motivoBloqueio` (o `title` do botão).
   const motivoFinal = motivoBloqueio ?? travaDasSubtarefas;
   const podeSalvarTudo = motivoFinal === null;
 
-  // ⚠️ ANTES do `if (!open)`: hook nao pode ficar depois de return
-  // condicional. `fechar` e declaracao de funcao, entao ja esta no escopo.
+  // Antes do `if (!open)`: hook não pode vir depois de return condicional.
   const scrimProps = useFecharAoClicarFora(fechar);
   useWarnBeforeUnload(open && sujo && !saving);
 
@@ -646,8 +466,6 @@ export default function TaskModal({
 
   function fechar() {
     if (saving) return;
-    // ⚠️ Esc ou clique no fundo descartavam titulo e descricao sem perguntar
-    // (auditoria de 16/10; `web/AGENTS.md` §4).
     if (sujo && !window.confirm("Descartar a tarefa que você estava criando?")) return;
     onClose();
   }
@@ -665,8 +483,7 @@ export default function TaskModal({
     });
   }
 
-  // `e` e opcional: o <form onSubmit> passa o evento; o atalho Ctrl/Cmd+Enter
-  // chama sem evento (ja tratou o preventDefault no handler de tecla).
+  // `e` é opcional: o atalho Ctrl/Cmd+Enter chama sem evento.
   async function salvar(e?: React.FormEvent) {
     e?.preventDefault();
     const t = title.trim();
@@ -674,13 +491,7 @@ export default function TaskModal({
       setErro("O título é obrigatório.");
       return;
     }
-    // Responsavel obrigatorio ao CRIAR (29/07).
-    //
-    // Medido antes da regra: 50 tarefas ativas sem ninguem designado. Nas
-    // raizes o habito ja era atribuir -- nenhuma das 13 em Backlog estava sem
-    // responsavel -- entao a trava formaliza a pratica em vez de mudar
-    // comportamento. A obrigacao e de UI: o POST segue aceitando sem
-    // responsavel, senao n8n e triagem de solicitacao quebravam.
+    // Responsável obrigatório só na UI: o POST aceita sem (n8n e triagem dependem disso).
     const impedimento = motivoNaoCria({
       titulo: t,
       assigneeIds: assigneeIds,
@@ -690,9 +501,7 @@ export default function TaskModal({
       setErro(impedimento);
       return;
     }
-    // Spec 052, fatia B: os links validam ANTES de qualquer escrita -- uma
-    // tarefa criada com o link recusado depois deixaria meio salvo.
-    // Na CÓPIA não há editor: os links da original vão junto pelo servidor.
+    // Links validam antes de qualquer escrita. Na cópia os links vão pelo servidor.
     if (!duplicando) {
       setTentouSalvarLinks(true);
       if (temErro(errosDosLinks(rascunhoLinks))) {
@@ -710,49 +519,32 @@ export default function TaskModal({
     try {
       let saved: Task;
       if (duplicando && duplicarDe) {
-        // ⚠️ `duplicateTask`, nao `createTask`: a subarvore inteira precisa
-        // nascer na MESMA transacao do backend (criterio 10). Criar o pai
-        // aqui e depois criar as filhas em chamadas separadas devolveria
-        // "meia arvore no quadro" a cada falha de rede.
-        //
-        // ⚠️ Sem `due_date` no payload, de proposito (D5) -- o campo nem
-        // aparece no modo copia.
+        // `duplicateTask`: a subárvore nasce numa transação só. Sem `due_date` de propósito.
         const copia = await duplicateTask(duplicarDe.id, {
           title: t,
           description: description.trim(),
           priority,
           project_id: duplicarDe.project_id,
-          // D3: copia de subtarefa nasce IRMA, sob o mesmo pai.
+          // Cópia de subtarefa nasce irmã, sob o mesmo pai.
           parent_task_id: duplicarDe.parent_task_id,
           team_id: duplicarDe.team_id,
           assignee_ids: assigneeIds,
           include_subtasks: levarSubtarefas,
-          // ⚠️ `include_assignees` some do payload: com a ADR 0031 não existe
-          // mais "leve sem responsáveis". Quem não pode herdar é resolvido
-          // subtarefa a subtarefa, ANTES do POST -- criar e perguntar depois
-          // deixaria tarefas órfãs no banco no intervalo, e quebraria a
-          // atomicidade que a Spec 033 defende (falha no meio = nada).
+          // Quem não pode herdar já foi resolvido no passo 2, antes do POST.
           ...(levarSubtarefas
             ? payloadDasSubtarefas(linhasSub, escolhasSub, puladasSub)
             : {}),
         });
-        // ⚠️ UM alerta só, com tudo que a pessoa precisa saber. Dois alertas
-        // seguidos fazem qualquer um clicar OK no segundo sem ler.
-        //
-        // Nenhum dos dois avisos é erro: a cópia JÁ existe. Segurar o modal
-        // aberto aqui faria a pessoa clicar de novo e duplicar duas vezes.
+        // Um aviso só. Nenhum é erro: a cópia já existe, e segurar o modal faria duplicar de novo.
         const avisos: string[] = [];
         if (copia.promoted_to_root) {
-          // A cópia seria irmã dentro de um pai arquivado, e o quadro só
-          // desenha raiz -- ela nasceria invisível. Promover em silêncio
-          // mudaria a hierarquia pelas costas de quem clicou.
+          // Pai arquivado: a cópia nasceria invisível no quadro.
           avisos.push(
             "A cópia foi criada como tarefa de topo, porque a original " +
               "estava dentro de uma tarefa arquivada."
           );
         }
         if (copia.skipped_assignees?.length) {
-          // D9-c.
           const nomes = copia.skipped_assignees
             .map((id) => membros.find((m) => m.id === id)?.name ?? "alguém")
             .join(", ");
@@ -771,35 +563,20 @@ export default function TaskModal({
           description: description.trim(),
           priority,
           due_date: dueDate || null,
-          // ⚠️ Spec 038, fatia A. O `createTask` monta o corpo CAMPO A CAMPO,
-          // e por isso passar aqui NAO basta sozinho: a linha correspondente
-          // dentro do `createTask` e que poe o campo no POST. Foi assim que o
-          // `board_id` logo abaixo ficou de fora por uma fatia inteira.
+          // O `createTask` monta o corpo campo a campo: campo novo precisa da linha lá também.
           start_date: startDate || null,
-          // ⚠️ SEM CAMPO DE HORA NA CRIACAO, DE PROPOSITO (Spec 038, fatia B).
-          // A criacao ja pede titulo, responsavel, prazo, prioridade, coluna e
-          // projeto; hora e refinamento de planejamento, e o lugar dela e a
-          // capsula do detalhe. Se um dia entrar, esta linha ja existe.
+          // Sem hora na criação; a hora fica no detalhe.
           due_time: null,
           project_id: defaultProjectId ?? (projetoSel || null),
           assignee_ids: assigneeIds,
-          // ⚠️ Spec 053, fatia D. Mesma armadilha do `start_date` acima: a
-          // linha correspondente DENTRO do `createTask` e que poe no POST.
+          // Mesma armadilha do `start_date`.
           watcher_ids: watcherIds,
-          // ⚠️ O MESMO valor que o seletor de responsavel usou para perguntar
-          // "quem alcanca este time". Se os dois divergirem, a tela oferece um
-          // escopo e o POST grava outro -- e o 422 aparece no Salvar.
+          // O mesmo time que o seletor de responsável usou; divergir gera 422.
           team_id: newTaskTeam?.teamId ?? null,
-          // ⚠️ Spec 036, fatia 5b-6. `null` = Quadro geral (comportamento de
-          // sempre). Sem esta linha o campo e descartado em silencio e a
-          // tarefa nasce no geral -- quem a criou dentro do quadro avulso nao
-          // a encontra, e nao ha erro nenhum. Mesma armadilha que o
-          // `tasks_router.py` ja teve com `assignee_ids`.
+          // `null` = Quadro geral. Sem esta linha a tarefa nasceria no geral em silêncio.
           board_id: defaultBoardId,
         });
-        // Spec 052, fatia B: os links vão DEPOIS de a tarefa existir.
-        // ⚠️ Se falharem, a tarefa JÁ foi criada: o aviso diz isso, em vez de
-        // manter o modal aberto -- clicar de novo criaria uma segunda tarefa.
+        // Links vão depois de a tarefa existir; se falharem, só avisa (reenviar criaria outra).
         if (temLinks) {
           try {
             await putTaskLinks(saved.id, paraEnvio(rascunhoLinks));
@@ -818,8 +595,7 @@ export default function TaskModal({
       const e = err as ApiError;
       const invalidos: string[] | undefined = e.details?.invalid_ids;
       if (invalidos?.length && e.details?.field === "watcher_ids") {
-        // Spec 053 (D): o 422 dos SEGUIDORES. O backend e atomico -- nada foi
-        // criado --, entao a selecao fica e os recusados ficam em vermelho.
+        // 422 dos seguidores: nada foi criado, a seleção fica e os recusados ficam em vermelho.
         setInvalidSeg(new Set(invalidos));
         const nomes = invalidos
           .map((id) => membros.find((m) => m.id === id)?.name ?? "alguem")
@@ -847,9 +623,7 @@ export default function TaskModal({
 
   return (
     <div
-      // ⚠️ Arrastar pra selecionar texto e soltar aqui NAO fecha. Antes
-      // fechava, e neste modal fechar significa perder o formulario inteiro
-      // sem pergunta nenhuma. Ver `lib/useCliqueFora.ts`.
+      // Arrastar para selecionar texto e soltar aqui não fecha. Ver `lib/useCliqueFora.ts`.
       {...scrimProps}
       style={{
         position: "fixed", inset: 0, zIndex: 60,
@@ -861,11 +635,7 @@ export default function TaskModal({
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={salvar}
-        // Mata o "submit implicito" do HTML: sem isto, Enter em QUALQUER input
-        // deste form criava a tarefa com o que estivesse preenchido no
-        // instante -- em geral so o titulo, e sem responsavel. Regras em
-        // lib/teclasFormulario (textarea e botao seguem funcionando; o atalho
-        // deliberado passa a ser Ctrl/Cmd+Enter).
+        // Mata o submit implícito: Enter num input não cria a tarefa (regras em lib/teclasFormulario).
         onKeyDown={(e) => {
           if (ehAtalhoDeSalvar(e)) {
             e.preventDefault();
@@ -880,7 +650,6 @@ export default function TaskModal({
         style={{
           width: 700, maxWidth: "100%", maxHeight: "88dvh", overflowY: "auto",
           background: "var(--surface)",
-          // Raio 16: o mesmo do detalhe da tarefa (redesign 19/10).
           border: "1px solid var(--border)", borderRadius: 16, padding: 24,
           boxShadow: "var(--shadow)", display: "flex", flexDirection: "column", gap: 16,
         }}
@@ -888,17 +657,13 @@ export default function TaskModal({
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
           <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
             {duplicando ? "Duplicar tarefa" : "Nova tarefa"}
-            {/* ⚠️ SO NA CRIACAO. A copia nasce no quadro da origem, e dizer
-                "no quadro X" prometeria uma escolha que nao existe. */}
+            {/* Só na criação: a cópia nasce no quadro da origem. */}
             {!duplicando && nomeDoQuadro && (
               <span
                 className="muted"
                 style={{ fontSize: 13, fontWeight: 600, marginLeft: 8 }}
               >
-                {/* ⚠️ UM NO DE TEXTO SO, sem `<strong>` dentro. Quebrar a
-                    frase em varios elementos faz `getByText` nao a achar --
-                    armadilha ja registrada neste projeto -- e um leitor de
-                    tela a anuncia em pedacos. A enfase fica no `style`. */}
+                {/* Um nó de texto só, para `getByText` e leitor de tela. */}
                 {`no quadro ${nomeDoQuadro}`}
               </span>
             )}
@@ -923,12 +688,10 @@ export default function TaskModal({
         </div>
 
         <div className="field">
-          {/* ⚠️ `span` com id, e não `label htmlFor`: o campo é um editor
-              (`contenteditable`), e `label` só aponta para campo de formulário. */}
+          {/* `span` com id: o editor é `contenteditable`, e `label` só aponta para campo de formulário. */}
           <span className="label" id="t-desc-rotulo">
             Descrição <span className="muted" style={{ fontWeight: 400 }}>(opcional)</span>
           </span>
-          {/* Spec 052, fatia E: o editor que já mostra formatado. */}
           <EditorDeDescricao
             rotuloId="t-desc-rotulo"
             valor={description}
@@ -937,9 +700,7 @@ export default function TaskModal({
           />
         </div>
 
-        {/* Spec 052, fatia B. ⚠️ Na CÓPIA não há editor: o servidor copia os
-            links da original junto (decisão dela), e um editor aqui sugeriria
-            que a pessoa precisa refazê-los. */}
+        {/* Na cópia o servidor copia os links da original. */}
         {duplicando ? (
           <p className="muted text-xs">Os links da tarefa original vão junto na cópia.</p>
         ) : (
@@ -968,19 +729,7 @@ export default function TaskModal({
               ))}
             </select>
           </div>
-          {/* ⚠️ D5: no modo COPIA o campo de prazo NAO aparece.
-              Esconder e mais forte que abrir vazio -- vazio convida a
-              preencher com a data da origem, e cópia com data velha nasce
-              vencida: o job de prazo dispara TASK_OVERDUE para todas na
-              primeira execução (51 numa única execução em 01/08). A pessoa
-              define o prazo depois, na tarefa criada. */}
-          {/* ⚠️ INICIO SEGUE A MESMA REGRA DO PRAZO NA CÓPIA: escondido.
-              O comentário acima explica por quê para o prazo -- cópia com data
-              velha nasce vencida e o job dispara TASK_OVERDUE para todas (51
-              numa execução, em 01/08). Data de início velha não dispara nada,
-              mas mentir sobre quando o trabalho começou é o mesmo tipo de
-              herança silenciosa, e manter os dois juntos evita a pergunta
-              "por que um aparece e o outro não?". */}
+          {/* Na cópia, prazo e início não aparecem: data velha nasceria vencida. */}
           {!duplicando && (
             <div className="field" style={{ flex: 1 }}>
               <label className="label" htmlFor="t-start">
@@ -1022,11 +771,7 @@ export default function TaskModal({
           </div>
         )}
 
-        {/* Spec 021: responsaveis.
-            Lista os membros ativos que ALCANCAM a tarefa que vai nascer (ver
-            `foraDoEscopoAqui`). O 422 do backend continua sendo a trava real
-            -- os recusados ficam vermelhos aqui, sem perder a selecao --, mas
-            agora ele e a rede de seguranca, nao o primeiro aviso. */}
+        {/* Responsáveis: só quem alcança a tarefa; o 422 do backend é a trava real. */}
         <div className="field">
           <label className="label">
             Responsáveis{" "}
@@ -1091,8 +836,6 @@ export default function TaskModal({
                   title="Designar"
                   style={GATILHO_STYLE}
                 >
-                  {/* Icone, e nao o caractere "+"/"×": o mesmo do detalhe da
-                      tarefa e da linha de Seguidores logo abaixo (17/09). */}
                   {abertoResp ? (
                     <X size={13} strokeWidth={2.2} aria-hidden />
                   ) : (
@@ -1104,24 +847,15 @@ export default function TaskModal({
               {abertoResp && (
                 <div
                   style={{
-                    // ⚠️ `fixed`, e não `absolute` -- ver `posResp`. O card
-                    // do modal recorta filho absoluto, e o campo fica perto
-                    // do rodapé.
+                    // `fixed`: ver `posResp`.
                     position: "fixed",
                     top: posResp?.top ?? 0,
                     left: posResp?.left ?? 0,
-                    // ⚠️ 70 É FOLGA, E NÃO NECESSIDADE -- conferido, não
-                    // suposto: o card do modal não tem `position` nem
-                    // `z-index`, então não abre contexto de empilhamento, e
-                    // qualquer valor positivo já o venceria. O número existe
-                    // para sobreviver ao dia em que o card ganhar um
-                    // `z-index` próprio.
+                    // Folga: o card não abre contexto de empilhamento hoje.
                     zIndex: 70,
                     width: posResp?.largura ?? 300,
                     maxWidth: "calc(100vw - 24px)",
-                    // Enquanto não mediu, fica invisível: desenhar em 0,0 e
-                    // pular para o lugar certo no quadro seguinte é pior que
-                    // não desenhar.
+                    // Invisível até medir, para não pular de 0,0.
                     visibility: posResp ? "visible" : "hidden",
                     background: "var(--surface)", border: "1px solid var(--border)",
                     borderRadius: 10, boxShadow: "var(--shadow)", padding: 8,
@@ -1133,13 +867,7 @@ export default function TaskModal({
                     value={buscaResp}
                     autoFocus
                     onChange={(e) => setBuscaResp(e.target.value)}
-                    // Enter aqui SELECIONA o primeiro da lista filtrada. Era
-                    // o pior caso do submit implicito: a pessoa digitava o
-                    // nome, apertava Enter esperando escolher, e a tarefa
-                    // nascia sem responsavel nenhum. Deixar o Enter inerte
-                    // consertaria pela metade -- o que se espera dele aqui e
-                    // escolher. Para o form nao ver a tecla (o handler de
-                    // cima ja bloquearia, mas explicito e melhor que sorte).
+                    // Enter aqui seleciona o primeiro da lista filtrada, sem chegar ao form.
                     onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
                       e.preventDefault();
@@ -1150,28 +878,8 @@ export default function TaskModal({
                       setBuscaResp("");
                     }}
                   />
-                  {/* ---- "Selecionar todos" e "Limpar" -----------------
-                      Pedido da Camila em 22/08. ⚠️ SO NA CRIACAO, e ela foi
-                      explicita ("quero no criar so").
-
-                      ⚠️ E O MOTIVO DE NAO ESTAR NO DETALHE DA TAREFA E
-                      MEDIDO, nao estetico: la cada caixa marcada e UMA
-                      requisicao imediata (`addAssignee`), e cada designacao
-                      dispara uma notificacao "Designada". Num time de ~26
-                      pessoas, um clique viraria 26 requisicoes e 25 avisos.
-                      Aqui a selecao e LOCAL ate o "Criar" -- da para
-                      desmarcar antes de qualquer coisa sair.
-
-                      ⚠️ E FORA DA DUPLICACAO tambem, e isso e decisao e nao
-                      descuido: na copia a lista de responsaveis ja vem
-                      REVISADA da origem (ADR 0031), e o passo 2 decide
-                      subtarefa por subtarefa a partir dela. Um "selecionar
-                      todos" ali mexeria na entrada daquele fluxo.
-
-                      ⚠️ "TODOS" E OS VISIVEIS, e nao o time inteiro. Com
-                      busca ativa, agir sobre quem nao esta na tela seria
-                      escolher pelas costas -- por isso o rotulo carrega o
-                      numero, que muda junto com a busca. */}
+                  {/* "Selecionar todos" e "Limpar": só na criação, onde a seleção é local
+                      até o "Criar". "Todos" = os visíveis na busca (o rótulo leva o número). */}
                   {!duplicando && (
                     <div
                       style={{
@@ -1199,9 +907,7 @@ export default function TaskModal({
                           Selecionar todos ({membrosFiltrados.length})
                         </button>
                       )}
-                      {/* ⚠️ SO COM ALGUEM ESCOLHIDO: "limpar" sobre selecao
-                          vazia e afordancia que nao faz nada. Mesma regra do
-                          "Limpar hora" da capsula de datas. */}
+                      {/* Só com alguém escolhido. */}
                       {assigneeIds.length > 0 && (
                         <button
                           type="button"
@@ -1216,11 +922,7 @@ export default function TaskModal({
                   )}
                   <div
                     style={{
-                      // ⚠️ A ALTURA SAI DA MEDIÇÃO, e não é fixa em 240: com
-                      // o painel flutuando, uma lista alta demais sairia da
-                      // janela em vez de rolar por dentro. Os ~96px
-                      // descontados são a busca, a barra de ações e as
-                      // bordas.
+                      // Altura vem da medição (desconta busca, ações e bordas) para rolar por dentro.
                       maxHeight: Math.max(120, (posResp?.maxAltura ?? 336) - 96),
                       overflowY: "auto", marginTop: 6,
                       border: "1px solid var(--border)", borderRadius: 8,
@@ -1268,8 +970,7 @@ export default function TaskModal({
           )}
         </div>
 
-        {/* Spec 053, fatia D (D4, D6): seguidores na CRIACAO. Fora da
-            duplicacao -- a copia nao leva seguidores (D9). */}
+        {/* Seguidores na criação; a cópia não leva seguidores. */}
         {!duplicando && (
           <div className="field">
             <label className="label">
@@ -1305,8 +1006,7 @@ export default function TaskModal({
               padding: "10px 12px",
             }}
           >
-            {/* Critério 16: sem filha viva, a caixa não aparece -- oferecer
-                "levar 0 subtarefas" é ruído. */}
+            {/* Sem filha viva, a caixa não aparece. */}
             {rotuloCaixaSubtarefas(subtarefasVivas) !== null && (
               <>
                 <label
@@ -1321,9 +1021,7 @@ export default function TaskModal({
                   {rotuloCaixaSubtarefas(subtarefasVivas)}
                 </label>
 
-                {/* PASSO 2 (ADR 0031). Aparece SÓ quando há o que decidir --
-                    herdando responsáveis válidos, a duplicação continua sendo
-                    um clique, que é o que a Spec 033 entregou. */}
+                {/* Passo 2: aparece só quando há o que decidir. */}
                 {mostrarPasso2 && (
                   <div
                     style={{

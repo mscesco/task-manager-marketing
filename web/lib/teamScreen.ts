@@ -1,20 +1,8 @@
-/**
- * A tela `/times/[id]` -- Spec 047, fatia C. LOGICA PURA.
- *
- * FRONTEIRA (Spec 027): decisao mora em `lib/`, porque `app/` esta fora do
- * `include` do vitest. Nesta fatia isso e critico -- as duas regras mais
- * delicadas da tela (quem aparece, e o que se perde ao desmarcar) sao
- * exatamente as que nao dao erro quando saem erradas.
- *
- * A divisao de trabalho da §4.4, e vale ter em mente ao mexer aqui:
- *
- *     a tabela  mostra
- *     o lapis   define em QUAIS subteams
- *     o painel  define COM QUE CARGO em cada um   (fatia D)
- */
+// Lógica pura da tela `/times/[id]`: linhas da tabela, cartões de subtime, gaveta.
+// A tabela mostra; o lápis define em quais subtimes; o painel define o cargo em cada um.
 
 import type { Member, MemberRole, Team } from "./api";
-import { rootTeamOf } from "./areas";
+import { rootTeamOf } from "./rootTeams";
 
 /** Uma cápsula da coluna de subteams: onde a pessoa está, e como. */
 export type SubteamChip = {
@@ -25,12 +13,12 @@ export type SubteamChip = {
 /** Uma linha da tabela. */
 export type TeamRow = {
   readonly member: Member;
-  /** Cargo na PRÓPRIA área/subtime desta tela, se houver vínculo direto. */
+  /** Cargo no próprio time desta tela, se houver vínculo direto. */
   readonly cargoAqui: MemberRole | null;
   /** Subtimes desta árvore em que a pessoa está, com o cargo. */
   readonly subteams: SubteamChip[];
-  /** Está em área(s) além desta? Vira o aviso `+1 área`. */
-  readonly outrasAreas: number;
+  /** Quantos outros times raiz a pessoa tem; vira o aviso `+N time`. */
+  readonly otherRoots: number;
 };
 
 /** O time + todos os descendentes dele. */
@@ -52,23 +40,8 @@ export function teamTree(teamId: string, teams: readonly Team[]): Set<string> {
 }
 
 /**
- * As linhas da tabela: quem tem vínculo NESTE time **ou em qualquer subtime
- * dele**.
- *
- * ⚠️⚠️ O "OU EM QUALQUER SUBTIME" É A REGRA, e não um detalhe: alguém pode
- * estar só no SEO, sem vínculo na área, e **precisa aparecer** — senão vira
- * gente invisível na tela que existe para administrar gente. A spec diz isso
- * com essas palavras na §4.2.
- *
- * ⚠️ E ELA VALE NOS DOIS NÍVEIS. Abrindo um SUBTIME, a árvore é ele + os
- * netos dele; abrindo a ÁREA, é tudo. É a mesma função, e é por isso que a
- * decisão foi "uma tela só que se adapta ao nível" — duas telas divergiriam
- * com o tempo, e separar depois é mais fácil que reunificar.
- *
- * ⚠️ MOSTRA INATIVO TAMBÉM. A §3.2 é explícita: esconder linha já causou o
- * defeito de 27/07, quando o contador do cabeçalho divergiu do corpo. O que
- * varia é o BOTÃO, nunca a presença — e se a tela filtrar, o cabeçalho tem
- * de dizer "12 de 15".
+ * Linhas da tabela: quem tem vínculo neste time ou em qualquer subtime dele
+ * (senão quem está só num subtime some). Inclui inativos: o cabeçalho conta o corpo.
  */
 export function teamRows(
   teamId: string,
@@ -77,7 +50,7 @@ export function teamRows(
 ): TeamRow[] {
   const arvore = teamTree(teamId, teams);
   const esteTime = teams.find((t) => t.id === teamId);
-  const areaDesteTime = esteTime ? raizDe(esteTime, teams) : null;
+  const raizDesteTime = esteTime ? raizDe(esteTime, teams) : null;
 
   return members
     .map((member): TeamRow | null => {
@@ -95,27 +68,23 @@ export function teamRows(
         .filter((c): c is SubteamChip => c.team !== undefined)
         .sort((a, b) => a.team.name.localeCompare(b.team.name, "pt-BR"));
 
-      // ⚠️ `+N área` avisa que a pessoa tem vínculo em OUTRA área, sem
-      // poluir a coluna com times que não são desta tela. O detalhe fica no
-      // painel (fatia D) -- aqui é só o aviso de que existe mais.
-      const outrasAreas = (member.area_ids ?? []).filter(
-        (a) => a !== areaDesteTime,
+      // Só o aviso de que existe vínculo em outro time raiz; o detalhe fica no painel.
+      const otherRoots = (member.root_team_ids ?? []).filter(
+        (a) => a !== raizDesteTime,
       ).length;
 
-      return { member, cargoAqui: aqui ? aqui.role : null, subteams, outrasAreas };
+      return { member, cargoAqui: aqui ? aqui.role : null, subteams, otherRoots };
     })
     .filter((l): l is TeamRow => l !== null)
     .sort((a, b) => a.member.name.localeCompare(b.member.name, "pt-BR"));
 }
 
-/** A raiz do time, pela regra unica de `lib/areas` (revisao de 07/10: era
- *  uma das quatro copias de "subir ate a raiz"). Com pai fora da lista --
- *  nao acontece com a arvore inteira do `listTeamsAll` -- fica o proprio time. */
+/** A raiz do time; com pai fora da lista, o próprio time. */
 function raizDe(team: Team, teams: readonly Team[]): string {
   return rootTeamOf(team.id, teams) ?? team.id;
 }
 
-/** Um cartão da visão "Subtimes" — Spec 047, redesenho de 09/09. */
+/** Um cartão da visão "Subtimes". */
 export type SubteamCard = {
   readonly team: Team;
   /** Pessoas na árvore DELE (ele + os netos). */
@@ -125,20 +94,8 @@ export type SubteamCard = {
 };
 
 /**
- * Os cartões da visão "Subtimes" do alternador.
- *
- * ⚠️⚠️ SÓ OS FILHOS DIRETOS, e a escolha é do desenho: o alternador diz
- * *"o que tem DENTRO deste time"*. Listar netos junto misturaria dois níveis
- * numa grade plana, e a pessoa perderia quem é filho de quem — que é
- * exatamente o que ela abriu a tela para ver. O neto aparece ao entrar no
- * filho, e o número no cartão diz que ele existe.
- *
- * ⚠️ A CONTAGEM DEDUPLICA, pelo mesmo motivo de `areaCards`: quem coordena
- * costuma ter vínculo no subtime E num neto dele, e somar o `membros` de cada
- * time da árvore contaria essa pessoa duas vezes. Conta PESSOAS, não vínculos.
- *
- * ⚠️ E conta inativo também (§3.2) — esconder linha já fez o contador do
- * cabeçalho divergir do corpo, em 27/07.
+ * Cartões da visão "Subtimes": só filhos diretos (o neto aparece ao entrar no
+ * filho). Conta pessoas, não vínculos.
  */
 export function subteamCards(
   teamId: string,
@@ -152,14 +109,7 @@ export function subteamCards(
       const arvore = teamTree(team.id, teams);
       return {
         team,
-        // ⚠️⚠️ SÓ ATIVOS, e a razão é CONCORDÂNCIA: a gaveta do subtime
-        // deixou de listar inativo (`directMembers`, 10/09), e o cartão
-        // continuava contando todo mundo. Resultado na tela: *"desenvolvimento
-        // aparece somente as 2 pessoas mas no card AINDA está com 3"*.
-        //
-        // ⚠️ Dois números para a mesma pergunta é o defeito de contador que a
-        // §3.2 registra — só que aqui não é cabeçalho contra corpo, é cartão
-        // contra gaveta. Quem muda um TEM de mudar o outro.
+        // Só ativos, para concordar com a gaveta (`directMembers`).
         pessoas: members.filter(
           (m) =>
             m.is_active &&
@@ -178,26 +128,8 @@ export type DirectMember = {
 };
 
 /**
- * Quem tem vínculo DIRETO neste time — a lista da gaveta do subtime.
- *
- * ⚠️⚠️ DIRETO, e não "na árvore", ao contrário de `teamRows`. A diferença
- * é a pergunta: a TABELA responde *"quem eu administro a partir daqui"* (e aí
- * o neto conta); a GAVETA responde *"quem está neste time"*, e é a lista de
- * onde se tira alguém. Oferecer "Tirar" para quem está só no neto removeria
- * um vínculo que não existe — 404 — ou, pior, o vínculo errado.
- *
- * ⚠️⚠️ E SÓ QUEM ESTÁ ATIVO. Decisão da Camila em 10/09: *"não quero nem que a
- * pessoa apareça aqui se ela está inativa. Os inativos só aparecem na aba de
- * inativos em membros"*.
- *
- * ⚠️ NÃO CONTRADIZ A §3.2 ("esconder linha faz o contador divergir do corpo"),
- * e a diferença é onde cada coisa CONTA. A tabela é o inventário de pessoas:
- * lá esconder inativo faria "8 pessoas" no cabeçalho e 5 linhas no corpo, e
- * ela tem uma ABA para eles. A gaveta é a lista de trabalho de um time — quem
- * está lá para fazer coisa. Quem saiu da empresa não está.
- *
- * ⚠️ E o vínculo continua existindo: ele reaparece na gaveta DA PESSOA, na aba
- * "Inativos", que é de onde se desfaz. Some da lista, não do banco.
+ * Quem tem vínculo direto (não na árvore) e está ativo -- a lista da gaveta,
+ * de onde se tira alguém. O inativo continua na aba "Inativos" da pessoa.
  */
 export function directMembers(
   teamId: string,
@@ -214,26 +146,8 @@ export function directMembers(
 }
 
 /**
- * Quem a gaveta do subtime oferece em "adicionar member".
- *
- * ⚠️ SÓ QUEM AINDA NÃO ESTÁ, espelhando o `UNIQUE (user_id, team_id)` do
- * banco: oferecer alguém que já está daria 409.
- *
- * ⚠️ E o universo é a lista que a TELA já carregou — as pessoas da árvore
- * daquele time. Cadastrar gente nova dispara senha provisória e é outra ação
- * (D3 da Spec 028); misturar as duas num seletor só faria o "adicionar" às
- * vezes criar uma conta sem avisar.
- *
- * ⚠️⚠️ INATIVO NÃO É CANDIDATO, e a Camila viu isso na tela em 09/09:
- * *"adicionar membro está mostrando pessoas inativas"*. Desativar desliga a
- * pessoa do sistema inteiro (não há rota de reativar — D5 da Spec 028), então
- * pô-la num time é uma escrita que não serve para nada: o vínculo existe e a
- * pessoa continua sem entrar.
- *
- * ⚠️ E ISTO É O CONTRÁRIO da regra da TABELA, de propósito. Lá inativo APARECE
- * (§3.2 — esconder linha já fez o contador divergir do corpo). A diferença é
- * que a tabela INFORMA e o seletor PROPÕE UMA AÇÃO: informar sobre quem saiu é
- * útil; oferecer uma ação sobre quem saiu é oferecer o que não funciona.
+ * Candidatos de "adicionar membro" na gaveta: ativos que ainda não estão no
+ * time (o banco tem `UNIQUE (user_id, team_id)`). Cadastrar gente nova é outra ação.
  */
 export function subteamCandidates(
   teamId: string,

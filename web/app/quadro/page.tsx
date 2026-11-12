@@ -8,7 +8,7 @@ import SeletorDeQuadro from "@/components/SeletorDeQuadro";
 import PageTitle from "@/components/PageTitle";
 import AcoesDoQuadro from "@/components/AcoesDoQuadro";
 import { currentUser, listBoards, listTeamsAll, type Quadro } from "@/lib/api";
-import { entradaDoQuadro } from "@/lib/areas";
+import { entradaDoQuadro } from "@/lib/rootTeams";
 import { preferredTeams } from "@/lib/activeTeam";
 import { ownRootTeams, rootsForPerson } from "@/lib/contextSwitcher";
 import { podeAbrirOrganizacao } from "@/lib/organization";
@@ -22,34 +22,12 @@ import {
   TEXTO_DA_QUEDA,
 } from "@/lib/seletorDeQuadro";
 
-// Quadro GERAL: panorama de tudo (sem projectId). A logica do board mora em
-// components/Board.tsx, compartilhada com a pagina de projeto (Entrega 11).
-//
-// ⚠️ ESTA TELA GANHOU SELETOR NA FATIA 5c (18/08), e ate aqui ela era uma
-// linha so: `<Board title="Quadro geral" />`. A raiz passou a poder ter quadro
-// EXTRA, e sem seletor nao haveria como chegar nele.
-//
-// ⚠️ A URL JA ESTAVA PRONTA DESDE 13/08, e a decisao esta no `plan.md`: o
-// quadro escolhido vive em `?quadro=`, e nao em segmento de rota, porque
-// `/quadro/{boardId}` colidiria com `/quadro/{teamId}` -- os dois sao UUID na
-// mesma posicao.
+// `/quadro`: quadro geral do time raiz da pessoa. O quadro escolhido vive em
+// `?quadro=` porque `/quadro/{boardId}` colidiria com `/quadro/{teamId}`.
 function QuadroGeral() {
-  // ⚠️ ESTA TELA PASSOU A BUSCAR O `/auth/me` EM 17/08, e o motivo e a 6a-bis:
-  // o Quadro geral virou editavel em 13/08 no backend e o lapis nunca apareceu
-  // aqui, porque `podeEditarColunas` nao era passado por ninguem.
-  //
-  // ⚠️ A PERMISSAO VEM DECIDIDA DE FORA, e nao de dentro do `Board` -- mesma
-  // regra do `/quadro/[teamId]`. Recalcular no componente seria a segunda
-  // definicao da mesma coisa, e as duas divergiriam sem nada ficar vermelho.
-  //
-  // ⚠️ FALHA = SEM LAPIS, e nao tela de erro. Perder o `/auth/me` nao pode
-  // impedir 26 pessoas de ver o quadro por causa de um botao que so ADMIN e
-  // MANAGER usam. E o backend recusa com 403 de qualquer forma: isto so evita
-  // oferecer.
+  // Permissões decididas aqui, não no `Board`. Falha = sem lápis (o backend recusa de qualquer forma).
   const [podeEditar, setPodeEditar] = useState(false);
-  // ⚠️ APAGAR TEM VERBO PRÓPRIO desde a Spec 049, fatia D: o GESTOR edita o
-  // quadro e as colunas, e não apaga nenhum dos dois. Os dois estados abaixo
-  // exigem `podeEditar` TAMBÉM -- o verbo diz "o quê", o alcance diz "onde".
+  // Apagar tem verbo próprio, e também exige `podeEditar` (verbo = o quê, alcance = onde).
   const [apagaQuadros, setApagaQuadros] = useState(false);
   const [apagaColunas, setApagaColunas] = useState(false);
   useEffect(() => {
@@ -67,25 +45,16 @@ function QuadroGeral() {
       });
   }, []);
 
-  // ⚠️ `null` = ainda carregando, nos DOIS. Ver `resolverQuadroPedido`: com a
-  // lista em `null` ele devolve o pedido SEM conferir e sem avisar, para o
-  // aviso de queda nao piscar em todo carregamento.
+  // `null` = carregando. Com a lista em `null`, `resolverQuadroPedido` não confere nem avisa.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [rootId, setRootId] = useState<string | null>(null);
-  // ⚠️ O `Board` SO NASCE DEPOIS DA DECISAO (07/10). Antes ele era desenhado
-  // na hora, sem area, e perguntava "qual e a unica raiz?" por conta propria
-  // -- com varias raizes, `AreaIndefinidaError` no console (que o Next 15
-  // desenha na tela), e isso ANTES de esta pagina redirecionar.
+  // O `Board` só nasce depois da decisão: sem time raiz ele perguntaria por conta própria e levantaria.
   const [decidido, setDecidido] = useState(false);
-  // ⚠️ DECLARADO ANTES DO EFEITO QUE O USA -- o redirecionamento da fatia 4
-  // depende dele, e um `const` abaixo do `useEffect` deixaria a dependencia
-  // impossivel de declarar sem TDZ.
+  // Declarado antes do efeito que o usa.
   const router = useRouter();
 
   const carregarQuadros = useCallback(() => {
-    // ⚠️ FALHA EM SILENCIO, com `[]` -- mesma decisao da tela do time. Sem os
-    // quadros o seletor mostra so o geral, que e o que esta tela ja era antes
-    // desta fatia. Travar tudo porque uma requisicao auxiliar caiu seria pior.
+    // Falha em silêncio: sem a lista, o seletor mostra só o geral.
     listBoards()
       .then(setQuadros)
       .catch(() => setQuadros([]));
@@ -93,32 +62,11 @@ function QuadroGeral() {
 
   useEffect(() => {
     carregarQuadros();
-    // ⚠️⚠️ `/quadro` E A ROTA SEM AREA NA URL, e a Spec 046 (fatia 4) a
-    // transformou num DEFAULT DE ENTRADA em vez de um endereço próprio.
-    //
-    // Com UMA área ela desenha o quadro geral, como sempre. Com várias, ela
-    // não escolhe calada: redireciona para `/quadro/<área>`, e a partir daí a
-    // URL diz qual é (§4.4). É a diferença entre "área ativa" -- estado
-    // invisível que faz duas pessoas verem coisas diferentes no mesmo link --
-    // e um default que se resolve no endereço.
-    //
-    // ⚠️ `replace` E NAO `push`: quem chegou em `/quadro` não escolheu essa
-    // URL, então ela não merece uma entrada no histórico. Com `push`, o botão
-    // Voltar traria a pessoa para cá e o redirecionamento a levaria de novo
-    // para a frente -- um laço que ela não consegue sair.
+    // Sem time na URL: com um time raiz desenha, com vários redireciona para
+    // `/quadro/<id>`. `replace`, não `push`, para o Voltar não cair num laço.
     Promise.all([listTeamsAll(), currentUser()])
       .then(([times, me]) => {
-        // ⚠️ A ESCOLHA E DE `lib/areas`, e esta pagina so a EXECUTA -- `app/`
-        // esta fora do `include` do vitest, e regra escrita aqui nao teria
-        // guardiao (mesma licao de `candidatosParaAdicionar`, Spec 044).
-        //
-        // ⚠️⚠️ E ELA RECEBE OS TIMES **DA PESSOA**, em ordem de preferencia
-        // (Spec 048, fatia B). Ate 11/09 recebia a arvore inteira e mandava
-        // para a primeira raiz POR NOME -- ou seja, **entrar no sistema abria o
-        // Comercial**, inclusive para quem trabalha no Marketing. Era o defeito
-        // 3.1 da spec, e a Camila o descreveu assim: *"tudo ta levando em
-        // consideracao o quadro do comercial que nao tem nada, mesmo que eu
-        // esteja no marketing"*.
+        // A escolha é de `entradaDoQuadro`; recebe os times da pessoa em ordem de preferência.
         const podeVerOrganizacao = podeAbrirOrganizacao(me);
         const entrada = entradaDoQuadro(
           preferredTeams(
@@ -127,7 +75,7 @@ function QuadroGeral() {
           ),
         );
         if (entrada.tipo === "desenhar") {
-          setRootId(entrada.areaId);
+          setRootId(entrada.rootId);
           setDecidido(true);
           return;
         }
@@ -135,12 +83,12 @@ function QuadroGeral() {
           router.replace(entrada.para);
           return;
         }
-        console.error("/quadro: workspace sem nenhuma área");
+        console.error("/quadro: workspace sem nenhum time");
         setRootId(null);
         setDecidido(true);
       })
       .catch((e) => {
-        console.error("/quadro: não consegui listar as áreas", e);
+        console.error("/quadro: não consegui listar os times", e);
         setRootId(null);
         setDecidido(true);
       });
@@ -148,20 +96,9 @@ function QuadroGeral() {
 
   const searchParams = useSearchParams();
 
-  // ⚠️ A ESCOLHA VIVE NA URL, e nao em `useState` -- mesma decisao de 13/08
-  // registrada na tela do time: F5, link mandado para um colega e o botao
-  // Voltar do navegador funcionam sem uma linha a mais.
-  //
-  // ⚠️ MAS AQUI O `null` SIGNIFICA OUTRA COISA. Na tela do time, `null` e a
-  // LENTE; aqui e o QUADRO GERAL, que e um registro de verdade. O `Board` sem
-  // `boardId` ja desenha o geral, entao os dois caminhos coincidem -- e por
-  // isso `?quadro=<id do geral>` e tratado como "sem parametro" logo abaixo.
+  // A escolha vive na URL. Aqui `null` é o quadro geral (na tela do time é a lente).
   const pedidoCru = searchParams.get("quadro");
-  // ⚠️ `?quadro=<id do geral>` E TRATADO COMO "SEM PARAMETRO", E EM SILENCIO.
-  // O `resolverQuadroPedido` devolveria `e-o-quadro-geral` -- correto na tela
-  // do TIME, onde a lente e o espelho dele, e errado aqui: nesta tela o geral
-  // e o destino, nao um desvio. Avisar seria explicar um problema que nao
-  // existe, com um texto que fala de lente numa pagina que nao tem lente.
+  // `?quadro=<id do geral>` vale como "sem parâmetro", sem aviso: aqui o geral é o destino.
   const pedidoEhOGeral =
     !!pedidoCru && (quadros?.find((q) => q.id === pedidoCru)?.is_default ?? false);
   const pedido = pedidoEhOGeral
@@ -170,10 +107,7 @@ function QuadroGeral() {
 
   const selecionarQuadro = useCallback(
     (id: string | null) => {
-      // ⚠️ O GERAL VOLTA PARA A URL LIMPA. Guardar `?quadro=<geral>` daria dois
-      // enderecos para a mesma tela, e o segundo cairia no
-      // `e-o-quadro-geral` do `resolverQuadroPedido` -- avisando sobre um
-      // pedido que a propria tela acabou de fazer.
+      // O geral volta para a URL limpa: um endereço por tela.
       const ehGeral = quadros?.find((q) => q.id === id)?.is_default ?? false;
       router.push(
         !id || ehGeral ? "/quadro" : `/quadro?quadro=${encodeURIComponent(id)}`,
@@ -184,9 +118,7 @@ function QuadroGeral() {
 
   const [quedaDispensada, setQuedaDispensada] = useState<string | null>(null);
 
-  // ⚠️ O SELETOR SO EXISTE COM A RAIZ RESOLVIDA. Sem `rootId` nao ha como
-  // filtrar os quadros dela, e desenhar a lista inteira poria o quadro de um
-  // subtime na tela do geral.
+  // Sem `rootId` não há como filtrar os quadros da raiz.
   const seletor = rootId ? (
     <SeletorDeQuadro
       teamId={rootId}
@@ -199,15 +131,13 @@ function QuadroGeral() {
       daRaiz
     />
   ) : (
-    // Sem raiz nao ha seletor, e o `<h1>` e so o nome. O seletor desenha o
-    // proprio `<h1>` (ver `SeletorDeQuadro`), entao este ramo tambem desenha.
+    // Sem raiz não há seletor; o seletor desenha o próprio `<h1>`, então este ramo também.
     <PageTitle>Quadro geral</PageTitle>
   );
 
   return (
     <AppShell>
-      {/* ⚠️ MESMO AVISO DA FATIA 11, e pelo mesmo motivo: com quadro extra da
-          raiz existindo, um `?quadro=` pode morrer entre duas pessoas. */}
+      {/* Aviso de `?quadro=` que não existe mais. */}
       {pedido.motivo && quedaDispensada !== searchParams.get("quadro") && (
         <div
           role="status"
@@ -234,10 +164,9 @@ function QuadroGeral() {
         <Loading rotulo="Carregando quadro" />
       ) : (
       <Board
-        // ⚠️ SEM `boardId` = O QUADRO GERAL, que e o comportamento de sempre e
-        // o de 100% das aberturas desta tela ate a fatia 5c.
+        // Sem `boardId` = o quadro geral.
         boardId={pedido.id ?? undefined}
-        areaId={rootId ?? undefined}
+        rootTeamId={rootId ?? undefined}
         heading={seletor}
         podeEditarColunas={podeEditar}
         podeApagarColunas={apagaColunas}
@@ -262,23 +191,8 @@ function QuadroGeral() {
 }
 
 /**
- * ⚠️ A FRONTEIRA DE `Suspense` É OBRIGATÓRIA AQUI, E O BUILD FOI QUEM DISSE.
- *
- * Esta rota é ESTÁTICA (`○ /quadro` na saída do `next build`), e `useSearchParams`
- * num componente cliente de rota pré-renderizada faz o build parar com
- * *"missing suspense boundary with useSearchParams"*. A fatia 5c pôs o
- * `?quadro=` aqui e derrubou o portão na primeira execução.
- *
- * ⚠️ E O `npm run dev` NÃO RECLAMA -- o erro aparece só no `next build`. Isso
- * está anotado no `/quadro/[teamId]/page.tsx` desde 13/08, onde a situação é a
- * INVERSA: lá a rota é dinâmica (por causa do `[teamId]`), o build passa sem
- * `Suspense`, e a sabotagem de tirá-lo foi conferida. **As duas rotas usam
- * `useSearchParams` e só uma precisa da fronteira** -- e a diferença não está
- * no código delas, e sim em o Next pré-renderizar uma e não a outra.
- *
- * ⚠️ O `fallback` É O QUE APARECE NO HTML ESTÁTICO, antes de o cliente hidratar.
- * É o MESMO `Loading` do resto do produto, e não uma tela em branco: o Quadro
- * geral é a página que 26 pessoas abrem todo dia.
+ * `Suspense` obrigatório: esta rota é estática e `useSearchParams` sem ele
+ * derruba o `next build` (o `npm run dev` não reclama).
  */
 export default function QuadroPage() {
   return (

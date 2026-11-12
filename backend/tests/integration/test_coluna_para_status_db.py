@@ -1,17 +1,8 @@
-"""ADR 0042 -- status sem coluna cai no `is_default_target` da semantica.
+"""`coluna_para_status`: ponte (`legacy_status`) primeiro, depois a coluna
+`is_default_target` da semantica, senao erro.
 
-Contra Postgres real, porque a decisao inteira mora no `ORDER BY` de uma query:
-a ordem dos degraus e o `DESC NULLS LAST` nao existem em lugar nenhum do
-dominio, e nenhum teste puro os alcanca.
-
-⚠️ O FIXTURE E O QUE FAZ ESTE ARQUIVO VALER ALGUMA COISA. Um quadro de QUATRO
-colunas (`COLUNAS_BASE`) tem uma coluna por semantica, entao "o alvo da
-semantica" e "a primeira coluna que achar" dao respostas DIFERENTES para
-`IN_REVIEW`, `EXTERNAL_APPROVAL` e `BLOCKED` -- a primeira por posicao e
-`Backlog` e o alvo certo e `Em Andamento`. Fosse `make_board(com_legacy_status=
-False)`, com oito colunas dividindo quatro semanticas, a regra certa e a errada
-poderiam coincidir e a sabotagem passaria verde. Foi assim que tres sabotagens
-passaram verde na 4c.
+Contra Postgres porque a regra mora no `ORDER BY`. O quadro de quatro colunas
+importa: nele "alvo da semantica" e "primeira coluna" dao respostas diferentes.
 """
 
 from __future__ import annotations
@@ -67,20 +58,9 @@ async def _coluna_por_nome(db, *, board_id, nome: str):
     ).scalar_one()
 
 
-# ---------------------------------------------------------------- degrau 1
-
-
 async def test_o_degrau_exato_vem_antes_do_alvo_da_semantica(db) -> None:
-    """⚠️ O TESTE QUE PRENDE A ORDEM DOS DEGRAUS (ADR 0042 D1).
-
-    No Quadro geral, `EXTERNAL_APPROVAL` tem coluna propria E existe uma coluna
-    `is_default_target` da mesma semantica (`Em Andamento`). As duas satisfazem
-    o WHERE; so o `ORDER BY` separa.
-
-    Invertendo os degraus, a tarefa vai parar em `Em Andamento`: coluna valida,
-    do quadro certo, com a semantica certa -- e NENHUM outro portao pega. Este
-    teste e o unico lugar onde essa inversao aparece.
-    """
+    """`EXTERNAL_APPROVAL` tem coluna propria e ha um alvo da mesma semantica:
+    a ponte ganha."""
     ctx, ws, raiz, user, _ = await _mundo(db)
     geral, _ = await _quadro_geral_e_coluna(db, ctx, raiz)
 
@@ -96,12 +76,7 @@ async def test_o_degrau_exato_vem_antes_do_alvo_da_semantica(db) -> None:
 
 
 async def test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois(db) -> None:
-    """⚠️ O TESTE QUE PROVA QUE PRODUCAO NAO SE MEXE.
-
-    Os oito status respondem pela ponte no Quadro geral, e o status devolvido e
-    identico ao pedido. Vermelho aqui significa que a ADR 0042 vazou para o
-    quadro que ela nao deveria tocar.
-    """
+    """No quadro geral os oito status respondem pela ponte, com o status intacto."""
     ctx, ws, raiz, user, _ = await _mundo(db)
     geral, _ = await _quadro_geral_e_coluna(db, ctx, raiz)
 
@@ -122,9 +97,6 @@ async def test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois(db) -> None:
         assert efetivo is status, status.value
 
 
-# ---------------------------------------------------------------- degrau 2
-
-
 @pytest.mark.parametrize(
     "pedido,coluna_esperada,status_esperado",
     [
@@ -138,13 +110,8 @@ async def test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois(db) -> None:
 async def test_status_sem_coluna_cai_no_alvo_da_semantica(
     db, pedido, coluna_esperada, status_esperado
 ) -> None:
-    """Os quatro status que um quadro de quatro colunas nao conhece.
-
-    ⚠️ `Backlog` E A PRIMEIRA COLUNA POR POSICAO neste quadro. Os tres casos
-    que esperam `Em Andamento` sao os que distinguem "alvo da semantica" de
-    "primeira coluna que achar"; o caso do `PLANNED` sozinho nao distinguiria
-    nada, e esta aqui so para cobrir a semantica `OPEN`.
-    """
+    """Status sem coluna cai no alvo da semantica. `Backlog` e a primeira coluna
+    por posicao, entao so os casos `Em Andamento` distinguem as duas regras."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
 
     with acting_as(**ctx):
@@ -159,14 +126,8 @@ async def test_status_sem_coluna_cai_no_alvo_da_semantica(
 
 
 async def test_o_status_gravado_na_tarefa_e_o_da_coluna_que_recebeu(db) -> None:
-    """⚠️ A D2 DA ADR 0042, PELO CAMINHO DO PRODUTO E NAO DO REPOSITORIO.
-
-    Pedir `BLOCKED` num quadro de quatro colunas tem EXITO e a tarefa vira
-    `IN_PROGRESS`. Gravar `command.status` aqui deixaria o card em
-    `Em Andamento` e a tarefa agrupada em `Bloqueado` no `/minhas-tarefas` --
-    dois lugares discordando sobre a mesma tarefa -- e poria a invariante 3 do
-    `invariantes.sql` em diferente de zero.
-    """
+    """Pelo servico: pedir `BLOCKED` num quadro de quatro grava `IN_PROGRESS`,
+    o status da coluna que recebeu."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     t = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=raiz, title="alvo"
@@ -199,21 +160,13 @@ async def test_o_status_gravado_na_tarefa_e_o_da_coluna_que_recebeu(db) -> None:
 async def test_subtarefa_em_quadro_de_quatro_colunas_nasce_com_status_derivado(
     db,
 ) -> None:
-    """O outro chamador: `create` com pai.
-
-    A subtarefa herda o quadro do pai (F2) e, se o pai vive num quadro de
-    quatro colunas, o status pedido pode nao existir la. O `create` tem de
-    gravar o status da coluna que recebeu, e nao o pedido.
-    """
+    """Subtarefa herda o quadro do pai e grava o status da coluna que recebeu."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     pai = await f.make_task(
         db, workspace_id=ws, created_by=user, team_id=raiz, title="pai"
     )
-    # ⚠️ A COLUNA E RESOLVIDA ANTES DE QUALQUER ATRIBUICAO. Consultar depois
-    # de mexer em `board_id` dispara AUTOFLUSH e grava o par
-    # `(quadro novo, coluna velha)`, que nao existe -- a FK composta recusa
-    # antes de o teste testar coisa nenhuma. Armadilha ja documentada em
-    # `test_board_scoping_db._mover_para_quadro`.
+    # Resolver a coluna antes de mexer em `board_id`: o autoflush gravaria o
+    # par (quadro novo, coluna velha) e a FK composta recusaria.
     coluna_pai = await _coluna_por_nome(
         db, board_id=quadro4.id, nome="Backlog"
     )
@@ -241,21 +194,9 @@ async def test_subtarefa_em_quadro_de_quatro_colunas_nasce_com_status_derivado(
     assert filha.status is TaskStatus.IN_PROGRESS
 
 
-# ---------------------------------------------------------------- degrau 3
-
-
 async def test_sem_ponte_e_sem_alvo_continua_levantando(db) -> None:
-    """⚠️ A TRAVA ALTA NAO FOI REMOVIDA, SO GANHOU UM DEGRAU ANTES DELA.
-
-    Desmarcando o alvo da semantica `CANCELLED`, o quadro deixa de ter resposta
-    para `CANCELLED` -- e a resposta certa continua sendo erro, e nao uma
-    coluna qualquer.
-
-    ⚠️ Este estado nao vai ser alcancavel pelo CRUD da fatia 5b-4, que recusa
-    apagar a ultima `OPEN` e a ultima `DONE` e mantem um alvo por semantica
-    presente. Ele e montado aqui A MAO, por escrita direta, porque a trava do
-    repositorio tem de valer mesmo para quadro montado por fora do produto.
-    """
+    """Sem ponte e sem alvo para a semantica, levanta em vez de escolher uma
+    coluna qualquer. Estado montado a mao."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     cancelado = (
         await db.execute(
@@ -277,17 +218,10 @@ async def test_sem_ponte_e_sem_alvo_continua_levantando(db) -> None:
 
 
 async def test_coluna_sem_ponte_nao_ganha_do_casamento_exato(db) -> None:
-    """⚠️ O `DESC NULLS LAST` DO `ORDER BY`, e ele nao e enfeite.
+    """Coluna sem ponte marcada como alvo nao ganha do casamento exato.
 
-    `legacy_status = :status` e NULL -- e nao FALSE -- para coluna criada por
-    gente, e o Postgres poe NULL PRIMEIRO num `ORDER BY ... DESC`. Sem o
-    `NULLS LAST`, uma coluna sem ponte marcada como alvo ganharia do casamento
-    exato, e o degrau 2 comeria o degrau 1 por acidente de SQL.
-
-    O mundo montado aqui e o menor que expoe isso: uma quinta coluna
-    `IN_PROGRESS`, sem ponte, marcada como alvo no lugar de `Em Andamento`.
-    Pedir `IN_PROGRESS` tem de devolver `Em Andamento` mesmo assim, porque a
-    ponte responde primeiro.
+    Depende do `DESC NULLS LAST`: a comparacao com a ponte da NULL (nao FALSE)
+    na coluna sem ponte, e o Postgres poe NULL primeiro num `DESC`.
     """
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     andamento = (
@@ -323,7 +257,7 @@ async def test_coluna_sem_ponte_nao_ganha_do_casamento_exato(db) -> None:
     assert col == andamento.id
     assert efetivo is TaskStatus.IN_PROGRESS
 
-    # ...e um status SEM ponte cai na coluna nova, que agora e o alvo.
+    # status sem ponte cai na coluna nova, que agora e o alvo
     with acting_as(**ctx):
         col2, efetivo2 = await BoardRepository(db).coluna_para_status(
             board_id=quadro4.id, status=TaskStatus.BLOCKED
@@ -334,13 +268,9 @@ async def test_coluna_sem_ponte_nao_ganha_do_casamento_exato(db) -> None:
     assert efetivo2 is TaskStatus.IN_PROGRESS
 
 
-async def _quadro_geral_e_coluna(db, ctx, area_id):
-    """`board_id` do quadro geral DAQUELA AREA.
-
-    ⚠️ O `area_id` virou obrigatorio na Spec 046 (fatia 4): com N areas,
-    "o quadro geral do workspace" deixou de ser uma coisa so.
-    """
+async def _quadro_geral_e_coluna(db, ctx, root_team_id):
+    """`board_id` do quadro geral daquele time raiz."""
     with acting_as(**ctx):
         return await BoardRepository(db).default_board_and_column_for_status(
-            TaskStatus.BACKLOG, area_id=area_id
+            TaskStatus.BACKLOG, root_team_id=root_team_id
         )

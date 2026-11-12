@@ -13,7 +13,7 @@ import {
   type Team,
 } from "@/lib/api";
 import { computeLens } from "@/lib/lens";
-import { rootTeamOf } from "@/lib/areas";
+import { rootTeamOf } from "@/lib/rootTeams";
 import Loading from "@/components/Loading";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 import {
@@ -26,82 +26,31 @@ import {
   urlDoQuadro,
 } from "@/lib/seletorDeQuadro";
 
-// Quadro de SUBTIME (Fatia 7a). Le o teamId da URL e passa como subteamId
-// pro Board (modo hibrido: compartilhadas da raiz + internas do subtime).
-// O titulo mostra o NOME do time, nao o UUID.
-//
-// Guardas de rota:
-//   - id inexistente -> avisa "time nao encontrado".
-//   - id de uma AREA  -> desenha o QUADRO GERAL dela (Spec 046, fatia 4).
-//     ⚠️⚠️ ATE A SPEC 046 ISTO ERA UMA RECUSA: "Este e o time principal. Use
-//     o quadro geral." A guarda existia so porque havia UMA area -- com uma
-//     so, `/quadro` ja era o lugar dela, e abrir por aqui era um jeito
-//     torto de chegar no mesmo lugar. Com N areas ela passou a barrar o
-//     caminho normal: o quadro geral do TI SO tem este endereco.
-//     ⭐ A fatia 4 nao acrescentou rota nenhuma -- ela REMOVEU uma trava.
-//   - id FORA da lente do usuario -> avisa "sem acesso" em vez de renderizar
-//     um quadro (que, por um subtime alheio, viria quase vazio e ainda
-//     convidaria a "criar a primeira tarefa" numa area que nao e sua). O dado
-//     ja e protegido pelo backend; isto fecha o furo de UX. A lente e a MESMA
-//     (computeLens) que monta as sub-abas do menu, entao nenhum link que o
-//     usuario ve no AppShell e barrado aqui -- so ids digitados na mao.
-// ⚠️ SEM FRONTEIRA DE `Suspense` PARA O `useSearchParams`, e isso foi MEDIDO
-// em 13/08, nao deduzido. A regra do Next existe -- `useSearchParams` num
-// componente cliente exige `Suspense` acima -- mas ela vale para rota que o
-// build tenta PRE-RENDERIZAR. Esta e dinamica (`ƒ /quadro/[teamId]`, por causa
-// do `[teamId]`), entao o `next build` passa sem ela. Sabotagem conferida:
-// tirar o `Suspense` que eu havia posto nao derrubou o build.
-//
-// ⚠️ NO DIA EM QUE ESTA ROTA VIRAR ESTATICA o build para com "missing suspense
-// boundary with useSearchParams", e o `npm run dev` NAO reclama -- o erro
-// aparece so no portao.
+// `/quadro/<teamId>`: time raiz -> quadro geral dele; subtime -> lente
+// (compartilhadas da raiz + internas). Id inexistente ou fora da lente
+// (`computeLens`) mostra aviso. Rota dinâmica: dispensa `Suspense` para o
+// `useSearchParams`; se virar estática, o `next build` quebra.
 export default function QuadroSubtimePage() {
   const params = useParams();
   const teamId = typeof params.teamId === "string" ? params.teamId : "";
 
   const [team, setTeam] = useState<Team | null>(null);
 
-  const [area, setArea] = useState<string | null>(null);
+  const [rootTeam, setRootTeam] = useState<string | null>(null);
   useDocumentTitle(team?.name);
   const [temAcesso, setTemAcesso] = useState(false);
   const [carregando, setCarregando] = useState(true);
-  // Fatia 5b-6: os quadros deste time, e qual deles a tela desenha.
-  //
-  // ⚠️ `null` E A LENTE, e nao "ainda nao carregou" -- ela nao tem registro no
-  // banco (ADR 0034). O estado de carga e `quadros === null`.
+  // `null` em `quadroSelecionado` é a lente (sem registro no banco); carga é `quadros === null`.
   const [quadros, setQuadros] = useState<Quadro[] | null>(null);
   const [podeGerir, setPodeGerir] = useState(false);
-  // ⚠️ APAGAR TEM VERBO PRÓPRIO desde a Spec 049, fatia D: o GESTOR edita e não
-  // apaga. Ver o efeito abaixo e `podeApagarQuadros`.
+  // Apagar tem verbo próprio (ver `podeApagarQuadros`).
   const [apagaQuadros, setApagaQuadros] = useState(false);
   const [apagaColunas, setApagaColunas] = useState(false);
 
-  // ⚠️ A URL E A FONTE UNICA, e por isso aqui NAO ha `useState` do quadro
-  // escolhido. Guardar a escolha em estado E na URL daria duas verdades para
-  // sincronizar, e o Voltar do navegador seria a primeira a divergir:
-  // ele mudaria o endereco e a tela continuaria no quadro anterior.
-  // Derivando, Voltar e Avancar funcionam sem uma linha a mais.
+  // O quadro escolhido deriva da URL, sem `useState`. Na raiz, `?quadro=<geral>`
+  // vale como "sem parâmetro"; num subtime é queda para a lente e o aviso está certo.
   const router = useRouter();
   const searchParams = useSearchParams();
-  // ⚠️ A VALIDACAO MORA EM `lib/seletorDeQuadro`, TESTADA. O `include` do
-  // vitest e so `lib/**` e `components/**` -- regra escrita dentro de `app/`
-  // nasce sem guardiao.
-  //
-  // ⚠️⚠️ NA RAIZ, ESCOLHER O QUADRO GERAL E LEGITIMO -- e este ramo e o que
-  // faltava. Reportado por ela em 11/09, com captura: *"o quadro esta sendo
-  // chamado de lente do time"*, estando no Comercial (uma raiz).
-  //
-  // ⚠️⚠️ E QUEM EXPOS FOI A FATIA B desta spec, nao codigo novo: ate 11/09 o
-  // "Quadro geral" da barra apontava para `/quadro` (a rota legada), que SEMPRE
-  // tratou a raiz certo -- ela passa `daRaiz` ao seletor e normaliza o pedido.
-  // A fatia B passou a apontar para `/quadro/<time-ativo>`, ou seja, para ESTA
-  // rota, que nunca soube da raiz. O defeito estava aqui desde a Spec 046 fatia
-  // 4 (quando a rota aprendeu a aceitar id de area) e ninguem passava por ele.
-  //
-  // ⚠️ SO NA RAIZ. Num SUBTIME, `?quadro=<geral>` e mesmo uma queda para a
-  // lente, e o aviso "e-o-quadro-geral" esta certo ali -- o quadro geral nem
-  // aparece na lista daquela tela. Normalizar nos dois casos apagaria um aviso
-  // verdadeiro.
   const ehRaiz = team !== null && team.parent_team_id === null;
   const pedidoCru = searchParams.get("quadro");
   const pedidoEhOGeral =
@@ -113,19 +62,10 @@ export default function QuadroSubtimePage() {
       : resolverQuadroPedido(pedidoCru, quadros, teamId);
   const quadroSelecionado = pedido.id;
 
-  // ⚠️ `push`, E NAO `replace`. Trocar de quadro e navegar: a pessoa espera
-  // que Voltar desfaca. O preco e uma entrada de historico por troca, e ele e
-  // menor que o do Voltar sair da pagina do time inteira sem desfazer nada.
-  // ⚠️ DISPENSAR E POR ID PEDIDO, e nao um booleano. Com um booleano, dispensar
-  // uma vez calaria o aviso para QUALQUER quadro seguinte na mesma sessao --
-  // a pessoa colaria outro link morto e nao veria nada.
+  // Dispensar guarda o id pedido, não um booleano: outro link morto ainda avisa.
   const [quedaDispensada, setQuedaDispensada] = useState<string | null>(null);
 
-  // ⚠️ ESCOLHER O QUADRO GERAL LIMPA O `?quadro=`, e nao o escreve. Sem isto a
-  // URL guardaria o id do geral e o `Board` entraria pelo ramo de `boardId` --
-  // que e OUTRO filtro (um registro proprio, e nao o quadro geral da area). O
-  // endereco do quadro geral de um time e `/quadro/<time>`, limpo. Mesma
-  // normalizacao que a rota legada `/quadro` ja fazia.
+  // Escolher o quadro geral limpa o `?quadro=`: o endereço dele é `/quadro/<time>`.
   const selecionarQuadro = useCallback(
     (id: string | null) => {
       const ehGeral = quadros?.find((q) => q.id === id)?.is_default ?? false;
@@ -141,16 +81,9 @@ export default function QuadroSubtimePage() {
         if (!vivo) return;
         const alvo = teams.find((t) => t.id === teamId) ?? null;
         setTeam(alvo);
-        // A AREA (o time raiz) do time da URL. Vai para TODO `Board` desta
-        // tela: sem ela o `Board` pergunta "qual e a unica raiz?", que nao tem
-        // resposta com varias raizes -- o `AreaIndefinidaError` que o Next 15
-        // passou a mostrar na tela (07/10) -- e a lente de subtime deixava de
-        // filtrar pela raiz.
-        setArea(rootTeamOf(teamId, teams));
-        // ⚠️ O TIME ATIVO AQUI E A RAIZ DO TIME DA URL (Spec 048, fatia B).
-        // Esta tela so usa `visibleTeamIds`, que nao depende dele -- mas passar
-        // `null` faria `boardSubteams` sair vazio, e o dia em que alguem ler
-        // essa parte aqui seria um menu vazio sem causa aparente.
+        // Time raiz da URL: vai para todo `Board` desta tela (sem ele o `Board`
+        // perguntaria a raiz e levantaria) e é o time ativo da lente.
+        setRootTeam(rootTeamOf(teamId, teams));
         const lens = computeLens(
           me.teams,
           teams,
@@ -158,13 +91,9 @@ export default function QuadroSubtimePage() {
           rootTeamOf(teamId, teams),
         );
         setTemAcesso(alvo ? lens.visibleTeamIds.has(alvo.id) : false);
-        // ⚠️ A DECISAO MORA EM `lib/seletorDeQuadro`, e nao aqui. A tela so
-        // guarda a resposta.
         const gere = podeGerirQuadrosDe(alcanceDeQuadro(me), teamId);
         setPodeGerir(gere);
-        // O verbo diz "o quê" (e o do quadro depende do NÍVEL); o alcance diz
-        // "onde". Os dois, sempre -- ter `board.delete` não dá ao supervisor o
-        // quadro de outro subtime.
+        // Verbo e alcance, sempre: `board.delete` não dá o quadro de outro subtime.
         setApagaQuadros(
           gere && podeApagarQuadros(me.permissions, alvo?.parent_team_id === null),
         );
@@ -180,10 +109,7 @@ export default function QuadroSubtimePage() {
     };
   }, [teamId]);
 
-  // ⚠️ FALHA EM SILENCIO, com `[]`. Sem os quadros o seletor mostra so a
-  // lente, que e o que esta tela ja era antes desta fatia -- e o assunto dela
-  // continua sendo ver as tarefas do time. Travar a tela inteira porque uma
-  // requisicao auxiliar caiu seria pior que esconder um seletor.
+  // Falha em silêncio: sem a lista, o seletor mostra só a lente.
   const carregarQuadros = useCallback(() => {
     listBoards()
       .then(setQuadros)
@@ -194,14 +120,8 @@ export default function QuadroSubtimePage() {
     carregarQuadros();
   }, [carregarQuadros]);
 
-  // ⚠️ UM SO SELETOR PARA OS DOIS RAMOS DO `Board` (fatia 10). Os dois desenham
-  // o MESMO dropdown -- ele e o titulo nos dois casos, e e ele quem sabe se o
-  // escolhido e a lente ou um avulso (`opcaoSelecionada`). Duplicar o JSX nos
-  // dois ramos faria duas copias que divergiriam no primeiro ajuste.
-  //
-  // ⚠️ `team` PODE SER NULL AQUI. Os ramos que usam este valor ja estao atras
-  // das guardas de `carregando`/`team`/`temAcesso`, mas o `const` e avaliado
-  // antes delas -- por isso o ternario, e nao um `team!.id`.
+  // Um seletor só para os dois ramos do `Board`. `team` pode ser null aqui
+  // (avaliado antes das guardas), por isso o ternário.
   const seletor = team ? (
     <SeletorDeQuadro
       teamId={team.id}
@@ -211,12 +131,7 @@ export default function QuadroSubtimePage() {
       podeApagar={apagaQuadros}
       onSelecionar={selecionarQuadro}
       onMudou={carregarQuadros}
-      // ⚠️⚠️ ERA ESTA A LINHA QUE FALTAVA. Sem ela o seletor usa
-      // `opcoesDoSeletor` sempre -- a lista de SUBTIME, cujo primeiro item e a
-      // LENTE ("Lente do time / espelho do quadro geral"). Numa raiz nao ha
-      // lente: o quadro geral e a coisa em si, e entra pelo NOME dele. O corpo
-      // do quadro ja tratava a raiz certo desde a Spec 046 fatia 4 (`areaId`, e
-      // nao `subteamId`); so o cabecalho nao sabia.
+      // Na raiz não há lente: o quadro geral entra pelo nome.
       daRaiz={team.parent_team_id === null}
     />
   ) : null;
@@ -234,7 +149,7 @@ export default function QuadroSubtimePage() {
           .
         </div>
       ) : !temAcesso ? (
-        // fora da lente -> nao e um quadro que este usuario deveria abrir.
+        // Fora da lente.
         <div className="muted">
           Você não tem acesso ao quadro deste time. Volte ao{" "}
           <a href="/quadro" className="text-accent underline">
@@ -244,21 +159,7 @@ export default function QuadroSubtimePage() {
         </div>
       ) : (
         <>
-          {/* ---- Aviso da queda para a lente (Spec 036, fatia 11) ----------
-              ⚠️ ATE AQUI A QUEDA ERA MUDA, E ERA CERTO ASSIM: link velho ou id
-              digitado na mao nao mereciam erro na cara de quem so abriu a tela.
-              **A fatia 7 mudou o mundo** -- agora uma pessoa APAGA o quadro que
-              a outra tem aberto, e a tela da segunda troca de lugar sozinha.
-              Silencio, ali, e indistinguivel de defeito.
-
-              ⚠️ AVISO, E NAO ERRO DE PAGINA. A tela continua util: a lente e um
-              lugar legitimo, e o assunto de quem abriu (as tarefas do time)
-              esta logo abaixo. Um `error-box` ocupando a tela trocaria um
-              problema pequeno por uma parede.
-
-              ⚠️ DISPENSAVEL, e o `role="status"` e nao `alert`: `alert`
-              interrompe o leitor de tela, e isto e informacao de contexto --
-              nada aconteceu de errado com o que a pessoa esta vendo agora. */}
+          {/* Aviso de queda para a lente (quadro apagado ou link velho). `status`, não `alert`. */}
           {pedido.motivo && quedaDispensada !== searchParams.get("quadro") && (
             <div
               role="status"
@@ -282,38 +183,16 @@ export default function QuadroSubtimePage() {
             </div>
           )}
 
-          {/* ⚠️ A LINHA SEPARADA DO SELETOR SAIU NA FATIA 10 (18/08). Ela era
-              um `<div style={{ marginBottom: 14 }}>` acima do quadro, e o
-              `Board` desenhava o titulo logo abaixo -- duas dobras dizendo a
-              mesma coisa. Agora o seletor E o titulo: ele vai na prop
-              `title` (que virou `ReactNode`), e o `Board` o desenha dentro do
-              proprio `<h1>`.
-
-              ⚠️ O TITULO NAO E MAIS TEXTO, E ISSO APAGOU UMA REGRA QUE ERA
-              DAQUI: o `?? \`Quadro · ${team.name}\`` que resolvia o nome do
-              quadro avulso saiu, porque quem sabe o nome do quadro escolhido e
-              o `opcaoSelecionada` dentro do seletor -- e ele ja o desenhava.
-              Manter a resolucao aqui seria uma segunda definicao do mesmo nome,
-              e as duas divergiriam no primeiro rename. */}
-          {/* ⚠️ `subteamId` E `boardId` SAO EXCLUDENTES, e a escolha e o que
-              esta tela faz. Com um quadro avulso selecionado, o `Board` deixa
-              de ser LENTE (espelho do Quadro geral filtrado por pessoa, ADR
-              0034) e passa a desenhar um registro proprio -- passar os dois
-              faria o filtro hibrido trazer tarefas da raiz para um quadro que
-              nao as contem, e elas cairiam em `foraDaColuna`: contadas e
-              invisiveis. */}
+          {/* O seletor é o título (vai em `heading`). `subteamId` e `boardId` são
+              excludentes: os dois juntos trariam tarefas da raiz para um avulso. */}
           {quadroSelecionado ? (
             <Board
               boardId={quadroSelecionado}
-              areaId={area ?? undefined}
+              rootTeamId={rootTeam ?? undefined}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
               heading={seletor}
-              // ⚠️ RENOMEAR E APAGAR SO NO RAMO DO QUADRO AVULSO. No ramo da
-              // lente nao ha registro para nenhum dos dois, e o proprio
-              // `AcoesDoQuadro` devolve `null` ali -- mas nao passa-lo deixa a
-              // ausencia explicita em vez de depender de um `if` dentro do
-              // componente.
+              // Renomear/apagar só existe no quadro avulso.
               acoesDoQuadro={
                 <AcoesDoQuadro
                   teamId={team.id}
@@ -323,42 +202,17 @@ export default function QuadroSubtimePage() {
                   podeApagar={apagaQuadros}
                   onSelecionar={selecionarQuadro}
                   onMudou={carregarQuadros}
-                  // ⚠️ FALTAVA (14/09): quadro avulso de um time RAIZ usa a lista da
-                  // raiz, e a de subtime usa a da lente. O irmão `SeletorDeQuadro`
-                  // já exigia isto desde 11/09; este ficou para trás.
+                  // Avulso de time raiz usa a lista da raiz.
                   daRaiz={team.parent_team_id === null}
                 />
               }
             />
           ) : team.parent_team_id === null ? (
-            // ⭐ AREA -> o QUADRO GERAL dela (Spec 046, fatia 4).
-            //
-            // ⚠️ `areaId` E NAO `subteamId`, e a diferenca e o desenho
-            // inteiro: `subteamId` liga o modo HIBRIDO (compartilhadas da
-            // area + internas do subtime), e uma area nao e subtime de
-            // ninguem. Passar `subteamId={team.id}` aqui faria o Board
-            // procurar a area DA area e filtrar contra ela mesma.
-            //
-            // ⚠️ E `areaId` e o que impede o `Board` de perguntar "qual e a
-            // raiz?" -- pergunta que, com N areas, nao tem resposta.
-            // ⚠⚠ `podeEditarColunas` FALTAVA AQUI (14/09, reportado na tela:
-            // admin da organização sem lápis no quadro geral do Comercial). Este
-            // ramo nasceu na Spec 046 fatia 4, e o lápis só era ligado no ramo
-            // do quadro avulso; desde a fatia B da 048 a barra aponta para cá.
-            //
-            // ⚠️ `podeGerir` SERVE PARA A RAIZ: ele é `podeGerirQuadrosDe(alcance,
-            // team.id)`, e com um time RAIZ coincide por construção com
-            // `podeGerirQuadroDaRaiz` (a regra do `/quadro`) -- `board.manage.root`
-            // é o alcance "amplo", e o de subtime nunca contém uma raiz.
-            // ⚠⚠ E `acoesDoQuadro` TAMBÉM FALTAVA (14/09): renomear o quadro geral
-            // mora nele, e a rota antiga `/quadro` o passava com `daRaiz`. Este
-            // ramo nasceu sem ele -- mesma omissão do lápis, na mesma linha.
-            //
-            // ⚠️ `selecionado={null}` É O QUADRO GERAL AQUI, e é igual ao `/quadro`:
-            // `opcaoSelecionada` não acha `id === null` na lista da RAIZ (o geral
-            // tem id de verdade) e devolve `opcoes[0]` -- que, com `daRaiz`, é ele.
+            // Time raiz -> quadro geral dele. `rootTeamId`, não `subteamId`
+            // (que ligaria o modo híbrido contra ele mesmo). `podeGerir` vale para a
+            // raiz; `selecionado={null}` resolve para o quadro geral com `daRaiz`.
             <Board
-              areaId={team.id}
+              rootTeamId={team.id}
               heading={seletor}
               podeEditarColunas={podeGerir}
               podeApagarColunas={apagaColunas}
@@ -376,12 +230,10 @@ export default function QuadroSubtimePage() {
               }
             />
           ) : (
-            // ⚠️ `false` EXPLÍCITO: é a LENTE, espelho do quadro geral filtrado
-            // por pessoa, e ela não oferece edição (ADR 0034 item 2).
-            // ⚠️ `null` EXPLÍCITO: a lente não tem registro para renomear nem apagar.
+            // Lente: sem edição e sem registro para renomear ou apagar.
             <Board
               subteamId={team.id}
-              areaId={area ?? undefined}
+              rootTeamId={rootTeam ?? undefined}
               heading={seletor}
               podeEditarColunas={false}
               podeApagarColunas={false}

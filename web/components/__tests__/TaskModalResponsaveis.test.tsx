@@ -1,18 +1,5 @@
-// "Selecionar todos" e "Limpar" no seletor de responsáveis (22/08).
-//
-// ⚠️ POR QUE SÓ NA CRIAÇÃO, e isso é o assunto do arquivo. A Camila pediu os
-// dois botões e eu levantei o custo antes: no DETALHE da tarefa cada caixa
-// marcada é uma requisição imediata (`addAssignee`), e cada designação dispara
-// uma notificação "Designada" -- num time de ~26 pessoas, um clique viraria 26
-// requisições e 25 avisos. Aqui a seleção é LOCAL até o "Criar". Decisão dela,
-// com as palavras dela: "quero no criar só".
-//
-// O que ele prende:
-//   - os botões existem na CRIAÇÃO;
-//   - NÃO existem ao editar nem ao duplicar;
-//   - "todos" age sobre os VISÍVEIS (a busca filtra), e SOMA à seleção;
-//   - "limpar" zera;
-//   - cada botão some quando não teria efeito.
+// "Selecionar todos" e "Limpar" no seletor de responsáveis: só na criação, onde
+// a seleção é local até o "Criar" (no detalhe cada caixa é uma requisição).
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
@@ -63,8 +50,7 @@ function membro(id: string, name: string): Member {
 const TIME = [membro(ANA, "Ana"), membro(BRUNO, "Bruno"), membro(CARLA, "Carla")];
 
 function task(over: Partial<Task> = {}): Task {
-  // Literal completo, SEM `as` -- fixture com `as` cala o `tsc` sobre campo
-  // que não existe.
+  // Literal completo, sem `as`: com `as` o `tsc` não acusa campo inexistente.
   return {
     id: "t1",
     title: "Tarefa",
@@ -88,7 +74,6 @@ function task(over: Partial<Task> = {}): Task {
     assignee_ids: [],
     board_id: "board-geral",
     column_id: "col-backlog",
-    // Spec 051, fatia A: o cadeado vem do servidor, em toda resposta.
     can_delete: true,
     ...over,
   };
@@ -110,9 +95,8 @@ function mocks() {
 /** Abre o modal e o seletor de responsáveis, e devolve o painel. */
 async function abrirSeletor(props: Record<string, unknown> = {}) {
   mocks();
-  // ⚠️ `newTaskTeam={null}` ANTES do spread, de proposito: e o caminho LEGADO
-  // (a tela nao sabe o time, o modal cai no `getRootTeamId()`), e os testes que
-  // exercitam o caminho novo o sobrescrevem pelo `props`.
+  // `newTaskTeam={null}` antes do spread: caminho sem time da tela; os testes
+  // do caminho com time sobrescrevem pelo `props`.
   render(
     <TaskModal
       open
@@ -134,8 +118,7 @@ afterEach(() => {
 describe("TaskModal -- selecionar todos e limpar (criação)", () => {
   it("os dois botões existem na criação, e o de todos diz QUANTOS", async () => {
     await abrirSeletor();
-    // ⚠️ O NÚMERO NO RÓTULO não é enfeite: ele é o que denuncia que o botão
-    // age sobre os VISÍVEIS, e muda junto com a busca.
+    // O número no rótulo mostra que o botão age sobre os visíveis.
     expect(await screen.findByText("Selecionar todos (3)")).toBeTruthy();
     // "Limpar" ainda não: ninguém escolhido.
     expect(screen.queryByText("Limpar")).toBeNull();
@@ -145,24 +128,17 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
     await abrirSeletor();
     fireEvent.click(await screen.findByText("Selecionar todos (3)"));
 
-    // ⚠️ A SELEÇÃO SE LÊ PELAS PÍLULAS, e não por um resumo "3 pessoas": o
-    // modal desenha uma pílula com "Remover X" por escolhido. Eu tinha
-    // escrito o teste contra um resumo que não existe aqui (ele é do seletor
-    // de subtarefa) -- conferir o que a tela desenha vale mais que supor.
+    // A seleção se lê pelas pílulas "Remover X", não por um resumo.
     await waitFor(() => {
       expect(screen.getAllByLabelText(/^Remover /).length).toBe(3);
     });
-    // ⚠️ Some porque clicar de novo não faria nada -- afordância que não age é
-    // pior que ausência.
+    // Some quando clicar de novo não faria nada.
     expect(screen.queryByText(/Selecionar todos/)).toBeNull();
     expect(screen.getByText("Limpar")).toBeTruthy();
   });
 
   it("⚠️ com busca, “todos” age só nos VISÍVEIS -- e SOMA, não substitui", async () => {
-    // ⚠️ ESTE É O CASO QUE UM `setAssigneeIds(visiveis)` INGÊNUO QUEBRARIA:
-    // escolher Carla, depois buscar "an" e clicar em "selecionar todos"
-    // APAGARIA a Carla. Destruir seleção num botão chamado "selecionar" é o
-    // oposto do que ele promete.
+    // Um `setAssigneeIds(visiveis)` ingênuo apagaria a Carla aqui.
     const busca = await abrirSeletor();
     fireEvent.click(await screen.findByText("Carla"));
 
@@ -190,30 +166,15 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
   });
 
   it("⚠️ o painel é `fixed` -- senão o card do modal o RECORTA", async () => {
-    // ⚠️ ESTE TESTE PRENDE POUCO, E DIZ ISSO. O card do modal tem
-    // `maxHeight: 88vh` + `overflowY: auto`, e um filho `absolute` é recortado
-    // por esse overflow: com o campo de Responsáveis perto do rodapé, o painel
-    // abria cortado e era preciso rolar o modal para escolher alguém (relato
-    // da Camila, 22/08, com print).
-    //
-    // jsdom não tem layout -- `getBoundingClientRect` volta zerado --, então
-    // NÃO dá para provar aqui que ele deixou de ser recortado, nem que ele
-    // vira para cima quando falta espaço. O que dá para prender é a escolha
-    // que faz a diferença: `fixed`, e não `absolute`. Se alguém "arrumar" o
-    // posicionamento voltando ao absoluto, isto cai.
+    // jsdom não tem layout: só dá para prender o `fixed` (o card do modal tem
+    // overflow e recortaria um painel `absolute`).
     const busca = await abrirSeletor();
     const painel = busca.parentElement!;
     expect(painel.style.position).toBe("fixed");
   });
 
-  // ⚠️ AQUI MORAVA "EDITAR não tem seletor NENHUM". O modo editar saiu do
-  // modal na Spec 052 (fatia D): título, descrição e links se editam no
-  // detalhe, e responsável sempre foi do detalhe.
-
   it("⚠️ DUPLICAR não tem os botões -- a lista dali é entrada do passo 2", async () => {
-    // Na cópia os responsáveis já vêm REVISADOS da origem (ADR 0031), e o
-    // passo 2 decide subtarefa por subtarefa a partir dessa lista. Um
-    // "selecionar todos" aqui mexeria na entrada daquele fluxo.
+    // Na cópia os responsáveis vêm revisados da origem; "selecionar todos" mexeria nisso.
     mocks();
     render(
       <TaskModal
@@ -232,18 +193,9 @@ describe("TaskModal -- selecionar todos e limpar (criação)", () => {
   });
 });
 
-// ⚠️⚠️ O DEFEITO DE 11/09, reportado na tela com duas capturas: no quadro geral
-// de um time RAIZ o seletor de responsável oferecia a organização inteira --
-// "responsáveis que não são nem desse time também".
-//
-// A cadeia: o `Board` mandava `null` (não há quadro avulso nem subtime), o
-// modal caía no `getRootTeamId()` dele próprio, e essa função LEVANTA desde a
-// Spec 046 quando existe mais de uma raiz. Sem raiz, sem `?reaches_team=`, sem
-// filtro -- de volta ao "todo mundo" que a Spec 034 tirou.
-//
-// ⚠️ POR QUE NENHUM TESTE PEGOU: todos os daqui mockam `getRootTeamId` com
-// `mockResolvedValue`. Com UMA raiz ela resolve, e o caminho de queda nunca é
-// exercitado. O que faltava era o mock que REJEITA.
+// No quadro geral de um time raiz, o seletor de responsável recorta pelo time
+// que a tela passa; o mock de `getRootTeamId` que REJEITA (duas raízes) é o
+// que exercita a queda.
 describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
   const OUTRA_RAIZ = "team-outra-raiz";
   const DEDE = "u-dede";
@@ -264,9 +216,9 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     mocks();
     // A organização inteira, o forasteiro incluído.
     vi.mocked(api.listMembers).mockResolvedValue([...TIME, forasteiro()]);
-    // Quem alcança a RAIZ: só o time dela. É a resposta do backend.
+    // Quem alcança a raiz: só o time dela.
     vi.mocked(api.listMembersDoTime).mockResolvedValue(TIME);
-    // ⚠️ DUAS RAÍZES => `getRootTeamId` levanta (`soleRootTeam`).
+    // Duas raízes: `getRootTeamId` levanta.
     vi.mocked(api.getRootTeamId).mockRejectedValue(
       new Error("mais de uma raiz"),
     );
@@ -284,17 +236,14 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
     );
     fireEvent.click(await screen.findByLabelText("Designar responsável"));
 
-    // O número no rótulo é o que denuncia: três, e não quatro.
+    // Três, e não quatro.
     expect(await screen.findByText("Selecionar todos (3)")).toBeTruthy();
     expect(screen.queryByText("Dedé")).toBeNull();
-    // E a pergunta foi feita para a raiz CERTA, sem passar pelo sorteio.
     expect(api.listMembersDoTime).toHaveBeenCalledWith(RAIZ);
   });
 
   it("com a raiz na prop, nem PERGUNTA a raiz (07/10: o Next 15 mostrava o erro na tela)", async () => {
-    // A pergunta levantava `AreaIndefinidaError` e caia no `console.error` a
-    // cada abertura -- sem efeito no modal, mas o Next 15 desenha todo
-    // `console.error` num painel por cima da tela, em desenvolvimento.
+    // Sem pergunta, sem `console.error` (o Next desenha por cima da tela em dev).
     mocksComDuasRaizes();
     const erro = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
@@ -316,10 +265,8 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
   });
 
   it("⚠️ O SELETOR DE PROJETO CONTINUA NA TELA (a outra metade do defeito)", async () => {
-    // ⚠️ Este é o teste que prende a separação. Enquanto o time da tarefa e o
-    // "nasce interna" eram UMA prop (`defaultTeamId`), responder a raiz aqui
-    // APAGAVA o seletor de projeto -- consertar um lado quebrava o outro.
-    // Agora `teamId` responde escopo e `internal` responde seletor.
+    // `teamId` responde o escopo e `internal` o seletor de projeto; separados,
+    // responder a raiz não apaga o seletor.
     mocksComDuasRaizes();
     render(
       <TaskModal
@@ -349,11 +296,8 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
   });
 
   it("caminho LEGADO (`newTaskTeam={null}`) segue sem filtro, de propósito", async () => {
-    // ⚠️ ISTO NÃO É O DEFEITO SOBREVIVENDO: é `/quadro` sem time na URL, onde
-    // ninguém sabe a raiz. Errar oferecendo demais devolve o comportamento
-    // anterior, com o 422 do backend de pé; errar escondendo demais tira gente
-    // do trabalho. O teste existe para que a próxima pessoa saiba que a queda
-    // é decidida, e veja onde ela mora.
+    // `/quadro` sem time na URL: ninguém sabe a raiz, e a queda oferece demais
+    // em vez de esconder gente.
     mocksComDuasRaizes();
     render(
       <TaskModal
@@ -369,12 +313,7 @@ describe("TaskModal -- a raiz vem da tela, e não de um sorteio", () => {
   });
 });
 
-// ⚠️ A OUTRA METADE DO QUE ELA REPORTOU: *"estão aparecendo projetos de outro
-// time raiz né"*. O conserto tem duas pontas -- o backend passou a aceitar
-// `?team_id=` (`GET /projects`, provado em
-// `backend/tests/integration/test_projects_lente_http_db.py`) e o modal passou
-// a mandá-lo. Sem este teste a ponta do front não tem ninguém: `tsc` garante
-// que o campo EXISTE, não que o valor está certo.
+// O seletor de projeto manda `?team_id=` do time.
 describe("TaskModal -- o seletor de projeto recorta pelo time", () => {
   it("manda o time do quadro no `listProjects`", async () => {
     mocks();
@@ -395,8 +334,7 @@ describe("TaskModal -- o seletor de projeto recorta pelo time", () => {
   });
 
   it("⚠️ e NÃO pergunta nada quando o seletor não aparece", async () => {
-    // Quadro de subtime: a tarefa nasce interna, não há projeto a escolher.
-    // Uma requisição aqui seria trabalho para montar uma lista que ninguém vê.
+    // Quadro de subtime: a tarefa nasce interna, sem lista de projetos para buscar.
     mocks();
     render(
       <TaskModal

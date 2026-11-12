@@ -1,20 +1,6 @@
 "use client";
-// app/times/page.tsx
-// Tela de gestao de times (Spec 029, Fatia 4).
-//
-// Rota PROPRIA: gerir organograma e cadastrar
-// pessoa sao coisas diferentes, e foi essa separacao que manteve a Spec 028
-// (membros) e esta (times) com escopos tratáveis.
-//
-// O que esta tela NAO faz:
-//   - mover subtime (D7). A rota existe no backend, sem botao: hoje ha uma
-//     raiz e nove irmaos, e mover so criaria o segundo nivel de hierarquia
-//     que ninguem tem.
-//   - esvaziar time cheio. Isso e a Fatia 3; aqui o time cheio so informa o
-//     que precisa sair antes.
-//
-// Toda decisao (pode editar? pode remover? por que nao? o texto digitado
-// confirma?) vive em `lib/gestaoTimes.ts`, testada. Aqui so desenha.
+// Tela de gestão de times: criar, editar e remover. Não move subtime (a rota existe no backend).
+// As regras (pode editar/remover, por que não, confirmação) vivem em `lib/gestaoTimes.ts`; aqui só desenha.
 
 import { useEffect, useState } from "react";
 import { Pencil, Plus, Trash2, X } from "lucide-react";
@@ -86,9 +72,7 @@ export default function TimesPage() {
   const [confirmacao, setConfirmacao] = useState("");
   const [erroRemover, setErroRemover] = useState<string | null>(null);
   const [salvandoRemover, setSalvandoRemover] = useState(false);
-  // Previa vinda do BACKEND, buscada ao abrir o dialogo. Nao reaproveitamos
-  // as contagens da listagem: elas envelhecem, e aqui o numero vai virar uma
-  // promessa escrita na tela.
+  // Prévia buscada ao abrir o diálogo: as contagens da listagem podem ter envelhecido.
   const [previa, setPrevia] = useState<PreviaRemocao | null>(null);
   const [carregandoPrevia, setCarregandoPrevia] = useState(false);
 
@@ -119,8 +103,7 @@ export default function TimesPage() {
 
   function mudarNome(v: string) {
     setNome(v);
-    // Sugere o slug enquanto a pessoa nao o editar a mao. Sem isso, digitar
-    // "CRM e Automação" devolveria 422 e ela teria que adivinhar a regra.
+    // Sugere o slug enquanto a pessoa não o editar à mão (nome com acento daria 422).
     if (!slugTocado) setSlug(sugereSlug(v));
   }
 
@@ -216,8 +199,8 @@ export default function TimesPage() {
       // Vazio -> DELETE simples. Com conteudo -> esvazia e remove numa
       // transacao. A tela escolhe a rota; o backend valida os dois casos.
       const c = contagens(removendo);
-      // Quadro e formulário também mandam para o esvaziar (16/10): o DELETE
-      // simples os recusa, e só o esvaziar os move para a área.
+      // Quadro e formulário também vão pelo esvaziar: o DELETE simples os
+      // recusa, e só o esvaziar os move para o time raiz.
       if (!estaVazio(c)) {
         await esvaziarERemoverTeam(removendo.id);
       } else {
@@ -227,9 +210,7 @@ export default function TimesPage() {
       await carregar();
     } catch (e) {
       const err = e as ApiError;
-      // O 409 do backend ja vem com os numeros ("3 tarefas, 2 membros") --
-      // e ele e a fonte da verdade: a contagem da tela pode ter envelhecido
-      // desde o carregamento.
+      // O 409 já traz os números atuais; a contagem da tela pode ter envelhecido.
       setErroRemover(
         err.status === 403
           ? "So um administrador pode remover times."
@@ -328,10 +309,7 @@ export default function TimesPage() {
                   </button>
                 )}
 
-                {/* Raiz nao mostra botao nenhum (D5). Nos demais, o botao
-                    aparece sempre -- desabilitado com o motivo visivel, para
-                    a pessoa entender ANTES de clicar em vez de descobrir
-                    pelo erro. */}
+                {/* Raiz não tem botão; nos demais ele aparece desabilitado com o motivo visível. */}
                 {!raizItem && (
                   <button
                     type="button"
@@ -514,11 +492,7 @@ export default function TimesPage() {
   );
 }
 
-// --------------------------------------------------------------------
-// Casca de dialogo. Sem <form>: os campos aqui sao poucos e o Enter num
-// input dispararia submit implicito -- foi exatamente esse comportamento
-// que criou tarefa sem responsavel no TaskModal.
-// --------------------------------------------------------------------
+// Casca de diálogo. Sem <form>: o Enter num input dispararia submit implícito.
 function Dialogo({
   titulo,
   onFechar,
@@ -528,8 +502,7 @@ function Dialogo({
   onFechar: () => void;
   children: React.ReactNode;
 }) {
-  // Mesmo defeito dos outros dois modais: selecionar texto num campo e soltar
-  // o mouse no fundo fechava o dialogo e perdia o que estava digitado.
+  // Soltar o mouse no fundo depois de selecionar texto não fecha o diálogo.
   const scrimProps = useFecharAoClicarFora(onFechar);
   return (
     <div

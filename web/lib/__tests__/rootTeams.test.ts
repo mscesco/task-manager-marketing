@@ -1,29 +1,13 @@
-/**
- * Spec 046, fatia 1 -- ÁREA (time raiz) resolvida sem sorteio.
- *
- * ⚠️⚠️ ESTE ARQUIVO É O GUARDIÃO DE UM CASO QUE O BANCO AINDA NÃO DEIXA
- * EXISTIR, e é justamente por isso que ele vem antes.
- *
- * Enquanto o índice parcial `team_unica_raiz_por_workspace` estiver de pé
- * (a fatia 2 é quem o derruba), NENHUM teste de integração e NENHUM uso real
- * consegue montar duas áreas. Ou seja: o `find` errado e a regra certa dão
- * exatamente o mesmo resultado em todo lugar, hoje.
- *
- * ⚠️ É a mesma armadilha que a Spec 045 §3 descreveu para o escopo de
- * permissão, e a saída é a mesma: montar a segunda árvore EM MEMÓRIA, numa
- * função pura, porque é o único lugar onde o banco não manda.
- *
- * Sem este arquivo, a fatia 1 seria só uma troca de código sem prova.
- */
+// Duas raízes montadas em memória: o caso que distingue "a raiz" de "uma das raízes".
 
 import { describe, it, expect } from "vitest";
 import {
-  AreaIndefinidaError,
+  RootTeamUndefinedError,
   entradaDoQuadro,
   rootTeams,
   soleRootTeam,
-  urlDoQuadroDeArea,
-} from "../areas";
+  rootBoardUrl,
+} from "../rootTeams";
 import type { Team } from "../api";
 
 function time(id: string, nome: string, parent: string | null): Team {
@@ -49,9 +33,6 @@ describe("rootTeams", () => {
   });
 
   it("ordena por NOME, e não pela ordem em que a API respondeu", () => {
-    // ⚠️ O PONTO DA FATIA: a ordem da API não é contrato de ninguém. Se ela
-    // mudar (um `VACUUM` basta), qualquer tela que dependa de "a primeira"
-    // passa a olhar para outra área -- sem erro e sem teste vermelho.
     const comoVeioDaApi = [TI, MARKETING];
     expect(rootTeams(comoVeioDaApi).map((t) => t.name)).toEqual([
       "Marketing",
@@ -74,102 +55,76 @@ describe("rootTeams", () => {
 });
 
 describe("soleRootTeam", () => {
-  it("com UMA área, devolve ela -- o caso de hoje", () => {
+  it("com UM time raiz, devolve ele", () => {
     expect(soleRootTeam([MARKETING, SEO]).id).toBe("t-mkt");
   });
 
-  it("⭐ com DUAS áreas, LEVANTA em vez de escolher", () => {
-    // ⚠️ ESTE É O TESTE QUE A SPEC PEDIU, e o único do projeto que prova a
-    // diferença entre "a raiz" e "uma das raízes". Trocar a implementação de
-    // volta por `teams.find(...)` faz este teste cair, e só ele.
+  it("⭐ com DOIS times raiz, LEVANTA em vez de escolher", () => {
+    // Trocar a implementação por `teams.find(...)` faz este teste cair.
     expect(() => soleRootTeam([MARKETING, TI, SEO])).toThrow(
-      AreaIndefinidaError,
+      RootTeamUndefinedError,
     );
   });
 
-  it("com duas áreas, o erro diz o MOTIVO e QUAIS são", () => {
-    // ⚠️ Os dois motivos pedem conversas diferentes: "nenhuma" é workspace
-    // quebrado; "varias" é a tela precisando saber de qual área se fala. Um
-    // `catch` que trate os dois igual diz a frase errada em metade dos casos.
+  it("com dois times raiz, o erro diz o MOTIVO e QUAIS são", () => {
     try {
       soleRootTeam([MARKETING, TI]);
       throw new Error("deveria ter levantado");
     } catch (e) {
-      expect(e).toBeInstanceOf(AreaIndefinidaError);
-      const erro = e as AreaIndefinidaError;
+      expect(e).toBeInstanceOf(RootTeamUndefinedError);
+      const erro = e as RootTeamUndefinedError;
       expect(erro.motivo).toBe("varias");
-      // Ordenado, como `rootTeams` -- a lista do erro não pode ser sorteada
-      // tampouco, senão a mensagem muda de um carregamento para o outro.
-      expect(erro.areas).toEqual(["t-mkt", "t-ti"]);
+      // Ordenado como `rootTeams`, para a mensagem não mudar entre carregamentos.
+      expect(erro.rootIds).toEqual(["t-mkt", "t-ti"]);
     }
   });
 
-  it("⭐ sem área nenhuma, LEVANTA -- a dívida da ADR 0001 sendo paga", () => {
-    // Antes desta fatia isto devolvia `null`, e o `null` virava "o backend
-    // que decida" -- a herança silenciosa que a ADR mandava matar quando
-    // subtimes existissem. Existem desde a Entrega 13.
+  it("⭐ sem time raiz nenhum, LEVANTA", () => {
     try {
       soleRootTeam([SEO]);
       throw new Error("deveria ter levantado");
     } catch (e) {
-      expect((e as AreaIndefinidaError).motivo).toBe("nenhuma");
-      expect((e as AreaIndefinidaError).areas).toEqual([]);
+      expect((e as RootTeamUndefinedError).motivo).toBe("nenhuma");
+      expect((e as RootTeamUndefinedError).rootIds).toEqual([]);
     }
   });
 
   it("lista vazia (ainda carregando, ou falha) também levanta", () => {
-    expect(() => soleRootTeam([])).toThrow(AreaIndefinidaError);
+    expect(() => soleRootTeam([])).toThrow(RootTeamUndefinedError);
   });
 
   it("a mensagem é legível por quem não escreveu o código", () => {
-    // Ela chega no console de quem está com a tela aberta -- e, na fatia 4,
-    // provavelmente na própria tela.
     try {
       soleRootTeam([MARKETING, TI]);
     } catch (e) {
-      expect((e as Error).message).toContain("mais de uma área");
+      expect((e as Error).message).toContain("mais de um time");
     }
   });
 });
 
-describe("urlDoQuadroDeArea", () => {
-  it("é o endereço que JÁ existia -- a fatia 4 removeu uma trava, não criou rota", () => {
-    expect(urlDoQuadroDeArea("t-ti")).toBe("/quadro/t-ti");
+describe("rootBoardUrl", () => {
+  it("é /quadro/<id>", () => {
+    expect(rootBoardUrl("t-ti")).toBe("/quadro/t-ti");
   });
 });
 
 describe("entradaDoQuadro", () => {
-  it("uma área só: desenha, como sempre", () => {
+  it("um time raiz só: desenha", () => {
     expect(entradaDoQuadro([MARKETING, SEO])).toEqual({
       tipo: "desenhar",
-      areaId: "t-mkt",
+      rootId: "t-mkt",
     });
   });
 
-  it("⭐ várias áreas: redireciona em vez de escolher calada", () => {
-    // ⚠️ É a diferença entre um DEFAULT DE ENTRADA e "área ativa": depois do
-    // redirecionamento a URL diz qual área é, então o link é compartilhável e
-    // duas pessoas veem a mesma coisa. Com estado invisível, não veriam.
+  it("⭐ vários times raiz: redireciona em vez de escolher calado", () => {
     expect(entradaDoQuadro([MARKETING, TI])).toEqual({
       tipo: "redirecionar",
       para: "/quadro/t-mkt",
     });
   });
 
-  it("⚠️⚠️ o destino é a PRIMEIRA DA LISTA, e a lista é do chamador", () => {
-    // ⚠️⚠️ ESTE TESTE INVERTEU EM 11/09, e a inversão é a entrega da fatia B.
-    // Até aqui a função ordenava POR NOME internamente, e mandava para a
-    // primeira do alfabeto: com "Comercial" e "Marketing" no banco, **entrar no
-    // sistema abria o Comercial**, inclusive para quem trabalha no Marketing.
-    //
-    // Agora ela respeita a ORDEM RECEBIDA, e quem monta é o chamador:
-    // `ownRootTeams` (onde a pessoa trabalha) primeiro, `rootsForPerson` como
-    // reserva. Ordenar aqui destruiria essa preferência -- "Marketing" voltaria
-    // para depois de "Comercial".
-    //
-    // ⚠️ A ESTABILIDADE NÃO SE PERDEU, ELA SUBIU: as duas listas vêm de
-    // `rootTeams`, que ordena por nome e tem teste próprio neste arquivo. O que
-    // mudou foi QUAL lista, não o critério dentro dela.
+  it("⚠️ o destino é o PRIMEIRO DA LISTA, e a lista é do chamador", () => {
+    // Ordenar aqui destruiria a preferência montada pelo chamador.
     expect(entradaDoQuadro([TI, MARKETING])).toEqual({
       tipo: "redirecionar",
       para: "/quadro/t-ti",
@@ -180,14 +135,11 @@ describe("entradaDoQuadro", () => {
     });
   });
 
-  it("sem área nenhuma: não inventa destino", () => {
-    // Redirecionar para lugar nenhum seria pior que mostrar o vazio.
-    expect(entradaDoQuadro([])).toEqual({ tipo: "sem-area" });
+  it("sem time raiz nenhum: não inventa destino", () => {
+    expect(entradaDoQuadro([])).toEqual({ tipo: "sem-raiz" });
   });
 
   it("⚠️ subtime passado por engano não vira destino de entrada", () => {
-    // O tipo é `Team[]` nos dois casos, e o `tsc` não distingue "lista de
-    // raízes" de "lista de times". O filtro interno é o que impede isso.
-    expect(entradaDoQuadro([SEO])).toEqual({ tipo: "sem-area" });
+    expect(entradaDoQuadro([SEO])).toEqual({ tipo: "sem-raiz" });
   });
 });

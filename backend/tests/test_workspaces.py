@@ -1,13 +1,4 @@
-"""Testes do modulo workspaces e da gestao de membros.
-
-Estes testes cobrem a LOGICA DE NEGOCIO que nao depende do
-banco: validacoes do provisionamento e regras dos commands.
-
-Os testes que exercitam escrita real no PostgreSQL (criar
-workspace, cadastrar membro de ponta a ponta) ficam para
-uma suite de integracao separada, executada contra o
-banco task_manager_dev -- ver README.
-"""
+"""Regras de workspaces e membros que nao dependem do banco."""
 
 from __future__ import annotations
 
@@ -89,14 +80,10 @@ def test_provisioning_rejects_bad_email() -> None:
 
 
 # --------------------------------------------------------
-# CreateMemberCommand -- estrutura (Entrega 7: sem senha)
+# CreateMemberCommand -- estrutura
 # --------------------------------------------------------
 def test_create_member_command_requires_team_and_role() -> None:
-    """Spec 014: team_id e role sao obrigatorios -- sem default.
-
-    Construir o command sem eles e um erro de tipo (TypeError): o estado
-    orfao (membro sem vinculo) deixa de ser construivel.
-    """
+    """team_id e role sao obrigatorios: membro sem vinculo nao e construivel."""
     with pytest.raises(TypeError):
         CreateMemberCommand(name="Fulano", email="f@unifecaf.com.br")  # type: ignore[call-arg]
 
@@ -120,10 +107,7 @@ def test_create_member_command_with_team() -> None:
 # TeamService -- hierarquia e deteccao de ciclo
 # --------------------------------------------------------
 class _FakeTeamRepo:
-    """Repository fake -- expoe so o que o move() chama.
-
-    Carrega um pequeno banco em memoria via dict {id: parent_id}.
-    """
+    """Repositorio falso com o que o move() chama; arvore em {id: parent_id}."""
 
     def __init__(self, tree: dict) -> None:
         self._tree = tree  # {team_id: parent_id_or_None}
@@ -133,20 +117,13 @@ class _FakeTeamRepo:
         if team_id not in self._tree:
             return None
 
-        # Devolve um stub de Team com os atributos minimos
-        # que o service le.
+        # Stub de Team com os atributos que o service le.
         class _T:
             def __init__(self, id_, parent_id):
                 self.id = id_
                 self.parent_team_id = parent_id
 
         return _T(team_id, self._tree[team_id])
-
-    # ⚠️ AQUI HAVIA `root_exists()`, espelhando o metodo real do repositorio
-    # (Spec 024/D2: "ja existe raiz nesta arvore?"). Os dois sairam na Spec
-    # 046, fatia 2 -- o de verdade e este falso. Um falso que sobrevive ao
-    # original vira uma promessa que ninguem cumpre: o teste continuaria
-    # verde exercitando um caminho que o codigo nao tem mais.
 
     async def collect_ancestor_ids(self, team_id, *, max_depth=50):
         ancestors = []
@@ -158,8 +135,8 @@ class _FakeTeamRepo:
             current = self._tree.get(current)
         return ancestors
 
-    async def area_de(self, team_id):
-        """Espelha `TeamRepository.area_de` (Spec 051, fatia D): sobe ate a raiz."""
+    async def root_team_id_of(self, team_id):
+        """Espelha `TeamRepository.root_team_id_of`: sobe ate a raiz."""
         if team_id not in self._tree:
             return None
         ancestrais = await self.collect_ancestor_ids(team_id)
@@ -183,52 +160,25 @@ def _build_team_service_with_tree(tree: dict):
     return svc
 
 
-async def test_promover_a_area_e_recusado_INDEPENDENTE_de_quantas_existem() -> None:
-    """⚠️⚠️ DOIS TESTES VIRARAM ESTE, e a mudanca e de REGRA, nao de detalhe.
-
-    Ate a Spec 046 este arquivo tinha um par:
-
-        test_team_move_to_root_conflita_quando_ja_existe_raiz
-            -> ConflictError, porque so cabia UMA raiz (Spec 024/D4)
-        test_team_move_to_root_works_quando_nao_ha_raiz
-            -> PASSAVA, porque a trava era "no maximo uma", nao
-               "sempre exatamente uma"
-
-    O par existia porque a regra contava raizes. Ela nao conta mais: o indice
-    `team_unica_raiz_por_workspace` caiu na migration `0023`, e o banco
-    aceita N areas.
-
-    A recusa ficou, por outro motivo -- promover um subtime a area **nao esta
-    desenhado** (§6 da Spec 046). E como o motivo nao depende de quantas
-    areas existem, os dois cenarios passaram a ter a MESMA resposta, e o par
-    virou um teste parametrizado.
-
-    ⚠️ `BusinessRuleError` e nao `ConflictError`: nao ha mais conflito com
-    nada: ha uma operacao que ninguem projetou.
-    """
-    # Cenario A: ja existe uma area (o caso normal).
+async def test_promover_a_time_raiz_e_recusado_INDEPENDENTE_de_quantos_existem() -> None:
+    """Promover subtime a time raiz nao esta desenhado, com ou sem raiz na arvore."""
+    # Cenario A: ja existe um time raiz (o caso normal).
     marketing = uuid.uuid4()
     crm = uuid.uuid4()
-    com_area = _build_team_service_with_tree({marketing: None, crm: marketing})
+    com_raiz = _build_team_service_with_tree({marketing: None, crm: marketing})
     with pytest.raises(BusinessRuleError):
-        await com_area.move(team_id=crm, new_parent_id=None)
+        await com_raiz.move(team_id=crm, new_parent_id=None)
 
-    # Cenario B: arvore SEM area nenhuma -- e que antes PASSAVA.
+    # Cenario B: arvore sem time raiz nenhum.
     orfao = uuid.uuid4()
     filho = uuid.uuid4()
-    sem_area = _build_team_service_with_tree({orfao: filho, filho: orfao})
+    sem_raiz = _build_team_service_with_tree({orfao: filho, filho: orfao})
     with pytest.raises(BusinessRuleError):
-        await sem_area.move(team_id=filho, new_parent_id=None)
+        await sem_raiz.move(team_id=filho, new_parent_id=None)
 
 
 async def test_team_move_under_another_parent_works() -> None:
-    """Mover entre paes diferentes DA MESMA ARVORE (sem ciclo) e valido.
-
-    ⚠️ Ate a Spec 051 (fatia D) este teste movia o CRM do Marketing para o
-    Comercial -- outra arvore -- e esperava sucesso. A Camila decidiu (16/09,
-    decisao 7) que mover entre arvores fica recusado ate ser desenhado; o
-    teste passou a mover dentro da arvore, e a recusa tem teste proprio abaixo.
-    """
+    """Mover entre pais da mesma arvore (sem ciclo) e valido."""
     marketing = uuid.uuid4()
     seo = uuid.uuid4()
     crm = uuid.uuid4()
@@ -241,7 +191,7 @@ async def test_team_move_under_another_parent_works() -> None:
 
 
 async def test_team_move_para_OUTRA_arvore_e_recusado() -> None:
-    """Spec 051, fatia D (decisao 7): subtime nao muda de arvore."""
+    """Subtime nao muda de arvore."""
     marketing = uuid.uuid4()
     comercial = uuid.uuid4()
     crm = uuid.uuid4()
@@ -251,11 +201,11 @@ async def test_team_move_para_OUTRA_arvore_e_recusado() -> None:
 
     with pytest.raises(BusinessRuleError) as exc:
         await svc.move(team_id=crm, new_parent_id=comercial)
-    assert "outra area" in exc.value.message.lower()
+    assert "outro time raiz" in exc.value.message.lower()
 
 
 async def test_team_move_RAIZ_ganhando_pai_e_recusado() -> None:
-    """Spec 051, fatia D (decisao 7): time principal nao vira subtime."""
+    """Time raiz nao vira subtime."""
     marketing = uuid.uuid4()
     comercial = uuid.uuid4()
     svc = _build_team_service_with_tree({marketing: None, comercial: None})

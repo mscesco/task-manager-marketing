@@ -1,14 +1,7 @@
 "use client";
-// components/bases/ListaDeBases.tsx
-// A lista de Bases (Spec 056, fatia E): as bases que a pessoa lê, agrupadas
-// pelo time raiz quando ela está em mais de um; criar; e a lixeira.
-//
-// ⚠️ NÃO RECORTA PELO TIME ATIVO do menu, ao contrário de Projetos: a base é
-// do time RAIZ, e a lista é curta. O time ativo só pré-escolhe onde criar.
-//
-// ⚠️ QUEM CRIA E ONDE, QUEM RESTAURA: tudo vem do servidor -- `can_create_base`
-// por time (`GET /teams`) e `can_restore` por item da lixeira. A tela não
-// deduz nada de papel (spec §5.6).
+// Lista de Bases agrupada por time raiz, criar e lixeira. Não recorta pelo time
+// ativo (só pré-escolhe onde criar); quem cria/restaura vem do servidor
+// (`can_create_base`, `can_restore`).
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -33,7 +26,7 @@ import {
 } from "@/lib/api";
 import ImportWizard from "@/components/bases/ImportWizard";
 import { agruparPorRaiz, dataParaTela } from "@/lib/baseTable";
-import { rootTeamOf } from "@/lib/areas";
+import { rootTeamOf } from "@/lib/rootTeams";
 import { diaNoWorkspace } from "@/lib/prazo";
 import { plural } from "@/lib/plural";
 import { useActiveTeamId } from "@/lib/useActiveTeam";
@@ -64,8 +57,7 @@ export default function ListaDeBases() {
         setTimes(t);
       })
       .catch((e: ApiError) => vivo && setErro(e.message));
-    // ⚠️ A lixeira pede `base.restore`: quem não o tem leva 403, e a seção
-    // simplesmente não aparece -- não é erro da tela.
+    // Sem `base.restore` a lixeira dá 403 e a seção só não aparece.
     listBaseTrash()
       .then((l) => vivo && setLixeira(l))
       .catch(() => {});
@@ -134,7 +126,6 @@ export default function ListaDeBases() {
         actions={
           raizesQueCria.length > 0 && !criando ? (
             <div className="ml-auto flex gap-2">
-              {/* Spec 057: uma base nova a partir de uma planilha. */}
               <button className="btn" onClick={() => setImportando(true)}>
                 Importar planilha
               </button>
@@ -245,11 +236,9 @@ export default function ListaDeBases() {
             {variasRaizes && (
               <h2 className="label m-0">{g.raiz?.name ?? "Outros times"}</h2>
             )}
-            {/* Redesign (fatia 7): grade de cards com uma miniatura de tabela,
-                como a prancha. A miniatura e decoracao (`aria-hidden`). */}
+            {/* A miniatura de tabela é decoração (`aria-hidden`). */}
             <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-              {/* A entrada escalonada, como em Projetos (21/10). `Entrada`
-                  embrulha cada card num bloco, por isso a grade é `div`. */}
+              {/* `Entrada` embrulha cada card num bloco, por isso a grade é `div`. */}
               <Entrada className="min-w-0">
               {g.bases.map((b) => (
                   <Link

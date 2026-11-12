@@ -1,40 +1,16 @@
-// lib/api.ts
-//
-// ⚠️ OS DOIS IMPORTS DESTE ARQUIVO, e a direcao e sempre a mesma: o `api.ts`
-// depende de `lib/`, nunca o contrario (fronteira de pureza da Spec 027).
-//
-//   `lib/coluna`  -- fatia 4a/4b da Spec 036: o tipo `Coluna` mora la.
-//   `lib/areas`   -- Spec 046 fatia 1: "qual e a area?" e DECISAO, e decisao
-//                    nao mora no cliente HTTP. Ele so faz a chamada.
-//
-// ⚠️ ATE A SPEC 046 ESTA FRASE DIZIA "UNICO IMPORT". Nao era regra, era
-// descricao -- e virou mentira no dia em que a segunda decisao pura saiu
-// daqui. A regra e a DIRECAO, e ela continua de pe.
-//
-// ⚠️ `lib/areas` importa `Team` de volta, e isso NAO e ciclo: e `import
-// type`, apagado na compilacao. Em tempo de execucao a seta e uma so.
+// Cliente HTTP. Depende de `lib/` (regras puras), nunca o contrário; o `import type` de volta não é ciclo.
 import {
   indiceDeColunas,
   type Coluna,
   type OrigemDaColuna,
   quadroGeralDoTime,
 } from "@/lib/coluna";
-import { soleRootTeam } from "@/lib/areas";
+import { soleRootTeam } from "@/lib/rootTeams";
 import type { AchadoDaBusca, CorpoDoMover, PreviaDoMover } from "@/lib/moverTarefa";
 import type { Permission } from "@/lib/permissions.generated";
 
-// Cliente unico de acesso ao backend FastAPI. Centraliza:
-//  - a URL base (RELATIVA por padrao -- topologia A, ADR 0001 da raiz)
-//  - o token de acesso (guardado em memoria + localStorage)
-//  - tratamento de 401 (token expirado) e do gate 409 (troca de senha)
-//
-// Tudo que fala com a API passa por aqui. Nenhum componente monta URL na mao.
-//
-// BASE RELATIVA: por padrao API_URL = "" -> as chamadas viram "/api/v1/..."
-// relativas a origem do browser. Em DEV, o next.config reescreve /api ->
-// localhost:8000. Em PROD, o Traefik roteia /api -> backend. Mesma origem
-// nos dois -> CORS nao aparece. So defina NEXT_PUBLIC_API_URL (absoluta) se
-// algum dia precisar furar isso de proposito.
+// Cliente único do backend: URL base, token, 401 (refresh) e o 409 de troca de senha.
+// API_URL vazio = chamadas relativas ("/api/v1/..."): em dev o next.config reescreve, em produção o Traefik roteia.
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL?.replace(/\/$/, "") ?? "";
 const WORKSPACE_SLUG = process.env.NEXT_PUBLIC_WORKSPACE_SLUG || "unifecaf";
@@ -63,7 +39,7 @@ export function clearTokens() {
 
 export class ApiError extends Error {
   status: number;
-  // 'password_change_required' chega no corpo do 409 do gate (E7).
+  // 'password_change_required' chega no corpo do 409 do gate de troca de senha.
   code?: string;
   // details estruturado do erro (ex.: invalid_ids no 422 de assignee).
   details?: Record<string, any>;
@@ -81,27 +57,10 @@ type Options = {
   auth?: boolean; // anexa o Bearer token (default true)
 };
 
-// ---------------------------------------------------------------
-// RECUPERACAO DE 401  (refresh do access token)
-// ---------------------------------------------------------------
-// O access token dura ~15 min. Quando expira, a proxima request volta 401.
-// Aqui a gente troca o refresh (longo, dias) por um par novo e RETENTA a
-// request UMA vez -- transparente pro usuario, sem F5.
-//
-// Duas travas que importam (ver consultoria, nao remover):
-//   1. SINGLE-FLIGHT: varias requests batendo 401 ao mesmo tempo disparam
-//      UM unico refresh; todas aguardam a MESMA promise. Sem isso, N
-//      requests concorrentes fariam N refreshes correndo pra gravar o token.
-//   2. ANTI-LOOP: a retentativa carrega isRetry=true e NAO dispara outro
-//      refresh. Se o refresh tambem falha (refresh expirado/revogado), a
-//      sessao esta morta -> limpa e manda pro login. Sem retentativa infinita.
+// ---- Recuperação de 401: troca o refresh por um par novo e retenta UMA vez.
+// Single-flight (um refresh para N requests) e sem loop (a retentativa não renova de novo).
 
-/**
- * O resultado de renovar. ⚠️ "unavailable" NÃO É SESSÃO MORTA: 429 (freio),
- * 5xx (o deploy reiniciando a API) e rede caída voltam assim. Antes toda falha
- * derrubava a sessão -- e um 502 de um minuto no deploy deslogava todo mundo
- * que estivesse com a tela aberta, com o refresh token ainda válido.
- */
+/** "unavailable" (429, 5xx, rede) não é sessão morta: não desloga. */
 export type RefreshOutcome = "renewed" | "dead" | "unavailable";
 
 let _refreshing: Promise<RefreshOutcome> | null = null;
@@ -140,11 +99,7 @@ async function doRefresh(): Promise<RefreshOutcome> {
   }
 }
 
-/**
- * O 401 de uma request com token: renova, ou encerra a sessão se o servidor
- * recusou o refresh. Os dois caminhos de request (`_request` e `_rawRequest`)
- * passam por aqui -- eram duas cópias da mesma decisão.
- */
+/** O 401 de uma request com token: renova, ou encerra a sessão se o servidor recusou o refresh. */
 async function renewOrEndSession(): Promise<void> {
   const outcome = await refreshAccessToken();
   if (outcome === "renewed") return;
@@ -165,9 +120,7 @@ function refreshAccessToken(): Promise<RefreshOutcome> {
   return _refreshing;
 }
 
-// Sessao morta: limpa tokens e caches e manda pro login UMA vez. Hard-nav de
-// proposito -- garante o redirect venha a request da tela que for (e o buraco
-// de hoje: cada .catch trata do seu jeito, a maioria nao redireciona).
+// Sessão morta: limpa tokens e caches e manda pro login uma vez (hard-nav).
 function killSession() {
   clearTokens();
   if (typeof window !== "undefined" && window.location.pathname !== "/login") {
@@ -208,13 +161,9 @@ async function _request<T>(
     );
   }
 
-  // 401 com token anexado, e ainda nao e a retentativa: access expirou.
-  // Tenta UM refresh (single-flight) + UM retry. So entra aqui quando a
-  // request usa auth E mandou token -- 401 de rota publica (login) cai fora.
+  // 401 com token e ainda não é a retentativa: tenta um refresh + um retry. 401 de rota pública cai fora.
   if (res.status === 401 && auth && !isRetry) {
-    // ⚠️ SEM TOKEN NENHUM, A SESSAO JA ACABOU (auditoria de 21/10): saiu em
-    // outra aba, ou o storage foi limpo. Antes, este ramo exigia token e a
-    // aba ficava viva dando 401 em toda acao, sem nunca ir para o login.
+    // Sem token nenhum a sessão já acabou (saiu em outra aba, storage limpo).
     if (!getToken()) {
       killSession();
       throw new ApiError(401, "Sessao expirada. Faca login novamente.");
@@ -237,26 +186,8 @@ async function _request<T>(
   }
 
   if (!res.ok) {
-    // ⚠️ O ENVELOPE DE ERRO DESTA API E `{ error: { code, message, details } }`
-    // -- ver `backend/app/api/errors.py:_error_body`. A versao anterior desta
-    // funcao so procurava em `data.detail.*` (a forma PADRAO do FastAPI, que
-    // este backend NAO usa) e em `data.message` / `data.details` na raiz.
-    // Resultado: `code` e `details` vinham SEMPRE `undefined`, e a mensagem
-    // caia no literal `Erro <status>` em toda falha de dominio.
-    //
-    // Duas coisas que estavam quebradas por causa disso, e nenhum portao
-    // pegava (`tsc` e `next build` nao leem corpo de HTTP; o unico teste que
-    // montava erro usava `{"detail":"nope"}`, que e a forma do FastAPI, nao a
-    // deste backend):
-    //   - `TaskModal.tsx:580` le `e.details?.invalid_ids` -- nunca chegou nada,
-    //     apesar de `test_task_create_assignees_http_db.py:213` existir do lado
-    //     do backend justamente porque "o front depende de details.invalid_ids";
-    //   - toda mensagem de regra de dominio virava "Erro 409" / "Erro 422" em
-    //     vez do texto que o backend escreveu.
-    //
-    // As formas antigas ficam no encadeamento DE PROPOSITO: `data.detail` cobre
-    // o 422 do proprio Pydantic/FastAPI (que nao passa pelo handler da casa) e
-    // o `data = { detail: text }` do corpo nao-JSON, logo acima.
+    // O envelope de erro desta API é `{ error: { code, message, details } }` (`backend/app/api/errors.py`).
+    // `data.detail` cobre o 422 do próprio FastAPI e o corpo não-JSON.
     const env = data?.error ?? data?.detail ?? data;
     const detail = env?.message || (typeof env === "string" ? env : null) ||
       `Erro ${res.status}`;
@@ -289,18 +220,11 @@ export type CurrentUser = {
   is_active: boolean;
   must_change_password: boolean;
   roles: string[];
-  // ⚠️ `Permission`, e nao `string` (Spec 049, fatia A): e o que faz
-  // `permissions.includes("nome.que.saiu")` deixar de compilar. A lista vem
-  // gerada do mapa do backend -- ver `lib/permissions.generated.ts`.
+  // `Permission` (gerada do backend), não `string`: permissão removida deixa de compilar.
   permissions: Permission[];
-  // ⚠️⚠️ O PAPEL NA ORGANIZACAO, separado -- e a unica forma de responder
-  // "esta pessoa administra a ORGANIZACAO?". `roles` e `permissions` MISTURAM
-  // os dois niveis de proposito (servem a "quais acoes ela pode"), e por isso
-  // um ADMIN de TIME aparecia la como "ADMIN" e ganhava a porta da tela de
-  // organizacao. Visto em producao em 10/09.
+  // Papel na organização; `roles`/`permissions` misturam os níveis e não respondem "administra a organização?".
   org_role?: OrgRole | null;
-  // Trabalho 2: vinculos (time, papel) do usuario -> base da lente
-  // (quais quadros de subtime mostrar, qual e a raiz).
+  // Vínculos (time, papel) do usuário: base da lente.
   teams: TeamMembership[];
 };
 
@@ -308,26 +232,9 @@ export async function getMe(): Promise<CurrentUser> {
   return api<CurrentUser>("/api/v1/auth/me");
 }
 
-// Spec 030 (D4): avisa o servidor que a sessao acabou. O backend incrementa
-// users.token_version, o que mata o access E o refresh -- de TODOS os
-// aparelhos da pessoa, nao so deste. Antes disto, "Sair" era so
-// clearTokens(): uma copia do refresh continuava valendo por 7 dias.
-//
-// DUAS DECISOES DE IMPLEMENTACAO, as duas de proposito:
-//
-// 1. FETCH DIRETO, sem passar por api()/_request. Se o access ja estiver
-//    expirado, o 401 acionaria refresh + retentativa + killSession(), que faz
-//    hard-nav pra /login no meio de um logout que ja esta indo pra /login.
-//    Igual ao doRefresh: a rota de sessao nao pode usar a maquinaria de sessao.
-//
-// 2. NUNCA LANCA. Sair nao pode falhar por causa de rede, servidor fora do ar
-//    ou token ja morto. Quem chama limpa o local e navega de qualquer jeito;
-//    se o aviso nao chegou, a sessao morre sozinha quando o refresh expirar.
-//
-// ⚠️ O token e lido na PRIMEIRA linha, sincrona, antes de qualquer await.
-// `sair()` dispara esta funcao sem esperar e chama clearTokens() logo em
-// seguida -- se a leitura do token migrar para depois de um await, o header
-// sai vazio e o logout vira no-op silencioso.
+// Avisa o servidor que a sessão acabou (mata access e refresh em todos os aparelhos).
+// Fetch direto: o 401 dispararia refresh + killSession no meio do logout. Nunca lança.
+// O token é lido na primeira linha, antes de qualquer await: quem chama limpa os tokens logo em seguida.
 export async function logout(): Promise<void> {
   const token = getToken();
   if (!token) return;
@@ -337,7 +244,7 @@ export async function logout(): Promise<void> {
       headers: { Authorization: `Bearer ${token}` },
     });
   } catch {
-    // Rede caiu: ignorado de proposito (ver decisao 2 acima).
+    // Rede caiu: ignorado de propósito.
   }
 }
 
@@ -360,53 +267,19 @@ export type Task = {
   position: number;
   depth: number;
   path: string;
-  // ⚠️ Spec 036, fatia 3. O backend passou a devolver os dois em
-  // `TaskResponse` (e portanto em `TaskListItem`, `TaskDetailResponse` e
-  // `MyTaskItem`, que herdam). NAO SAO OPCIONAIS: as colunas viraram NOT NULL
-  // na migration `0011`, entao toda tarefa tem quadro e coluna.
-  //
-  // ⚠️ ELES FICARAM DE FORA DESTE TIPO ATE 10/08 -- a fatia 3 subiu o backend
-  // e ninguem tocou aqui. O buraco so apareceu quando a fatia 4b tentou
-  // filtrar por `column_id`, porque teste com fixture `as MyTaskItem` cala o
-  // `tsc`. Se voce for acrescentar campo de resposta, acrescente NOS DOIS
-  // lados no mesmo passo.
+  // Obrigatórios (NOT NULL no banco). Campo novo de resposta: declare aqui no mesmo passo do backend.
   board_id: string;
   column_id: string;
   /**
-   * Spec 051, fatia A: quem pergunta pode APAGAR esta tarefa -- e moderar
-   * comentário alheio nela, que é a mesma pergunta (`task.delete` no time da
-   * tarefa).
-   *
-   * ⚠️⚠️ O BOTÃO VEM DAQUI, e não de `me.permissions`. O `/auth/me` diz "o que",
-   * nunca "onde": quem é gerente no Marketing e operador no Comercial tem
-   * `task.delete` e VÊ a tarefa do Comercial -- e o servidor recusa apagá-la.
-   *
-   * ⚠️ OBRIGATÓRIO, ao contrário dos contadores abaixo: o backend o calcula no
-   * próprio `TaskResponse`, então TODA resposta de tarefa o traz, inclusive as
-   * de mutação.
+   * Quem pergunta pode apagar esta tarefa (e moderar comentário nela), no time da tarefa.
+   * O botão vem daqui, não de `me.permissions`. Vem em toda resposta de tarefa.
    */
   can_delete: boolean;
-  /**
-   * Spec 053, fatia D: pode por e tirar OUTRA pessoa como seguidora (o `+` da
-   * linha "Seguidores"). Calculado no servidor pela mesma pergunta do servico
-   * (`task.assign` no time da tarefa + edicao) -- a tela nao recalcula.
-   * Seguir a si mesmo nao depende disto.
-   */
+  /** Pode pôr e tirar OUTRA pessoa como seguidora; calculado no servidor. */
   can_manage_watchers?: boolean;
   /**
-   * ⚠️ SPEC 042 (A1 + B2). Os tres campos abaixo chegam SO na LISTAGEM
-   * (`TaskListItem`), calculados em lote pelo backend. Eles sao o que permite
-   * o quadro parar de carregar a subarvore: medido em 19/08, ele baixava 917
-   * tarefas -- 670 delas subtarefa -- para desenhar 170 cards.
-   *
-   * ⚠️ OPCIONAIS DE PROPOSITO, e nao por preguica: `TaskDetailResponse` e as
-   * respostas de mutacao (`PATCH`, `/move`, `/archive`) herdam de
-   * `TaskResponse` e NAO os trazem. Tipar como obrigatorio faria toda resposta
-   * de mutacao parecer que zerou o contador -- que e exatamente o defeito que
-   * o ADR 0025 registra para o `assignee_ids`.
-   *
-   * ⚠️ POR ISSO O UPSERT TEM DE PRESERVA-LOS ao substituir uma task no estado,
-   * pelo mesmo motivo e da mesma forma que ja preserva `assignee_ids`.
+   * Os três abaixo só vêm na listagem. Opcionais: respostas de mutação não os trazem, e o upsert
+   * tem de preservá-los ao substituir a task no estado (como `assignee_ids`).
    */
   /** Filhas DIRETAS vivas (arquivada fora). Denominador do `☑ x/y`. */
   subtask_total?: number;
@@ -414,25 +287,9 @@ export type Task = {
   subtask_done?: number;
   /** Responsaveis da SUBARVORE inteira, raiz junto. Filtro por pessoa/subtime. */
   subtree_assignee_ids?: string[];
-  /**
-   * Spec 038, fatia A.
-   *
-   * ⚠️ ERA O MESMO BURACO DO `board_id`/`column_id` DESCRITO LOGO ACIMA, e o
-   * aviso daquele bloco ("acrescente NOS DOIS lados no mesmo passo") descrevia
-   * este campo antes de ele existir aqui. O backend serve `start_date` desde
-   * sempre -- esta no `TaskResponse` (`schemas.py:142`), no create, no update e
-   * no `TaskService` -- e o front nunca o declarou. Nada ficava vermelho:
-   * campo a mais na resposta e ignorado em silencio pelo tipo.
-   */
   start_date: string | null;
   due_date: string | null;
-  /**
-   * Spec 038, fatia B: a HORA do prazo. `null` = "vence no dia".
-   *
-   * ⚠️ VEM COM SEGUNDOS (`"18:00:00"`) -- e o `TIME` do Postgres. Quem compara
-   * NAO pode usar este valor cru contra `"HH:MM"`: a string mais longa vence.
-   * `lib/prazo.ts::estaAtrasada` normaliza antes, e e por la que a regra passa.
-   */
+  /** Hora do prazo; `null` = vence no dia. Vem com segundos ("18:00:00"): compare via `lib/prazo.ts`. */
   due_time: string | null;
   completed_at: string | null;
   created_by: string;
@@ -460,18 +317,11 @@ export async function listTasks(params: {
   parent_task_id?: string;
   include_archived?: boolean;
   archived_only?: boolean;
-  // Spec 042 (B2): so tarefas de topo -- o quadro nunca desenhou subtarefa.
+  // Só tarefas de topo.
   root_only?: boolean;
-  // Spec 042 (A2): busca por titulo, casando tambem o de descendente.
+  // Busca por título, casando também o de descendente.
   q?: string;
-  /**
-   * Recorte por time ATIVO (Spec 048): este time e os DESCENDENTES dele, pelo
-   * time EFETIVO da tarefa.
-   *
-   * ⚠️ VAI PARA `under_team_id`, e não para `team_id`. O backend tem os dois:
-   * `team_id` casa `Task.team_id` por igualdade e serviria mal aqui -- ver o
-   * bloco de `_sob_o_time` no repositório.
-   */
+  /** Recorte pelo time ativo e seus descendentes. Vai em `under_team_id` (o `team_id` do backend casa por igualdade). */
   underTeamId?: string | null;
 } = {}): Promise<TaskListResponse> {
   const q = new URLSearchParams();
@@ -488,27 +338,9 @@ export async function listTasks(params: {
   return api<TaskListResponse>(`/api/v1/tasks?${q.toString()}`);
 }
 
-// ---------------------------------------------------------------
-// FILHAS DIRETAS DE UMA TAREFA (Spec 042, B1)
-// ---------------------------------------------------------------
-// O `TaskDetail` deixou de receber `filhos` como prop e passou a buscar as
-// proprias. Isso e o que permite ao QUADRO parar de carregar a subarvore
-// inteira (B2): medido em 19/08, ele baixava 917 tarefas -- 670 delas
-// subtarefa -- para desenhar 170 cards.
-//
-// ⚠️ `include_archived: true` SEMPRE, e nao acompanhando o toggle da tela.
-// Sao dois consumidores com necessidades opostas dentro do mesmo painel:
-//   - a CHECKLIST esconde arquivada (`paraChecklist` decide isso la, e a
-//     regra tem de continuar sendo dela);
-//   - o AVISO DE EXCLUSAO conta TODAS, porque a cascata do soft-delete
-//     (ADR 0005) leva a subarvore inteira, arquivada ou nao.
-// Buscar sem arquivada faria o aviso destrutivo contar a menos -- e ele ja
-// conta a menos hoje, justamente porque herda a lista do quadro, que so traz
-// arquivada quando a pessoa liga o toggle. Esta linha CONSERTA isso.
-//
-// ⚠️ Pagina ate o fim: `size=100` e o teto do backend, e checklist com mais de
-// 100 filhas e improvavel mas nao impossivel. Parar em 100 em silencio seria a
-// mesma classe de defeito que o `listAllTasks` existe para evitar.
+// ---- Filhas diretas de uma tarefa (o `TaskDetail` busca as próprias).
+// `include_archived: true` sempre: o aviso de exclusão conta todas (a cascata leva arquivadas); a checklist filtra.
+// Pagina até o fim (`size=100` é o teto do backend).
 export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
   const pageSize = 100;
   const primeira = await listTasks({
@@ -517,12 +349,7 @@ export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
     page: 1,
     size: pageSize,
   });
-  // ⚠️ DEDUPE POR ID, pelo mesmo motivo que o `listAllTasks` (achado no review
-  // da Spec 042). Paginacao por offset pode REPETIR um item na borda se alguem
-  // criar uma subtarefa durante a carga -- e como a parada e por
-  // `itens.length`, o repetido inflaria o comprimento e o laco pararia cedo,
-  // perdendo uma filha DE VERDADE. Eu copiei a paginacao de la sem copiar esta
-  // guarda.
+  // Dedupe por id: paginação por offset pode repetir item na borda e fazer o laço parar cedo.
   const vistos = new Set<string>();
   const itens: Task[] = [];
   const acrescentar = (arr: Task[]) => {
@@ -548,15 +375,7 @@ export async function listarFilhas(parentTaskId: string): Promise<Task[]> {
   return itens;
 }
 
-// ---------------------------------------------------------------
-// BUSCA COMPLETA (anti-teto silencioso)  -- P0.2
-// ---------------------------------------------------------------
-// O quadro filtra/busca no cliente, entao precisa do conjunto COMPLETO, nao
-// de uma pagina. Antes batia size=100 fixo: alem de 100, tasks sumiam do
-// quadro E da busca sem aviso. Aqui pagina ate o total, com TETO DE SEGURANCA:
-// se o total passar do teto, devolve truncated=true para a tela AVISAR (em
-// vez de perder em silencio). O teto definitivo vem do auto-arquivamento de
-// concluidas/canceladas (proxima entrega) -- aqui so paramos de mentir.
+// ---- Busca completa: pagina até o total com teto; acima do teto devolve `truncated` para a tela avisar.
 
 const TASK_FETCH_CEILING = 1000;
 
@@ -567,11 +386,7 @@ export async function listAllTasks(
     project_id?: string;
     include_archived?: boolean;
     status?: string;
-    // ⚠️ Spec 042 (B2). Com `root_only` o lote cai de 917 para 247 (medido em
-    // 19/08): subtarefa deixa de viajar, porque o quadro nunca desenhou uma
-    // (`depth === 0`). O que ela alimentava -- contador, filtro por pessoa,
-    // filtro por subtime -- passa a vir pronto em `subtask_*` e
-    // `subtree_assignee_ids`, e a busca por titulo de subtarefa virou `q`.
+    // Com `root_only` subtarefa não viaja; contadores e filtros vêm prontos em `subtask_*`/`subtree_assignee_ids`.
     root_only?: boolean;
     q?: string;
   } = {}
@@ -608,17 +423,7 @@ export async function listAllTasks(
 
 export type MyTaskItem = Task & {
   relations: string[];
-  /**
-   * Titulo da tarefa-mae, quando esta e subtarefa. Vem em LOTE do backend
-   * (1 query por pagina) -- ver ADR 0025 para o mesmo padrao em assignee_ids.
-   *
-   * `null` quando nao ha mae OU quando a mae esta fora da lente do usuario.
-   * A tela cai no rotulo generico "Subtarefa"; NUNCA inventa titulo.
-   *
-   * Resolver isto no front, procurando a mae entre os itens carregados, nao
-   * serve: o caso que importa e estar designado SO na filha -- e ai a mae
-   * nao esta na lista.
-   */
+  /** Título da tarefa-mãe, em lote. `null` sem mãe ou com mãe fora da lente (a tela mostra "Subtarefa"). */
   parent_title: string | null;
 };
 export type MyAssignmentsResponse = {
@@ -629,16 +434,8 @@ export type MyAssignmentsResponse = {
 };
 
 /**
- * As minhas tarefas, opcionalmente recortadas por time (Spec 048).
- *
- * ⚠️⚠️ `teamId` OBRIGATÓRIO, e `null` aqui é MODO DE USO -- não
- * esquecimento. Decisão dela na §4.3: esta é a única tela que atravessa times
- * de propósito, e o filtro `tudo | por time` é o que ela pediu. *"O time muda
- * com a área; o que é meu, não."*
- *
- * ⚠️ `under_team_id` E NÃO `team_id`: o backend tem os dois, e `team_id` casa
- * `Task.team_id` por igualdade -- ele esconderia toda tarefa interna de
- * subtime e ignoraria o time do projeto. Ver `_sob_o_time` no repositório.
+ * Minhas tarefas, opcionalmente recortadas por time. `teamId: null` = todos os times (modo de uso, não esquecimento).
+ * Vai em `under_team_id`: `team_id` esconderia tarefa interna de subtime.
  */
 export async function listMyAssignments(params: {
   teamId: string | null;
@@ -652,28 +449,14 @@ export async function listMyAssignments(params: {
   return api<MyAssignmentsResponse>(`/api/v1/me/assignments?${q.toString()}`);
 }
 
-// ---------------------------------------------------------------
-// BUSCA COMPLETA de "minhas tarefas" (anti-teto silencioso)
-// ---------------------------------------------------------------
-// A tela minhas-tarefas filtra (status/relacao) no CLIENTE, entao precisa do
-// conjunto COMPLETO -- nao de uma pagina. Antes batia size=100 fixo: alem de
-// 100 relacoes, tarefas sumiam da lista E os filtros/contadores passavam a
-// mentir (filtravam um recorte truncado). Mesmo padrao de listAllTasks: pagina
-// ate o total, com TETO DE SEGURANCA; se estourar, truncated=true pra tela
-// AVISAR em vez de perder em silencio. Dedupe por id porque paginacao por
-// offset pode repetir um item na borda se algo muda durante a carga.
+// ---- Busca completa de "minhas tarefas": mesmo padrão de `listAllTasks` (teto, `truncated`, dedupe).
 export type AllMyAssignmentsResult = {
   items: MyTaskItem[];
   total: number;
   truncated: boolean;
 };
 
-/**
- * ⚠️ `teamId` OBRIGATÓRIO, e ele TEM de ir em TODAS as páginas -- não só na
- * primeira. Mandar só na primeira daria um `total` recortado e páginas
- * seguintes sem recorte: a lista encheria de tarefa de outro time a partir da
- * página 2, e o `truncated` mentiria junto.
- */
+/** `teamId` vai em TODAS as páginas, senão a partir da 2ª a lista vem sem recorte. */
 export async function listAllMyAssignments(
   teamId: string | null
 ): Promise<AllMyAssignmentsResult> {
@@ -705,13 +488,7 @@ export async function listAllMyAssignments(
   return { items, total, truncated: total > items.length };
 }
 
-// ---------------------------------------------------------------
-// TIMES + CRIACAO  (pin na raiz -- ver web/docs/adr/0001-pin-time-raiz-criacao.md)
-// ---------------------------------------------------------------
-// Toda task criada pelo quadro nasce DONA do time raiz (Marketing geral),
-// nao do subtime de quem cria. E o que garante que todo mundo enxerga E
-// edita o quadro geral mesmo depois de subtimes existirem. O id da raiz e
-// o time com parent_team_id == null. Buscado uma vez e memoizado.
+// ---- Times e criação.
 
 export type Team = {
   id: string;
@@ -720,50 +497,29 @@ export type Team = {
   name: string;
   slug: string;
   description?: string | null;
-  // Spec 029: o que aponta para o time, em LOTE (uma query pra lista toda).
-  // Alimenta a tela de gestao -- informa e desabilita botao obvio; NAO
-  // autoriza (o DELETE recheca no backend, porque estes numeros envelhecem).
-  // `tarefas` inclui as que estao na lixeira: elas sumiram do quadro mas
-  // seguram a foreign key e o banco recusa o DELETE por causa delas.
+  // Contagens em lote para a tela de gestão; só informam, o DELETE recheca.
+  // `tarefas` inclui as da lixeira (seguram a foreign key).
   tarefas?: number;
   projetos?: number;
   membros?: number;
   filhos?: number;
   quadros?: number;
   formularios?: number;
-  // Spec 049, fatia F: quem pergunta pode EDITAR este time? O CADEADO VEM DO
-  // SERVIDOR, calculado pela mesma pergunta do PATCH -- a tela sabe "o que" a
-  // pessoa pode, nunca "onde". Opcional como as contagens: só a listagem o
-  // traz, e AUSENTE LÊ-SE COMO "NÃO" (`podeEditar` fecha, não abre).
+  // Pode editar este time? Calculado no servidor. Só a listagem traz; ausente = "não".
   can_update?: boolean;
-  // Spec 051, fatia A: quem pergunta pode CRIAR PROJETO neste time? Mesma regra
-  // do `can_update`: só a listagem traz, e ausente lê-se como "não".
+  // Pode criar projeto neste time? Ausente = "não".
   can_create_project?: boolean;
-  // Spec 051, fatia D: quem pergunta pode APAGAR este time? O gerente apaga
-  // subtime da própria árvore; ausente lê-se como "não".
+  // Pode apagar este time? Ausente = "não".
   can_delete?: boolean;
-  // Spec 056, fatia B: quem pergunta pode CRIAR BASE neste time? Só time raiz;
-  // o supervisor de um subtime recebe na raiz dele. Ausente lê-se como "não".
+  // Pode criar base neste time (só time raiz)? Ausente = "não".
   can_create_base?: boolean;
-  // 08/10: quem pergunta pode CRIAR FORMULÁRIO de solicitação neste time?
-  // Subtime vale (decisão dela). Ausente lê-se como "não".
+  // Pode criar formulário de solicitação neste time (subtime vale)? Ausente = "não".
   can_create_form?: boolean;
 };
 
 type TeamListResponse = { items: Team[]; total: number };
 
-// Lista de times do workspace (raiz + subtimes). Estavel na sessao ->
-// buscada UMA vez e memoizada. getRootTeamId e listSubteams derivam daqui,
-// entao o endpoint /teams e batido uma unica vez por sessao. Limpa no
-// clearTokens.
-//
-// HISTORICO DA INVARIANTE: ate a Spec 029 nenhum fluxo do front mutava a
-// arvore de times, entao um invalidateTeams() seria codigo morto -- e o
-// comentario que estava aqui avisava que, SE um dia entrasse uma tela de
-// gestao de subtime, ela PRECISARIA zerar `_teams`. Esse dia chegou:
-// `/times` cria, edita e remove. O `invalidateTeams()` abaixo e o cumprimento
-// desse aviso; sem ele, criar um subtime nao o faz aparecer no seletor do
-// quadro nem na lente ate a proxima recarga.
+// Times do workspace, memoizados na sessão. Limpa no `clearTokens` e em `invalidateTeams()` após mutação.
 let _teams: Team[] | undefined; // undefined = ainda nao buscado
 
 async function listTeams(): Promise<Team[]> {
@@ -773,34 +529,12 @@ async function listTeams(): Promise<Team[]> {
   return _teams;
 }
 
-/**
- * O id da ÚNICA área do workspace. LEVANTA se não houver exatamente uma.
- *
- * ⚠️⚠️ ELE DEVOLVIA `string | null` E FAZIA `teams.find(...)`, com esta
- * dívida escrita ao lado (ADR 0001 do front):
- *
- *     "se a raiz nao for achada, cai-se no null e o backend deriva o time
- *      pela membership -- hoje identico ao pin (sem subtimes). QUANDO
- *      subtimes existirem, trocar este null por erro duro, senao a heranca
- *      silenciosa volta."
- *
- * Subtimes existem desde a Entrega 13. A troca é esta (Spec 046, fatia 1).
- *
- * ⚠️ O TIPO MUDOU DE PROPÓSITO, de `string | null` para `string`: era o
- * `null` que deixava cada chamador inventar um fallback silencioso. Sem ele,
- * o `tsc` aponta quem precisa decidir.
- *
- * A regra mora em `lib/areas.ts`, pura e testada -- inclusive com duas áreas,
- * que é o caso que o banco ainda não deixa existir.
- */
+/** O id do único time raiz do workspace; levanta se houver zero ou vários (regra em `lib/rootTeams.ts`). */
 export async function getRootTeamId(): Promise<string> {
   return soleRootTeam(await listTeams()).id;
 }
 
-// Subtimes = times NAO-raiz (parent_team_id != null). Alimenta o dropdown
-// de subtime do quadro (Entrega 13, Fatia 3). Ordenado por nome (pt-BR) pra
-// UI estavel. Espelha a regra do backend (list_all_with_subteam): a raiz
-// nunca entra.
+// Subtimes (times não-raiz), ordenados por nome. Espelha `list_all_with_subteam` do backend.
 export async function listSubteams(): Promise<Team[]> {
   const teams = await listTeams();
   return teams
@@ -808,51 +542,23 @@ export async function listSubteams(): Promise<Team[]> {
     .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
 }
 
-// Spec 014: raiz + subtimes, para o seletor de TIME no cadastro de membro.
-// Diferente de listSubteams, a RAIZ entra (a admin pode vincular alguem no
-// principal). Ordena raiz primeiro (parent_team_id === null), subtimes por
-// nome (pt-BR). Deriva do mesmo listTeams() memoizado.
-// Zera o cache de times -> a proxima listTeams() rebusca. Chamar apos criar,
-// editar ou remover. Espelha invalidateMembers.
-//
-// ⚠️⚠️ E AVISA QUEM JA LEU, desde 10/09. Zerar o cache faz a PROXIMA leitura
-// vir fresca; nao faz quem ja leu reler. A Camila viu na tela: *"criei uma raiz
-// e nao apareceu direto na barra lateral"* -- a `/organizacao` recarregava o
-// proprio estado e o `AppShell`, que buscou os times uma vez na montagem,
-// seguia com a lista velha.
-//
-// ⚠️ ATE AQUI ISSO NUNCA APARECEU porque a navegacao deste app e RECARGA TOTAL
-// (registrado no topo do `AppShell`): trocar de tela remontava a barra e ela
-// relia. Criar area e o primeiro caso em que a arvore muda SEM navegacao.
-//
-// ⚠️ EVENTO DE `window`, e nao contexto de React: o cache mora em modulo, fora
-// da arvore, e quem o invalida sao funcoes de `lib/` -- nenhuma delas pode
-// chamar um `setState`. Um contexto exigiria que TODA mutacao de time passasse
-// por um provider, o que e o oposto de onde a decisao mora hoje.
+// Zera o cache de times; chamar após criar, editar ou remover.
+// Também dispara `TIMES_MUDARAM` em `window` para quem já leu (a barra) reler: o cache mora fora do React.
 export const TIMES_MUDARAM = "times:mudaram";
 
 export function invalidateTeams() {
   _teams = undefined;
-  // ⚠️ A guarda e para o SSR: `lib/api` e importado por componente de
-  // servidor na build, e `window` nao existe la.
+  // Guarda de SSR: `window` não existe no servidor.
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event(TIMES_MUDARAM));
   }
 }
 
-// Spec 029/D1: criar exige team.manage (ADMIN ou MANAGER). 409 = slug repetido
-// ou segundo time raiz; 422 = slug fora de ^[a-z0-9-]+$.
+// 409 = slug repetido; 422 = slug fora de ^[a-z0-9-]+$.
 export async function createTeam(input: {
   name: string;
   slug: string;
-  // ⚠️⚠️ AUSENTE (ou `null`) = cria uma AREA; preenchido = cria um SUBTIME.
-  // Ate a Spec 046 este campo era OBRIGATORIO no tipo, porque so havia uma
-  // area e ninguem podia criar outra -- a tela de times so criava subtime.
-  //
-  // ⚠️ E `""` NAO SERVE COMO "sem pai": o backend tipa
-  // `parent_team_id: uuid.UUID | None`, entao string vazia e 422. A primeira
-  // versao da tela de organizacao mandava `""` e o `tsc` nao acusou, porque
-  // `""` E uma `string` -- foi a leitura do schema que pegou.
+  // Ausente ou `null` = cria um time raiz; preenchido = cria um subtime. `""` dá 422 (o backend tipa UUID | None).
   parent_team_id?: string | null;
 }): Promise<Team> {
   const t = await api<Team>("/api/v1/workspaces/current/teams", {
@@ -863,9 +569,8 @@ export async function createTeam(input: {
   return t;
 }
 
-// Spec 029/D6: edita nome e descricao. O SLUG NAO ENTRA -- e identificador
-// estavel, e o backend nem o aceita neste endpoint. 409 = tentou editar a raiz.
-// `description` ausente preserva a atual; string vazia limpa.
+// Edita nome e descrição (slug não entra). 409 = tentou editar a raiz.
+// `description` ausente preserva; string vazia limpa.
 export async function updateTeam(
   id: string,
   input: { name: string; description?: string | null }
@@ -878,9 +583,7 @@ export async function updateTeam(
   return t;
 }
 
-// Spec 029/D1 e D3-A: remover exige workspace.manage (SO ADMIN) e time vazio.
-// 403 = nao e admin; 409 = e a raiz OU ainda tem tarefa/projeto/membro/subtime
-// (a mensagem do backend traz os numeros); 404 = time inexistente. 204 sem corpo.
+// Remove time vazio. 409 = raiz ou ainda tem conteúdo (a mensagem traz os números); 204 sem corpo.
 export async function deleteTeam(id: string): Promise<void> {
   await api<void>(`/api/v1/workspaces/current/teams/${id}`, {
     method: "DELETE",
@@ -888,9 +591,7 @@ export async function deleteTeam(id: string): Promise<void> {
   invalidateTeams();
 }
 
-// Spec 029/D3-B: o que sai junto se o time for esvaziado e removido.
-// Somente leitura. Numeros do MOMENTO DA CHAMADA -- os da listagem podem ter
-// envelhecido desde o carregamento da tela.
+// O que sai junto se o time for esvaziado e removido. Números do momento da chamada.
 export type PreviaRemocao = {
   team_id: string;
   nome: string;
@@ -900,7 +601,7 @@ export type PreviaRemocao = {
   projetos: number;
   membros: number;
   filhos: number;
-  // Auditoria de 16/10: sobem para a área junto.
+  // Sobem para o time raiz junto.
   quadros?: number;
   formularios?: number;
 };
@@ -911,9 +612,8 @@ export async function previaRemocaoTeam(id: string): Promise<PreviaRemocao> {
   );
 }
 
-// Move o conteudo para o time principal, ARQUIVA as tarefas vivas e apaga o
-// time. Exige workspace.manage (so ADMIN). Uma transacao no backend: ou tudo
-// ou nada. 409 = e a raiz ou tem subtime filho. Devolve o que FOI feito.
+// Move o conteúdo para o time principal, arquiva as tarefas vivas e apaga o time, numa transação.
+// 409 = raiz ou tem subtime filho. Devolve o que foi feito.
 export async function esvaziarERemoverTeam(
   id: string
 ): Promise<PreviaRemocao> {
@@ -925,28 +625,15 @@ export async function esvaziarERemoverTeam(
   return r;
 }
 
-// ===========================================================================
-// WORKSPACE (a ORGANIZACAO) -- Spec 047, fatia B
-// ===========================================================================
-// ⚠️ A rota de renomear existe desde sempre e NUNCA teve tela: a Spec 047 e a
-// primeira que a expoe. Por isso este bloco nasce agora, e nao porque faltava
-// backend.
+// ---- Workspace (a organização).
 export type Workspace = {
   id: string;
   name: string;
   slug: string;
 };
 
-// Promove/rebaixa o papel de ORGANIZACAO. `null` remove.
-//
-// ⚠️ A rota existe desde a Spec 045 (fatia D) e NUNCA teve tela -- ate aqui o
-// unico jeito de promover alguem era SQL na mao. E a razao de ela existir e a
-// invariante de nivel: `POST /members` recusa `role=ADMIN`, porque ADMIN
-// deixou de ser papel de time.
-//
-// 409 = seria o ULTIMO administrador ativo. Sem nenhum, ninguem tem
-// `workspace.manage`, que e o portao desta propria rota -- a organizacao se
-// trancaria e a saida seria SQL.
+// Promove/rebaixa o papel de organização; `null` remove.
+// 409 = seria o último administrador ativo (a organização se trancaria).
 export async function changeOrganizationRole(
   userId: string,
   role: OrgRole | null,
@@ -959,11 +646,7 @@ export async function changeOrganizationRole(
   return m;
 }
 
-// ⚠️⚠️ MEMOIZADO desde 10/09, e o motivo e a BARRA: o rodapé passou a mostrar
-// o nome da organizacao em toda tela que nao tem area na URL (pedido da
-// Camila), entao o `AppShell` pede este dado sempre -- e sem cache seria uma
-// requisicao a mais em cada navegacao, para um nome que muda uma vez por ano.
-// Mesmo padrao de `_teams` e `_me`, inclusive a limpeza no `clearTokens`.
+// Memoizado: a barra mostra o nome da organização em toda tela sem time na URL. Limpa no `clearTokens`.
 let _workspace: Workspace | undefined;
 
 export async function getWorkspace(): Promise<Workspace> {
@@ -972,12 +655,7 @@ export async function getWorkspace(): Promise<Workspace> {
   return _workspace;
 }
 
-// Renomear exige `workspace.manage` -> so ADMIN de organizacao. 403 se nao.
-//
-// ⚠️ ELA REESCREVE O CACHE em vez de o invalidar: a resposta JA E o workspace
-// novo, entao guardar o que voltou evita uma segunda ida ao servidor e mantem
-// a barra e a tela dizendo a mesma coisa. Invalidar deixaria o proximo leitor
-// buscar de novo -- correto, mas por nada.
+// Exige `workspace.manage`. Reescreve o cache com a resposta em vez de invalidar.
 export async function renameWorkspace(name: string): Promise<Workspace> {
   const ws = await api<Workspace>("/api/v1/workspaces/current", {
     method: "PATCH",
@@ -997,34 +675,10 @@ export async function listTeamsAll(): Promise<Team[]> {
   });
 }
 
-// ===========================================================================
-// QUADROS (Spec 036, fatia 2 no backend / fatia 4b aqui)
-// ===========================================================================
-//
-// ⚠️ O TIPO `Coluna` NAO MORA AQUI, e e a unica excecao a convencao de que
-// tipo de resposta da API vive neste arquivo (`Task`, `Team`, `Member`,
-// `Project`). Ele vive em `lib/coluna.ts` junto com as regras que o
-// interpretam -- e o motivo e a fronteira de pureza da Spec 027: se `Coluna`
-// morasse aqui, `coluna.ts` teria de importar deste modulo, que carrega
-// `fetch`, token e `localStorage`. O modulo de regras deixaria de ser
-// testavel sem mock, que e exatamente o que a fatia 4a comprou.
-//
-// A dependencia fica `api -> coluna -> status`, sem ciclo.
+// ---- Quadros. O tipo `Coluna` mora em `lib/coluna.ts` para as regras ficarem puras (sem ciclo: api -> coluna -> status).
 
-/**
- * Um quadro alcancavel, com as colunas na ordem visual.
- *
- * Espelha `BoardResponse` do backend. `workspace_id` e `deleted_at` NAO vem --
- * o backend nao os expoe de proposito (o primeiro seria uma trava de servidor
- * refeita no cliente; o segundo so poderia valer `null`).
- */
-/**
- * Uma coluna com a contagem de tarefas (`GET /boards/{id}/columns/{id}`).
- *
- * ⚠️ SO O ENDPOINT DE DETALHE DEVOLVE `task_count`. O `GET /boards` nao o
- * carrega de proposito: poria um `COUNT` por coluna em toda abertura de tela,
- * para um numero que so a confirmacao de apagar le.
- */
+/** Um quadro alcançável, com as colunas na ordem visual. Espelha `BoardResponse`. */
+/** Coluna com contagem de tarefas. Só o endpoint de detalhe devolve `task_count`. */
 export type ColunaComContagem = Coluna & { task_count: number };
 
 export type Quadro = {
@@ -1036,24 +690,8 @@ export type Quadro = {
 };
 
 /**
- * Os quadros que quem pergunta ALCANCA, pela lente de time.
- *
- * A trava inteira mora na consulta do backend, nao numa permissao de rota
- * (ADR 0035, D3): SUPERVISOR/OPERATOR de X ve o quadro geral e os do proprio
- * subtime; MANAGER/ADMIN da raiz veem os internos tambem.
- *
- * ⚠️ SEM MEMOIZACAO, ao contrario de `listTeams`. Nao e esquecimento: a fatia
- * 5 traz criar/renomear/apagar quadro e CRUD de coluna, e um cache aqui viraria
- * o mesmo defeito que a Spec 029 criou em `listTeams` -- criar um subtime nao
- * o fazia aparecer ate a proxima recarga. Producao tem UM quadro
- * (`scripts/invariantes.sql`, consulta 5, medida em 10/08/2026), entao o custo
- * de rebuscar por tela e uma requisicao. **Se um dia doer, o lugar de rever e
- * este comentario -- e ai o cache nasce COM o `invalidateQuadros()`, nao
- * depois.**
- *
- * ⚠️ SEM PAGINACAO, pelo mesmo motivo do router: o front precisa da lista
- * inteira para desenhar o seletor de quadro. A ADR 0034 preve poucas dezenas
- * no pior caso, um por subtime.
+ * Os quadros que quem pergunta alcança (o recorte é feito na consulta do backend).
+ * Sem memoização (criar/renomear quadro não teria invalidação) e sem paginação.
  */
 export async function listBoards(): Promise<Quadro[]> {
   return api<Quadro[]>("/api/v1/boards");
@@ -1061,53 +699,18 @@ export async function listBoards(): Promise<Quadro[]> {
 
 
 /**
- * As colunas do Quadro geral E o indice de TODAS as colunas alcancaveis, numa
- * requisicao so (Spec 036, fatia 5b-5b).
- *
- * ⚠️ UMA REQUISICAO, E ISSO E O PONTO. `listBoards()` ja devolve todo quadro
- * alcancavel COM as colunas dele; a versao anterior desta funcao achava o
- * padrao e **jogava o resto fora**. As telas transversais precisavam
- * exatamente do resto: sem ele, tarefa de quadro avulso nao tem nome de coluna
- * para mostrar, e o rotulo cai na reserva por status. Chamar `listBoards()`
- * duas vezes -- uma para as colunas, outra para o indice -- resolveria o mesmo
- * problema pagando duas viagens; e `listBoards` NAO e memoizada de proposito
- * (ver `lib/__tests__/quadros.test.ts`).
- *
- * ⚠️ `colunasDoQuadroGeral` DELEGA PARA CA. Antes eram duas copias de "achar o
- * padrao e ordenar por position"; duas copias da mesma regra e o defeito que a
- * Spec 036 passou a fatia inteira matando. Os testes que ja existiam dela
- * guardam este caminho agora.
- *
- * ⚠️ SEM QUADRO PADRAO: `colunas` sai `[]` (e NAO levanta -- o motivo esta no
- * bloco acima) e o indice **continua cheio**, com nome de quadro em toda
- * coluna. E o certo: se nao ha quadro desta tela, nenhuma coluna e "daqui".
+ * Colunas do quadro padrão + índice de todas as colunas alcançáveis, numa requisição.
+ * Sem quadro padrão: `colunas` sai `[]` e o índice continua cheio.
  */
 /**
- * As colunas do quadro geral DE UM TIME, mais o índice de todos os alcançáveis.
- *
- * ⚠️⚠️ `teamId` OBRIGATÓRIO, e este é o defeito 3.3 da Spec 048. A linha era
- * `quadros.find((q) => q.is_default)` -- **"o" padrão, no singular**. Com um
- * time raiz só isso era verdade; com dois existem DOIS quadros com
- * `is_default`, e `find` devolve o que a API listar primeiro. A tela espelhava
- * as colunas de um time enquanto mostrava as tarefas de outro, sem erro nenhum.
- *
- * ⚠️ `null` = sem time (o "tudo" de Minhas tarefas). Aí não há quadro geral
- * que sirva, e devolver as colunas de um deles seria escolher por sorteio de
- * novo -- devolve VAZIO, e a tela cai na lista. Quem precisa de colunas exige
- * um time, que é a decisão da §4.3: *"o quadro não pode [dizer tudo] -- kanban
- * não espelha dois quadros ao mesmo tempo"*.
- *
- * ⚠️ O ÍNDICE continua de TODOS os quadros alcançáveis, de propósito: ele serve
- * para ROTULAR a coluna de uma tarefa que vive em quadro avulso (fatia 5b-5b),
- * e recortá-lo faria a tarefa aparecer sem nome de coluna.
+ * Colunas do quadro geral de UM time + índice de todos os alcançáveis.
+ * `null` = sem time: colunas vazias (kanban não espelha dois quadros). O índice não é recortado: rotula tarefa de quadro avulso.
  */
 export async function quadroGeralComIndice(teamId: string | null): Promise<{
   colunas: Coluna[];
   indice: Map<string, OrigemDaColuna>;
 }> {
   const quadros = await listBoards();
-  // ⚠️ A REGRA MORA EM `quadroGeralDoTime` desde 14/09: o `Board.tsx` tinha
-  // três cópias do `find` no singular que este bloco já tinha corrigido.
   const geral = teamId ? quadroGeralDoTime(quadros, teamId) : undefined;
   const colunas = geral
     ? [...geral.colunas].sort((a, b) => a.position - b.position)
@@ -1116,20 +719,8 @@ export async function quadroGeralComIndice(teamId: string | null): Promise<{
 }
 
 
-// ---------------------------------------------------------------
-// ESCRITA DE QUADRO E DE COLUNA (Spec 036, fatias 5b-3 e 5b-4)
-//
-// ⚠️ NENHUMA DELAS TINHA LEITOR ATE A 5b-6. O backend entregou os endpoints
-// nas fatias 5b-3 e 5b-4; estas funcoes existem para a tela que os consome, e
-// sao entregues JUNTO com ela de proposito -- o projeto ja tem duas cicatrizes
-// de codigo sem leitor nesta mesma spec (`is_default_target` ate a 4c,
-// `corEhHex`, que saiu sem nunca ter tido um).
-//
-// ⚠️ AS ROTAS DE COLUNA SAO ANINHADAS, e isso e trava e nao estetica. A
-// autorizacao no backend acontece sobre o TIME DO QUADRO, e o servico confere
-// que a coluna pertence AQUELE quadro. Montar a URL sem o `board_id` -- ou com
-// o errado -- devolve 404, e nao edita a coluna alheia.
-// ---------------------------------------------------------------
+// ---- Escrita de quadro e de coluna. Rotas de coluna são aninhadas no quadro: o backend autoriza pelo time
+// do quadro e confere que a coluna é dele (board_id errado = 404).
 
 /** Cria um quadro avulso para um time. Nasce com as quatro colunas base. */
 export async function createBoard(input: {
@@ -1139,45 +730,19 @@ export async function createBoard(input: {
   return api<Quadro>("/api/v1/boards", { method: "POST", body: input });
 }
 
-/**
- * Renomeia um quadro.
- *
- * ⚠️ SO O NOME VAI NO CORPO. `team_id` decide QUEM ENXERGA o quadro (ADR 0035
- * D3); manda-lo aqui seria operacao de visibilidade disfarcada de edicao -- e
- * o Pydantic do backend IGNORA chave desconhecida em silencio, entao o campo a
- * mais nao daria erro nenhum, so nao faria nada.
- */
+/** Renomeia um quadro. Só o nome vai no corpo (`team_id` decide visibilidade; o backend ignoraria chave a mais). */
 /** `GET /boards/{id}` -- o quadro com a CONTAGEM de tarefas vivas. */
 export type QuadroComContagem = Quadro & { task_count: number };
 
-/**
- * Busca um quadro com a contagem de tarefas -- para a confirmacao de apagar.
- *
- * ⚠️ `GET /boards` NAO TRAZ CONTAGEM, de proposito: seria uma subconsulta por
- * quadro num endpoint que roda a cada abertura de tela. Somar as colunas pelo
- * `colunaComContagem` custaria uma requisicao POR COLUNA.
- *
- * ⚠️ O NUMERO E DE UM INSTANTE. Entre ler e confirmar, alguem pode criar
- * tarefa ali -- por isso o `DELETE` devolve quantas APAGOU e a tela compara.
- */
+/** Um quadro com a contagem de tarefas, para a confirmação de apagar. O número envelhece: o DELETE devolve quantas apagou. */
 export async function getBoard(boardId: string): Promise<QuadroComContagem> {
   return api<QuadroComContagem>(`/api/v1/boards/${boardId}`);
 }
 
 /**
- * Apaga um quadro E as tarefas dentro dele. Devolve quantas foram apagadas.
- *
- * ⚠️⚠️ **NAO PERGUNTA O DESTINO DAS TAREFAS, e e a unica operacao do produto
- * assim.** Apagar COLUNA sempre oferece para onde elas vao. Quem chama isto
- * tem de ter passado pela confirmacao por DIGITACAO DO NOME -- a trava e da
- * tela, e o endpoint nao a repete.
- *
- * ⚠️ NAO HA DESFAZER NO PRODUTO. O resgate e
- * `backend/scripts/restaurar_quadro.sql`, rodado no banco.
- *
- * ⚠️ LE O `code`: `quadro_padrao_nao_apagavel` e a recusa do Quadro geral. A
- * tela nem oferece o botao nele (o seletor so lista os avulsos), entao chegar
- * neste erro significa chamada fora da tela.
+ * Apaga um quadro E as tarefas dentro dele; devolve quantas. Não pergunta destino nem tem desfazer:
+ * a confirmação por digitação do nome é da tela. Resgate: `backend/scripts/restaurar_quadro.sql`.
+ * `quadro_padrao_nao_apagavel` = tentou apagar o Quadro geral.
  */
 export async function deleteBoard(
   boardId: string
@@ -1202,21 +767,13 @@ export type LoteCriar = {
   tmp: string;
   name: string;
   semantic: Coluna["semantic"];
-  /**
-   * Spec 039 (F9). ⚠️ OPCIONAL, e omitir NÃO é "sem cor": é "a rotação do
-   * backend decide", que é o comportamento de sempre. Só token da paleta
-   * (`lib/coluna.ts::CORES_DE_COLUNA`) — hex volta 422.
-   */
+  /** Omitir = a rotação do backend escolhe. Só token da paleta (`CORES_DE_COLUNA`); hex volta 422. */
   color?: string;
-  /** Spec 039 (F9). Omitir = `true`, o comportamento de sempre. */
+  /** Omitir = `true`. */
   notify_deadline?: boolean;
 };
 
-/**
- * Uma coluna que muda de opinião sobre cobrar prazo (Spec 039, F9).
- *
- * ⚠️ SÓ ID REAL. Coluna nova já nasce com o valor certo pelo `LoteCriar`.
- */
+/** Coluna que muda a cobrança de prazo. Só id real (coluna nova já nasce certa). */
 export type LoteAviso = { id: string; notify_deadline: boolean };
 
 export type LoteRenomear = { id: string; name: string };
@@ -1227,47 +784,18 @@ export type LoteApagar = { id: string; destino: string | null };
 export type LoteDeColunas = {
   criar?: LoteCriar[];
   renomear?: LoteRenomear[];
-  /**
-   * Ids que passam a ser o ALVO da semantica deles (Spec 036, fatia 12).
-   *
-   * ⚠️ SO UUID -- `tmp:` NAO ENTRA. A etapa do backend roda ANTES de apagar,
-   * e e isso que permite "trocar o alvo e apagar a coluna antiga" num gesto.
-   */
+  /** Ids que passam a ser o alvo da semântica deles. Só UUID (roda antes de apagar). */
   alvos?: string[];
-  /**
-   * Spec 039 (F9). Colunas que ligam ou desligam a cobrança de prazo.
-   *
-   * ⚠️ A etapa roda no backend ENTRE `renomear` e `alvos` — antes de apagar,
-   * porque coluna apagada no mesmo lote deixaria de existir.
-   */
+  /** Colunas que ligam/desligam a cobrança de prazo (roda antes de apagar). */
   avisos?: LoteAviso[];
   apagar?: LoteApagar[];
-  /** UUID em texto, ou `tmp:apelido`. ⚠️ VAZIA = nao mexer na ordem. */
+  /** UUID em texto, ou `tmp:apelido`. Vazia = não mexer na ordem. */
   ordem?: string[];
 };
 
 /**
- * Aplica a edicao inteira de colunas de um quadro, num pedido so.
- *
- * ⚠️ SUBSTITUI A `reordenarColunas`, QUE FOI APAGADA junto com a rota
- * `PATCH /columns/order`. Aquilo nasceu na fatia 6a, antes de o modelo de tela
- * assentar, e ficou sem chamador quando a edicao virou lote.
- *
- * ⚠️ O `tmp:` E A RAZAO DE SER DISTO. A coluna nova ainda nao tem id quando a
- * pessoa escolhe que as tarefas de outra vao para ela -- e trocar uma coluna
- * por outra e o gesto que o lote existe para permitir. O backend monta o mapa
- * `tmp -> id` na etapa de criacao.
- *
- * ⚠️ UMA TRANSACAO SO: recusa em qualquer etapa desfaz o lote inteiro. A tela
- * refaz a edicao; nao existe estado meio aplicado para reconciliar.
- *
- * ⚠️ LE O `code`, NUNCA A MENSAGEM. As recusas possiveis:
- * `coluna_sem_destino`, `coluna_semantica_obrigatoria`,
- * `coluna_ponte_obrigatoria`, `colunas_divergentes`,
- * `referencia_tmp_desconhecida`, `referencia_tmp_repetida`.
- *
- * ⚠️ DEVOLVE AS COLUNAS INTEIRAS, inclusive os ids das que acabaram de nascer
- * -- que ate agora a tela so conhecia pelo apelido.
+ * Aplica a edição inteira de colunas de um quadro numa transação. `tmp:` referencia coluna que ainda não tem id.
+ * Leia o `code`, nunca a mensagem. Devolve as colunas inteiras, com os ids das novas.
  */
 export async function aplicarLoteDeColunas(
   boardId: string,
@@ -1277,22 +805,11 @@ export async function aplicarLoteDeColunas(
     `/api/v1/boards/${boardId}/columns`,
     {
       method: "PUT",
-      // ⚠️ CORPO MONTADO CAMPO A CAMPO -> PRECISA DE `*Corpo.test.ts`. Regra da
-      // fatia 5b-7: `body: input` e imune porque campo novo chega sozinho;
-      // isto aqui nao e. O guardiao e `lib/__tests__/loteDeColunasCorpo.test.ts`.
+      // Corpo montado campo a campo: campo novo no tipo precisa de linha aqui (guardião: `loteDeColunasCorpo.test.ts`).
       body: {
         criar: lote.criar ?? [],
         renomear: lote.renomear ?? [],
-        // ⚠️ A LINHA QUE A F9 QUASE NÃO TEVE, pelo mesmo motivo do `alvos`
-        // abaixo e do `board_id` da fatia 5b-6: este corpo é montado CAMPO A
-        // CAMPO. Declarar `avisos` no tipo não o põe no PUT -- sem esta linha,
-        // desmarcar "Cobrar prazo" responderia 200 e não teria mudado nada.
-        // O guardião é `lib/__tests__/loteDeColunasCorpo.test.ts`.
         avisos: lote.avisos ?? [],
-        // ⚠️ A LINHA QUE O `board_id` NAO TEVE. Declarar no tipo NAO poe no
-        // corpo -- e este corpo e montado campo a campo, que e por que o
-        // `loteDeColunasCorpo.test.ts` existe. Sem esta linha o alvo seria
-        // descartado em silencio e o lote responderia 200.
         alvos: lote.alvos ?? [],
         apagar: lote.apagar ?? [],
         ordem: lote.ordem ?? [],
@@ -1302,16 +819,8 @@ export async function aplicarLoteDeColunas(
 }
 
 /**
- * Uma coluna com quantas tarefas VIVAS ela tem. E o numero do aviso de apagar.
- *
- * ⚠️ ELE ENVELHECE, e a tela tem de aceitar isso. Alguem pode mover uma tarefa
- * para ca entre esta chamada e o lote. O que o lote devolve (`movidas`) e
- * quantas REALMENTE moveram -- se os dois numeros divergirem, quem mente e o
- * aviso.
- *
- * ⚠️ NAO CONTA APAGADAS e CONTA ARQUIVADAS. E o numero que a PESSOA ve; tarefa
- * apagada nao existe para ela. O movimento leva as apagadas junto por causa da
- * FK `RESTRICT`, entao os dois numeros divergem por desenho.
+ * Uma coluna com quantas tarefas vivas ela tem (o número do aviso de apagar; envelhece).
+ * Conta arquivadas, não conta apagadas.
  */
 export async function colunaComContagem(
   boardId: string,
@@ -1324,25 +833,12 @@ export async function colunaComContagem(
 
 
 /**
- * As colunas do quadro de uma TAREFA (fatia 4c-2), ordenadas por posicao.
- *
- * ⚠️ MESMA REGRA DO `Board.tsx`, e ela mora aqui para nao virar duas: o quadro
- * sai do `board_id` DA TAREFA, e o padrao e so o ultimo recurso -- para o caso
- * de o quadro nao voltar na lista (sem alcance, apagado). Escolher pelo
- * padrao direto e o defeito que a sabotagem da 4c-1 pegou.
- *
- * ⚠️ DEVOLVE `[]` EM VEZ DE LEVANTAR, igual a `colunasDoQuadroGeral`: quem
- * chama distingue "ainda carregando" (`null` no estado) de "carregou e nao ha
- * coluna" (`[]`).
+ * As colunas do quadro de uma tarefa, ordenadas. O quadro sai do `board_id` da tarefa; o padrão é só reserva.
+ * Devolve `[]` em vez de levantar.
  */
 export async function colunasDoQuadro(boardId: string): Promise<Coluna[]> {
   const quadros = await listBoards();
-  // ⚠⚠ A RESERVA NÃO CHUTA COM MAIS DE UM GERAL (14/09). Ela só dispara
-  // quando o quadro da tarefa não voltou na lista (sem alcance, apagado), e
-  // era `find(is_default)` -- "o" geral, no singular, o mesmo defeito 3.3. Com
-  // dois times raiz ela mostraria as colunas do OUTRO time no modal. Sem
-  // como saber qual, `[]` ("não há coluna") é a resposta honesta; com um
-  // geral só, ele continua valendo.
+  // Reserva só com um quadro geral: com vários não há como saber qual, e `[]` é a resposta honesta.
   const gerais = quadros.filter((q) => q.is_default);
   const quadro =
     quadros.find((q) => q.id === boardId) ??
@@ -1356,51 +852,25 @@ export type TaskCreateInput = {
   title: string;
   description?: string;
   priority?: string;
-  /**
-   * Spec 038, fatia A. ⚠️ DECLARAR AQUI NAO BASTA -- `createTask` monta o
-   * corpo CAMPO A CAMPO, e foi exatamente assim que o `board_id` ficou de fora
-   * por uma fatia inteira (ver o comentario dentro do corpo). O guardiao e
-   * `lib/__tests__/createTaskCorpo.test.ts`, e nao teste de componente.
-   */
+  /** `createTask` monta o corpo campo a campo: declarar aqui não basta (guardião: `createTaskCorpo.test.ts`). */
   start_date?: string | null;
   due_date?: string | null;
-  /** Spec 038, fatia B. ⚠️ Hora SEM data volta 422 (`_validate_hora`). */
+  /** Hora sem data volta 422. */
   due_time?: string | null;
-  project_id?: string | null; // criar dentro de um projeto (Entrega 11)
-  assignee_ids?: string[]; // Spec 021: responsaveis ja na criacao
-  /**
-   * Spec 053, fatia D: seguidores ja na criacao. ⚠️ DECLARAR AQUI NAO BASTA
-   * -- ver a linha dentro do corpo de `createTask` e o
-   * `createTaskCorpo.test.ts`. O backend e atomico: quem nao alcanca volta
-   * em `details.invalid_ids` com `details.field = "watcher_ids"`.
-   */
+  project_id?: string | null; // criar dentro de um projeto
+  assignee_ids?: string[]; // responsáveis já na criação
+  /** Seguidores já na criação (precisa da linha no corpo de `createTask`). Quem não alcança volta em `details.invalid_ids`. */
   watcher_ids?: string[];
-  // Fatia 5: time EXPLICITO da task de topo. Ausente => pin na raiz
-  // (ADR 0001, comportamento de hoje). Presente => usa este time
-  // (ex.: quadro de subtime cria task INTERNA daquele subtime).
+  // Time explícito da task de topo. Ausente => pin no time raiz.
   team_id?: string | null;
   /**
-   * Spec 036, fatia 5b-6: em QUAL quadro a tarefa de topo nasce.
-   *
-   * ⚠️ AUSENTE ou `null` = Quadro geral, que e o comportamento de sempre e o
-   * de 100% das tarefas ate 12/08. So a tela de um quadro AVULSO preenche.
-   *
-   * ⚠️ IGNORADO EM SUBTAREFA -- filha herda o quadro do pai (ADR 0024). O
-   * backend descarta; nao ha erro a esperar.
-   *
-   * ⚠️ O BACKEND CONFERE O ALCANCE (`_assert_board_in_reach`) e devolve 422
-   * com `board_fora_de_alcance` se o quadro nao estiver na lente de quem
-   * escreve. Este campo nao e confiavel so por estar tipado aqui.
+   * Em qual quadro a tarefa de topo nasce. Ausente/`null` = Quadro geral. Ignorado em subtarefa (herda do pai).
+   * O backend confere o alcance (422 `board_fora_de_alcance`).
    */
   board_id?: string | null;
 };
 
-/**
- * Spec 033. ⚠️ NAO TEM CAMPO DE DATA, e isso e a D5 defendida no cliente.
- * A copia nasce sem prazo; um `due_date` aqui e a copia de uma campanha de
- * marco nasce vencida e o job dispara TASK_OVERDUE em lote.
- * ⚠️ NAO TEM CAMPO DE STATUS: copia nasce BACKLOG, sempre.
- */
+/** Sem data (a cópia nasceria vencida) e sem status (nasce BACKLOG). */
 export type TaskDuplicateInput = {
   title: string;
   description?: string;
@@ -1411,35 +881,18 @@ export type TaskDuplicateInput = {
   /** Responsaveis do PAI, ja revisados no modal. */
   assignee_ids?: string[];
   include_subtasks?: boolean;
-  /**
-   * ⚠️ D13, MORTO em 05/08 pela ADR 0031. O backend ainda aceita por
-   * compatibilidade, mas o modal nao manda mais: nao existe "leve sem
-   * responsaveis". Quem nao pode herdar e resolvido no passo 2, ANTES do
-   * POST. Voltar a mandar `false` reabre a porta da subtarefa orfa.
-   */
+  /** Obsoleto: o backend ainda aceita, mas o modal não manda. Mandar `false` reabre a subtarefa órfã. */
   include_assignees?: boolean;
-  /**
-   * PASSO 2 (ADR 0031). Chaves = ids de subtarefa DIRETA da origem.
-   * Ausentes = herda como sempre. Lista vazia e recusada pelo backend com
-   * 422 -- quem nao vai, vai em `skip_subtasks`.
-   */
+  /** Chaves = ids de subtarefa direta da origem; ausentes herdam. Lista vazia = 422 (use `skip_subtasks`). */
   subtask_assignees?: Record<string, string[]>;
   /** Subtarefas diretas que NAO vao. Leva a subarvore delas junto. */
   skip_subtasks?: string[];
 };
 
 export type TaskDuplicateResult = Task & {
-  /**
-   * D9-c: responsaveis de SUBTAREFA descartados por nao alcancarem mais a
-   * task. Vazio e o normal. Nao vazio = alguma subtarefa nasceu sem
-   * responsavel, e a tela avisa.
-   */
+  /** Responsáveis de subtarefa descartados por não alcançarem mais a task; não vazio = a tela avisa. */
   skipped_assignees: string[];
-  /**
-   * True = a copia virou tarefa de TOPO porque a irma que ela seria nasceria
-   * dentro de um pai ARQUIVADO -- e o quadro so desenha raiz (Board.tsx:580),
-   * entao ela existiria sem nenhuma tela pra mostra-la. A tela AVISA.
-   */
+  /** A cópia virou tarefa de topo porque nasceria dentro de um pai arquivado (sem tela que a mostre). A tela avisa. */
   promoted_to_root: boolean;
 };
 
@@ -1447,10 +900,7 @@ export async function duplicateTask(
   taskId: string,
   input: TaskDuplicateInput
 ): Promise<TaskDuplicateResult> {
-  // ⚠️ Sem o pin na raiz do `createTask`: aqui o time vem do modal (que
-  // herdou o da origem) ou fica ausente pro backend resolver pela
-  // precedencia normal. Chamar `getRootTeamId()` aqui jogaria toda copia
-  // feita num quadro de subtime para a raiz.
+  // Sem o pin do `createTask`: o time vem do modal ou o backend resolve. O pin jogaria cópia de subtime na raiz.
   return api<TaskDuplicateResult>(
     `/api/v1/tasks/${encodeURIComponent(taskId)}/duplicate`,
     {
@@ -1465,13 +915,7 @@ export async function duplicateTask(
         assignee_ids: input.assignee_ids ?? [],
         include_subtasks: input.include_subtasks ?? false,
         include_assignees: input.include_assignees ?? true,
-        // ⚠️ ESTE CORPO E MONTADO CAMPO A CAMPO, entao campo novo no tipo
-        // NAO chega ao backend sozinho -- em 05/08 o passo 2 do modal montou
-        // as duas chaves, os testes do componente afirmaram que o modal as
-        // mandava (com `duplicateTask` MOCKADO) e nada chegava na API: a
-        // subtarefa nascia sem responsavel e a "nao levar" ia junto assim
-        // mesmo. Ao acrescentar campo em `TaskDuplicateInput`, acrescente
-        // aqui tambem.
+        // Corpo montado campo a campo: campo novo em `TaskDuplicateInput` precisa de linha aqui.
         subtask_assignees: input.subtask_assignees ?? {},
         skip_subtasks: input.skip_subtasks ?? [],
       },
@@ -1480,16 +924,7 @@ export async function duplicateTask(
 }
 
 export async function createTask(input: TaskCreateInput): Promise<Task> {
-  // Fatia 5: se o chamador deu um team_id explicito (quadro de subtime),
-  // usa ele; senao mantem o pin na raiz (ADR 0001, comportamento atual).
-  //
-  // ⚠️ DESDE A SPEC 044 FATIA 4 ESTE PIN NAO E MAIS A UNICA LINHA DE DEFESA:
-  // o backend passou a derivar o time do QUADRO quando ninguem manda `team_id`
-  // (`TaskService._time_do_quadro_alvo`), e o resultado e o mesmo -- sem
-  // quadro pedido, a raiz. O pin FICA de proposito: tira-lo trocaria uma
-  // chamada de rede a menos por nada, e duas defesas concordando e o desenho
-  // de `_assert_team_in_reach` e `_assert_board_in_reach`, que tambem existem
-  // apesar de a tela nao oferecer o caminho.
+  // `team_id` explícito (quadro de subtime) ou pin no time raiz. O backend também deriva do quadro; o pin fica como segunda defesa.
   const teamId =
     input.team_id !== undefined && input.team_id !== null
       ? input.team_id
@@ -1500,52 +935,24 @@ export async function createTask(input: TaskCreateInput): Promise<Task> {
       title: input.title,
       description: input.description ?? "",
       priority: input.priority, // ausente => backend usa MEDIUM
-      // ⚠️ A LINHA QUE O `board_id` NAO TEVE. Declarar no tipo nao poe no
-      // corpo -- ver o bloco de aviso mais abaixo, escrito depois de a tarefa
-      // criada num quadro avulso nascer no Quadro geral por uma fatia inteira.
+      // Corpo montado campo a campo: todo campo do tipo precisa de linha aqui (guardião: `createTaskCorpo.test.ts`).
       start_date: input.start_date ?? null,
       due_date: input.due_date ?? null,
-      // ⚠️ A LINHA QUE O `board_id` NAO TEVE, pela terceira vez nesta spec.
       due_time: input.due_time ?? null,
       // pin: so manda team_id se a raiz foi resolvida.
       ...(teamId ? { team_id: teamId } : {}),
       // project_id explicito (task de projeto) ou ausente (avulsa no raiz).
       ...(input.project_id ? { project_id: input.project_id } : {}),
-      // Spec 021: responsaveis na criacao (so manda se houver).
+      // Responsáveis na criação (só manda se houver).
       ...(input.assignee_ids?.length ? { assignee_ids: input.assignee_ids } : {}),
-      // ⚠️ Spec 053, fatia D -- a MESMA armadilha do `board_id` abaixo. Sem
-      // esta linha os seguidores escolhidos no modal somem em silencio.
       ...(input.watcher_ids?.length ? { watcher_ids: input.watcher_ids } : {}),
-      // ⚠️ FALTAVA, DESDE A FATIA 5b-6 (achado em 13/08, na tela). O tipo
-      // `TaskCreateInput` declara `board_id` com quinze linhas de comentario,
-      // o `TaskModal` o preenche, o `Board` o passa e o backend inteiro o
-      // consome (schema -> router -> `TaskService.create`) -- e ESTA linha,
-      // que poe o campo no CORPO, nunca existiu. A tarefa criada dentro de um
-      // quadro avulso nascia no Quadro geral.
-      //
-      // ⚠️ E NAO DAVA ERRO EM LUGAR NENHUM: `board_id` e opcional no backend,
-      // entao a ausencia cai em `default_board_and_column_for_status`, que
-      // devolve o Quadro geral. Verde nos tres portoes, verde no CI, e o
-      // sintoma so aparece na tela -- a tarefa some do quadro em que a pessoa
-      // estava e reaparece na lente do time.
-      //
-      // ⚠️ OS TESTES DE COMPONENTE NAO PEGAM ISTO, e chegaram a dar falsa
-      // confianca: eles mockam `createTask` e afirmam o ARGUMENTO, nao o
-      // corpo. O guardiao certo e `lib/__tests__/createTaskCorpo.test.ts`,
-      // irmao do `duplicateTaskCorpo.test.ts` -- que existe porque a MESMA
-      // falha aconteceu em 05/08 com `subtask_assignees` e `skip_subtasks`.
       ...(input.board_id ? { board_id: input.board_id } : {}),
     },
   });
 }
 
-// ---------------------------------------------------------------
-// EDICAO / MUDANCA DE STATUS  (Slice 2: mover; Slice 3: editar)
-// ---------------------------------------------------------------
-// PATCH parcial: so os campos presentes mudam. project_id e
-// parent_task_id NAO entram aqui (seriam /move). O drag entre colunas
-// usa isto enviando so { status }. O backend ajusta completed_at sozinho
-// ao entrar/sair de COMPLETED.
+// ---- Edição: PATCH parcial, só os campos presentes mudam. project_id/parent_task_id vão por /move.
+// O backend ajusta completed_at ao entrar/sair de COMPLETED.
 
 export type TaskUpdateInput = {
   title?: string;
@@ -1553,49 +960,16 @@ export type TaskUpdateInput = {
   priority?: string;
   status?: string;
   /**
-   * Spec 038, fatia A.
-   *
-   * ⚠️ AQUI DECLARAR BASTA, e a diferenca para o `createTask` e o motivo de
-   * este comentario existir: `updateTask` manda `body: input` inteiro, entao o
-   * campo viaja sozinho. O `createTask` monta campo a campo e precisou de uma
-   * linha no corpo. **Dois caminhos, duas regras** -- e e por isso que o teste
-   * de corpo existe para um e nao para o outro.
-   *
-   * ⚠️ `null` LIMPA, `undefined` NAO MEXE. O backend usa `fields_set`
-   * (`task_service.py:1112`), entao mandar `start_date: null` apaga a data e
-   * omitir o campo a preserva. A tela precisa mandar `null` explicito quando a
-   * pessoa limpa o campo -- `""` viraria 422.
-   *
-   * ⚠️ E O BACKEND RECUSA `start_date > due_date` com 422 (`_validate_dates`,
-   * `task_service.py:1613`), conferindo o estado FINAL da tarefa e nao so o
-   * que veio no corpo. Quem chama tem de saber ler esse erro.
+   * `body: input` inteiro: aqui declarar basta. `null` limpa, `undefined` não mexe (`""` = 422).
+   * O backend recusa `start_date > due_date` (422), conferindo o estado final.
    */
   start_date?: string | null;
   due_date?: string | null;
-  /**
-   * Spec 038, fatia B.
-   *
-   * ⚠️ `null` LIMPA, `undefined` NAO MEXE -- mesmo `fields_set` do vizinho.
-   *
-   * ⚠️ E O BACKEND VALIDA O PAR RESULTANTE: apagar so o `due_date` de uma
-   * tarefa que TEM hora volta 422, mesmo sem `due_time` no corpo. Quem limpa a
-   * data tem de limpar a hora junto.
-   */
+  /** `null` limpa, `undefined` não mexe. Apagar o `due_date` de tarefa com hora volta 422: limpe os dois. */
   due_time?: string | null;
   /**
-   * Fatia 5a do backend (ADR 0041): mover a tarefa de COLUNA, com o status
-   * derivado dela pelo servidor.
-   *
-   * ⚠️ MUTUAMENTE EXCLUSIVO COM `status` -- mandar os dois na mesma chamada
-   * devolve 422 (`validation_error`, `details.field = "column_id"`). O tipo
-   * nao consegue expressar isso sem partir `TaskUpdateInput` em dois, e
-   * partir tornaria toda chamada existente mais verbosa para proteger um erro
-   * que so um caminho novo pode cometer. **A regra vale, e quem a viola
-   * descobre no 422, nao no `tsc`.**
-   *
-   * ⚠️ O front NAO consegue calcular o status resultante: a ponte
-   * (`legacy_status`) nao viaja no `GET /boards`, de proposito (ADR 0033).
-   * Quem precisa do status novo le a RESPOSTA desta chamada.
+   * Move de coluna; o servidor deriva o status. Exclusivo com `status` (os dois = 422).
+   * O front não calcula o status resultante: leia a resposta.
    */
   column_id?: string;
 };
@@ -1607,18 +981,12 @@ export async function updateTask(
   return api<Task>(`/api/v1/tasks/${id}`, { method: "PATCH", body: input });
 }
 
-// Busca UMA task por id (GET /tasks/{id}). Usado pra reconstruir a cadeia de
-// pais quando abro uma subtarefa por deep-link e o pai nao esta na minha lista.
-// O backend responde TaskResponse + ids de colaboradores (campos a mais, que o
-// tipo Task ignora sem problema).
+// Busca uma task por id (reconstruir a cadeia de pais num deep-link).
 export async function getTask(id: string): Promise<Task> {
   return api<Task>(`/api/v1/tasks/${id}`);
 }
 
-// Move a task pra outro projeto e/ou pai, OU tira de projeto (avulsa, Spec 022:
-// detach_project=true). Endpoint SEPARADO do PATCH -- project_id/parent_task_id
-// NAO entram no updateTask de proposito. Como toda mutacao de task, a resposta
-// NAO traz assignee_ids -> preservar no merge do estado local (ADR 0025).
+// Move para outro projeto e/ou pai, ou tira de projeto (`detach_project`). A resposta não traz assignee_ids: preserve no merge.
 export type TaskMoveInput = {
   project_id?: string;
   parent_task_id?: string;
@@ -1630,21 +998,15 @@ export async function moveTask(
   input: TaskMoveInput
 ): Promise<Task> {
   const t = await api<Task>(`/api/v1/tasks/${id}/move`, { method: "POST", body: input });
-  // ⚠️ O projeto decide quem ALCANCA a tarefa (30/09), e o cache de membros
-  // por tarefa e por sessao: sem esta linha, mover de projeto deixava o
-  // seletor de responsavel com a gente do projeto antigo ate um F5
-  // (auditoria de 21/10).
+  // O projeto decide quem alcança a tarefa: o cache de membros por tarefa fica velho.
   _membersPorTarefa.delete(id);
   return t;
 }
 
-/** Spec 062: a resposta do `relocate`. `task` e `null` na previa. */
+/** Resposta do `relocate`; `task` é `null` na prévia. */
 export type RespostaDoMover = PreviaDoMover & { task: Task | null };
 
-/**
- * Spec 062: move para outro quadro e/ou outra mae, levando a subarvore. Com
- * `dry_run`, so devolve a previa (quem sai, quem assume, o projeto).
- */
+/** Move para outro quadro e/ou outra mãe, levando a subárvore. Com `dry_run` só devolve a prévia. */
 export async function relocateTask(
   id: string,
   corpo: CorpoDoMover,
@@ -1654,13 +1016,12 @@ export async function relocateTask(
     method: "POST",
     body: { ...corpo, dry_run: dryRun },
   });
-  // Mesmo motivo do `moveTask`: o time e o projeto mudam quem alcanca.
-  // As subtarefas foram junto, e o alcance delas mudou tambem.
+  // Time e projeto mudam quem alcança, inclusive nas subtarefas.
   if (!dryRun) _membersPorTarefa.clear();
   return r;
 }
 
-/** Spec 062: tarefas de qualquer nivel do quadro, com o caminho. */
+/** Tarefas de qualquer nível do quadro, com o caminho. */
 export async function searchBoardTasks(
   boardId: string,
   q: string,
@@ -1670,14 +1031,9 @@ export async function searchBoardTasks(
   return api<AchadoDaBusca[]>(`/api/v1/boards/${boardId}/tasks/search?${params}`);
 }
 
-// ---------------------------------------------------------------
-// MEMBROS  (dropdown de responsavel + resolucao de nome/iniciais do selo)
-// ---------------------------------------------------------------
-// O /assignees devolve so user_ids; o nome e as iniciais do selo saem daqui.
-// Lista por-workspace, estavel na sessao -> buscada uma vez e memoizada
-// (mesmo padrao do time raiz). Limpa no clearTokens.
+// ---- Membros: nome e iniciais do selo. Lista memoizada na sessão; limpa no clearTokens.
 
-/** Papel na ORGANIZACAO -- sem time (Spec 045, fatia B). */
+/** Papel na organização (sem time). */
 export type OrgRole = "ADMIN" | "GESTOR";
 
 export type Member = {
@@ -1686,37 +1042,16 @@ export type Member = {
   name: string;
   email: string;
   is_active: boolean;
-  // Papel na ORGANIZACAO (Spec 045, fatia B). `null` = nenhum, a maioria.
-  // A `/organizacao` mostra os gestores no cabecalho a partir daqui.
+  // Papel na organização; `null` = nenhum (a maioria).
   org_role?: OrgRole | null;
-  // ⚠️ ALIMENTA A ABA "CONVIDADOS": quem recebeu a senha provisória e ainda
-  // NÃO entrou. Não é estado novo no banco -- é `is_active` cruzado com este
-  // campo. Ver `memberState` em `lib/memberState.ts`.
+  // Alimenta a aba "Convidados" (`memberState`): senha provisória e ainda não entrou.
   must_change_password?: boolean;
-  // ⚠️⚠️ AS AREAS (raizes) da pessoa -- Spec 047, fatia B. DISTINTO de
-  // `team_ids`, logo abaixo, que traz so os SUBTIMES. Quem esta vinculado
-  // apenas na area tem `team_ids` VAZIO e `area_ids` cheio -- usar o campo
-  // errado no card "Pessoas sem area" classificaria essa pessoa como solta.
-  // Lista vazia AQUI = sem vinculo nenhum.
-  // ⚠️ Opcional porque respostas de MUTACAO nao a resolvem; so a listagem.
-  area_ids?: string[];
-  // ⚠️ TODOS os vinculos, COM o papel (Spec 047, fatia C). A tabela da tela
-  // de time mostra `SEO · supervisor` -- sem o papel, a coluna diz ONDE a
-  // pessoa esta e esconde O QUE ela e, numa tela cujo assunto e permissao.
-  //
-  // ⚠️ NAO SUBSTITUI `team_ids`: aquele e a projecao SO-SUBTIMES de que o
-  // filtro do quadro depende. Os dois saem da MESMA consulta no backend,
-  // entao nao ha como discordarem. Opcional pelo mesmo motivo de `area_ids`.
+  // Os times raiz da pessoa; `team_ids` traz só subtimes. Vazio = sem vínculo nenhum.
+  // Opcional: respostas de mutação não trazem, só a listagem.
+  root_team_ids?: string[];
+  // Todos os vínculos, com o papel. Não substitui `team_ids` (só subtimes, usado pelo filtro do quadro). Opcional como `root_team_ids`.
   memberships?: MemberTeam[];
-  // Entrega 13 (Fatia 2): ids dos SUBTIMES do membro (times nao-raiz). O
-  // backend nunca devolve aqui o time raiz. Usado pelo filtro de subtime no
-  // quadro (Fatia 3). Lista VAZIA = sem subtime; nao existe `null`.
-  //
-  // ⚠️⚠️ ERA `team_id: string | null` ate 31/08 (Spec 044, fatia 1), e a troca
-  // de NOME foi deliberada. Somar `team_ids` ao lado do singular deixaria os
-  // consumidores compilando e errados -- o roteiro exato do defeito que a
-  // spec existe para nao repetir. Assim o `tsc` para em cada um deles, e e o
-  // unico portao que pega esta classe de mudanca.
+  // Ids dos subtimes do membro (nunca o time raiz). Vazia = sem subtime; não existe `null`.
   team_ids: string[];
 };
 
@@ -1724,25 +1059,12 @@ type MemberListResponse = { items: Member[]; total: number };
 
 let _members: Member[] | undefined; // undefined = ainda nao buscado
 
-// Spec 034: cache SEPARADO por tarefa. ⚠️ NAO reaproveitar `_members` aqui --
-// a lista filtrada depende da tarefa, e compartilhar a mesma entrada faria a
-// PRIMEIRA tarefa aberta na sessao definir os seletores de todas as outras. O
-// sintoma seria "as vezes o gestor aparece, as vezes nao": intermitente,
-// invisivel pros tres portoes, e caro de reproduzir.
+// Cache separado por tarefa: compartilhar com `_members` faria a primeira tarefa aberta definir os seletores de todas.
 const _membersPorTarefa = new Map<string, Member[]>();
 
 /**
- * Lista os membros do workspace.
- *
- * Sem argumento: lista completa, memoizada -- comportamento historico, usado
- * por seis telas.
- *
- * Com `reachesTaskId` (Spec 034): so quem ALCANCA aquela tarefa, pela regra do
- * backend (`user_can_view_task`, a MESMA que o POST de designacao usa). Serve
- * os dois seletores da tela de tarefa: responsavel e `@`.
- *
- * ⚠️ Nao serve o modal de CRIAR: la a tarefa ainda nao existe, entao nao ha
- * id pra perguntar. Aquele caminho segue em `lib/escopoTarefa.ts`.
+ * Membros do workspace. Sem argumento: lista completa, memoizada.
+ * Com `reachesTaskId`: só quem alcança aquela tarefa (regra do backend). O modal de criar usa `listMembersDoTime`.
  */
 export async function listMembers(reachesTaskId?: string): Promise<Member[]> {
   if (reachesTaskId === undefined) {
@@ -1760,19 +1082,12 @@ export async function listMembers(reachesTaskId?: string): Promise<Member[]> {
   return res.items;
 }
 
-// Cache por TIME, separado dos outros dois pelo mesmo motivo (Spec 034).
+// Cache por time, separado dos outros dois.
 const _membersPorTime = new Map<string, Member[]>();
 
 /**
- * Membros que enxergam as tasks de um TIME (Spec 034, Fatia 5).
- *
- * Serve o modal de CRIAR: a tarefa ainda nao existe, entao nao ha id pra
- * `listMembers(taskId)`. A pergunta vira "quem enxerga este time".
- *
- * ⚠️ Funcao SEPARADA, e nao um segundo argumento de `listMembers`. Com dois
- * argumentos opcionais, `listMembers(undefined, teamId)` compila e
- * `listMembers(teamId)` tambem -- e a segunda manda um id de TIME no
- * parametro de TAREFA, o que devolve 404 em vez de erro de tipo.
+ * Membros que enxergam as tasks de um time (modal de criar, sem id de tarefa).
+ * Função separada: um segundo argumento opcional deixaria passar id de time no lugar do de tarefa.
  */
 export async function listMembersDoTime(teamId: string): Promise<Member[]> {
   const emCache = _membersPorTime.get(teamId);
@@ -1784,33 +1099,20 @@ export async function listMembersDoTime(teamId: string): Promise<Member[]> {
   return res.items;
 }
 
-// ---------------------------------------------------------------
-// GESTAO DE MEMBROS  (Entrega 15) -- exige team.manage no backend
-// ---------------------------------------------------------------
+// ---- Gestão de membros (exige team.manage no backend).
 
 export type MemberRole = "MANAGER" | "SUPERVISOR" | "OPERATOR";
 
-// Spec 015, Fatia 1: vinculo (time, papel) de um membro. Alimenta a UI de
-// administracao de papel (mostrar o papel atual antes de oferecer alterar).
+// Vínculo (time, papel) de um membro.
 export type MemberTeam = { team_id: string; role: MemberRole };
 
 /**
- * Um vínculo NA LISTAGEM de `/members/{id}/teams`, com o cadeado resolvido.
- *
- * ⚠️⚠️ `can_edit_role` VEM DO BACKEND, e o painel NÃO pode recalculá-lo. A
- * Spec 034 já desfez uma regra de escopo espelhada no front -- ela fazia
- * gestor e admin sumirem dos seletores, e foi reportado duas vezes com
- * captura. A prescrição é literal: "se aparecer necessidade de filtrar escopo
- * no front, falta parâmetro na rota". Este é o parâmetro (Spec 047, fatia A).
- *
- * ⚠️ Ele responde SÓ pelo papel. Remover do time é outra rota, com outro gate
- * (aberto ao SUPERVISOR pela Spec 028) -- usar este campo para esconder o
- * botão de remover esconderia uma ação permitida.
+ * Um vínculo de `/members/{id}/teams` com o cadeado. `can_edit_role` vem do backend; não recalcular no front.
+ * Responde só pelo papel: remover do time é outra rota, com outro gate.
  */
 export type MemberTeamComCadeado = MemberTeam & { can_edit_role: boolean };
 
-// POST /members devolve a senha provisoria UMA vez (ADR 0021 backend /
-// 0008 front). So existe nesta resposta; nao e re-buscavel.
+// POST /members devolve a senha provisória uma vez; não é re-buscável.
 export type MemberCreated = Member & {
   must_change_password: boolean;
   password_expires_at: string | null;
@@ -1824,23 +1126,15 @@ export type ResetPasswordResult = {
   temporary_password: string;
 };
 
-// Zera o cache de membros -> a proxima listMembers() rebusca. Chamar apos
-// cadastrar/desativar pra lista e seletores de responsavel (Board/TaskDetail)
-// nao ficarem defasados (D8).
+// Zera o cache de membros; chamar após cadastrar/desativar/trocar papel.
 export function invalidateMembers() {
   _members = undefined;
-  // ⚠️ Limpar TAMBEM o cache por tarefa (Spec 034). Desativar alguem e zerar
-  // so `_members` deixaria a pessoa viva nos seletores de toda tarefa que ja
-  // tivesse sido aberta na sessao.
+  // Também o cache por tarefa: senão a pessoa desativada segue nos seletores de tarefas já abertas.
   _membersPorTarefa.clear();
   _membersPorTime.clear();
 }
 
-// Spec 014: cadastra um membro. teamId e role sao OBRIGATORIOS -- o time pode
-// ser o principal (raiz) ou um subtime, escolha explicita na tela. Exige
-// team.manage (403); criar role=ADMIN exige ator ADMIN (403 do gate D2);
-// 409 = e-mail repetido; 422 = campos invalidos / "1 subtime". Invalida o
-// cache no sucesso.
+// Cadastra um membro; teamId e role obrigatórios (raiz ou subtime). 409 = e-mail repetido; 422 = campos inválidos.
 export async function createMember(input: {
   name: string;
   email: string;
@@ -1860,47 +1154,30 @@ export async function createMember(input: {
   return r;
 }
 
-/** Uma pessoa DENTRO de um time, com o cadeado. Spec 047, revisao de 09/09. */
+/** Uma pessoa dentro de um time, com o cadeado. */
 export type TeamMemberComCadeado = {
   user_id: string;
   role: MemberRole;
-  // ⚠️ A conta esta ATIVA? A tela precisa distinguir DUAS razoes para o
-  // cadeado fechado: "fora do seu escopo" e "esta pessoa foi desativada". As
-  // duas travam a edicao, mas a segunda tem explicacao propria.
+  // Conta ativa? Separa as duas razões do cadeado fechado: fora do escopo e desativada.
   is_active: boolean;
   can_edit_role: boolean;
 };
 
-/**
- * Quem esta NESTE time, e quais desses cargos eu posso trocar.
- *
- * ⚠️⚠️ E O ESPELHO de `listMemberTeams`: aquela responde "onde esta esta
- * pessoa?", esta responde "quem esta neste time?". A gaveta do subtime faz a
- * segunda -- e ate 09/09 ela tinha os vinculos (pela listagem de membros) mas
- * NAO o cadeado de cada um, entao nao oferecia edicao nenhuma. A Camila tentou
- * trocar o cargo ali e nao conseguiu.
- *
- * ⚠️ ROTA NOVA, e nao regra espelhada no front: *"se aparecer necessidade de
- * filtrar escopo no front, falta parametro na rota"*. Deduzir o cadeado na
- * tela e exatamente o que a Spec 034 desfez.
- */
+/** Quem está neste time e quais desses cargos posso trocar (espelho de `listMemberTeams`). O cadeado vem do backend. */
 export async function listTeamMembers(
   teamId: string,
 ): Promise<TeamMemberComCadeado[]> {
   return api<TeamMemberComCadeado[]>(`/api/v1/members/by-team/${teamId}`);
 }
 
-// Spec 015, Fatia 1: papeis de um membro por time. Leitura -- so exige estar
-// autenticado. Nao usa o cache de membros (e detalhe sob demanda).
+// Papéis de um membro por time. Não usa o cache de membros.
 export async function listMemberTeams(
   userId: string,
 ): Promise<MemberTeamComCadeado[]> {
   return api<MemberTeamComCadeado[]>(`/api/v1/members/${userId}/teams`);
 }
 
-// Spec 015, Fatia 2: troca o papel de um membro num time. Exige team.manage;
-// matriz no backend (ADMIN qualquer; MANAGER so SUPERVISOR/OPERATOR; ninguem
-// altera o proprio). 403 = matriz; 404 = vinculo inexistente.
+// Troca o papel de um membro num time; matriz no backend. 403 = matriz; 404 = vínculo inexistente.
 export async function changeMemberRole(
   userId: string,
   teamId: string,
@@ -1910,22 +1187,12 @@ export async function changeMemberRole(
     method: "PATCH",
     body: { role },
   });
-  // ⚠️⚠️ FALTAVA, e o sintoma era exatamente este: *"quando mudo o cargo nao
-  // atualiza na hora na tela"*. `listMembers()` e MEMOIZADO em modulo, e o
-  // PAPEL viaja dentro de `Member.memberships` -- entao trocar o cargo mudava
-  // o banco e a tela seguia lendo a lista velha do cache.
-  //
-  // ⚠️ As irmas (`assignMemberToTeam`, `removeMemberFromTeam`,
-  // `changeOrganizationRole`) ja invalidavam. Esta escapou porque o efeito
-  // dela nao MUDA A LISTA -- muda um campo dentro de cada item --, e isso e
-  // facil de nao ver ate a tela contar a historia velha.
+  // O papel viaja em `Member.memberships`, que está no cache memoizado.
   invalidateMembers();
   return r;
 }
 
-// Spec 016: adiciona um membro EXISTENTE a um time, com um papel. Exige
-// team.manage; matriz no backend (ADMIN qualquer; MANAGER SUP/OP -> 403);
-// 409 = ja no time; 422 = 2o subtime. Invalida o cache (a lista pode mudar).
+// Adiciona um membro existente a um time. 409 = já no time; 422 = 2º subtime.
 export async function assignMemberToTeam(
   userId: string,
   teamId: string,
@@ -1939,8 +1206,7 @@ export async function assignMemberToTeam(
   return r;
 }
 
-// Spec 015, Fatia 4: remove um membro de um time (B3). 204 sem corpo. Matriz
-// (403) + anti-lockout/anti-orfao (409 se for o ultimo vinculo) no backend.
+// Remove um membro de um time; 204. 409 se for o último vínculo.
 export async function removeMemberFromTeam(
   userId: string,
   teamId: string
@@ -1951,20 +1217,12 @@ export async function removeMemberFromTeam(
   invalidateMembers(); // o subtime exibido na lista pode mudar
 }
 
-// Reset administrativo: gera nova senha provisoria, devolvida UMA vez
-// (team.manage). Nao invalida _members (so muda senha, nao a lista).
-/**
- * Os botões da CONTA de uma pessoa: quem olha consegue resetar a senha dela, e
- * desativá-la? (Spec 051, fatia E)
- *
- * ⚠️ O SERVIDOR RESPONDE, pelas mesmas travas das duas ações. A gaveta decidia
- * por "alcance amplo" e mostrava os botões ao gerente na conta de outro
- * gerente -- que o servidor recusa desde o conserto de 16/09 (#57).
- */
+// Reset administrativo: nova senha provisória, devolvida uma vez. Não invalida `_members`.
+/** Os botões da conta de uma pessoa (resetar senha, desativar), respondidos pelo servidor. */
 export type AcoesDaConta = {
   can_reset_password: boolean;
   can_deactivate: boolean;
-  /** 06/10/2026: só conta DESATIVADA. E conta desativada não ganha senha. */
+  /** Só conta desativada (e conta desativada não ganha senha). */
   can_reactivate: boolean;
 };
 
@@ -1980,9 +1238,7 @@ export async function resetMemberPassword(
   });
 }
 
-// Desativa (soft). O backend barra desativar a si mesmo. Invalida o cache no
-// sucesso. ⚠️ Ate 06/10/2026 era VIA UNICA (D5 da Spec 012) -- a volta e
-// `reactivateMember`, logo abaixo.
+// Desativa (soft). O backend barra desativar a si mesmo. A volta é `reactivateMember`.
 export async function deactivateMember(userId: string): Promise<Member> {
   const r = await api<Member>(`/api/v1/members/${userId}/deactivate`, {
     method: "POST",
@@ -1991,8 +1247,7 @@ export async function deactivateMember(userId: string): Promise<Member> {
   return r;
 }
 
-// Reativa (06/10/2026). A senha NAO muda -- se a provisoria venceu, o reset e o
-// clique seguinte. As sessoes de antes da desativacao nao voltam.
+// Reativa. A senha não muda; as sessões de antes não voltam.
 export async function reactivateMember(userId: string): Promise<Member> {
   const r = await api<Member>(`/api/v1/members/${userId}/reactivate`, {
     method: "POST",
@@ -2001,12 +1256,7 @@ export async function reactivateMember(userId: string): Promise<Member> {
   return r;
 }
 
-// ---------------------------------------------------------------
-// RESPONSAVEIS (assignees)  -- Entrega 10
-// ---------------------------------------------------------------
-// Rotas idempotentes do backend (Entrega 4): POST -> 201 (novo) / 200 (no-op);
-// DELETE -> 200 com a lista, ou 404 se o par nao existia. Todas devolvem a
-// lista atual de user_ids da task. N responsaveis por (sub)tarefa.
+// ---- Responsáveis. Rotas idempotentes; todas devolvem a lista atual de user_ids da task.
 
 export type CollaboratorList = { task_id: string; user_ids: string[] };
 
@@ -2021,8 +1271,7 @@ export async function addAssignee(
   return res.user_ids;
 }
 
-// Remove um responsavel. O backend devolve 404 se o par nao existia; o
-// chamador (UI) trata isso como "ja removido" (idempotente na tela).
+// 404 se o par não existia; a tela trata como "já removido".
 export async function removeAssignee(
   taskId: string,
   userId: string
@@ -2034,11 +1283,7 @@ export async function removeAssignee(
   return res.user_ids;
 }
 
-// ---------------------------------------------------------------
-// SEGUIDORES -- Spec 053, fatia D (no backend: `watchers`)
-// ---------------------------------------------------------------
-// Mesma forma dos responsaveis: toda rota devolve a lista atual de ids, na
-// ordem em que as pessoas passaram a seguir.
+// ---- Seguidores (`watchers` no backend). Toda rota devolve a lista atual de ids, na ordem de chegada.
 
 export async function listWatchers(taskId: string): Promise<string[]> {
   const res = await api<CollaboratorList>(`/api/v1/tasks/${taskId}/watchers`);
@@ -2046,10 +1291,8 @@ export async function listWatchers(taskId: string): Promise<string[]> {
 }
 
 /**
- * Poe alguem para seguir. SEM `userId` = a propria pessoa (o botao "Seguir").
- *
- * ⚠️ Recusas: 403 (por outra pessoa sem permissao), 422 com
- * `code: "tarefa_arquivada"` (arquivada e so leitura) ou 422 de alcance.
+ * Põe alguém para seguir; sem `userId` = a própria pessoa.
+ * Recusas: 403 (outra pessoa sem permissão), 422 `tarefa_arquivada` ou 422 de alcance.
  */
 export async function addWatcher(
   taskId: string,
@@ -2073,22 +1316,8 @@ export async function removeWatcher(
   return res.user_ids;
 }
 
-// ---------------------------------------------------------------
-// SUBTAREFAS  -- Entrega 10 (fatia 3)
-// ---------------------------------------------------------------
-// Cria uma subtarefa pendurada num pai. NAO manda team_id: o backend herda
-// o time do pai (ADR 0024). MANDA o project_id do pai porque o backend EXIGE
-// que subtarefa e pai estejam no mesmo projeto (task_service: parent.project_id
-// != command.project_id -> erro). Avulsa => parentProjectId null, casa com null.
-// 29/07: passou a aceitar RESPONSAVEL e PRAZO na criacao rapida. Antes so o
-// titulo cabia aqui, entao designar alguem numa subtarefa exigia cria-la,
-// abri-la e editar -- tres passos. O atalho que as pessoas encontraram foi
-// designar todo mundo na TAREFA-MAE (ha cards com treze responsaveis), o que
-// desmonta a leitura de quem faz o que.
-//
-// O endpoint sempre aceitou os dois campos; era a chamada que nao os mandava.
-/** Um evento do historico da tarefa (Spec 055, fatia A). ⚠️ CRU: os valores
- * vem como o backend os gravou, e quem vira frase e `lib/historicoDaTarefa.ts`. */
+// ---- Subtarefas. Não manda team_id (herda do pai); manda o project_id do pai (o backend exige o mesmo projeto).
+/** Um evento do histórico da tarefa, cru; quem vira frase é `lib/historicoDaTarefa.ts`. */
 export type TaskHistoryEvent = {
   id: string;
   event_type: string;
@@ -2140,18 +1369,8 @@ export async function createSubtask(
   });
 }
 
-// Arquivar/desarquivar (Entrega 12). Exige task.update -> TODOS os papeis
-// podem (e a saida pra quem nao tem task.delete). Idempotente. Resposta NAO
-// traz assignee_ids -> upsert preserva.
-//
-// ⚠️ COM CASCATA desde 05/08: as duas operacoes levam a SUBARVORE INTEIRA
-// junto, e `cascade_count` diz quantas subtarefas mudaram (sem contar a
-// propria). Antes disso arquivar um pai deixava as filhas ATIVAS debaixo
-// dele -- e nenhuma tela mostra subtarefa ativa de pai arquivado.
-//
-// ⚠️ `cascade_count > 0` significa que o estado local do chamador esta
-// DESATUALIZADO: as filhas mudaram no banco e nao estao em nenhuma resposta.
-// Quem chama precisa recarregar, nao so fazer upsert desta tarefa.
+// Arquivar/desarquivar (exige task.update; idempotente). Leva a subárvore inteira junto.
+// `cascade_count > 0` = o estado local está desatualizado: recarregar, não só fazer upsert.
 export type ArchiveResult = Task & { cascade_count: number };
 
 export async function archiveTask(id: string): Promise<ArchiveResult> {
@@ -2163,18 +1382,8 @@ export async function unarchiveTask(id: string): Promise<ArchiveResult> {
   });
 }
 
-// ---------------------------------------------------------------
-// ARQUIVADAS  (tela dedicada -- Spec 013, fatia 4)
-// ---------------------------------------------------------------
-// Lista pagina DE VERDADE (page/size): o conjunto de arquivadas cresce sem
-// fim, entao nao usa fetch-all/teto como o quadro -- uma lista pagina natural.
-/**
- * As arquivadas, recortadas pelo time ativo (Spec 048).
- *
- * ⚠️ `teamId` OBRIGATÓRIO, `null` = sem recorte. Diferente de Minhas
- * tarefas, aqui `null` não é um modo que a tela oferece -- é só a resposta
- * para "a barra resolveu e não há time".
- */
+// ---- Arquivadas: paginação de verdade (o conjunto cresce sem fim).
+/** As arquivadas recortadas pelo time ativo; `null` = sem recorte. */
 export async function listArchivedTasks(params: {
   teamId: string | null;
   page?: number;
@@ -2188,31 +1397,21 @@ export async function listArchivedTasks(params: {
   });
 }
 
-// Reativar = desarquivar + voltar pra BACKLOG (Spec 013, DECISAO C). ORDEM
-// importa: muda o status PRIMEIRO (tira a task da elegibilidade da varredura),
-// depois desarquiva. Se o unarchive falhar no meio, a task fica
-// BACKLOG+arquivada e NAO e re-arquivada pela varredura (BACKLOG nao e
-// terminal) -- sem loop, e o usuario pode tentar de novo.
+// Reativar = voltar pra BACKLOG e depois desarquivar. A ordem importa: se o unarchive falhar,
+// BACKLOG+arquivada não é re-arquivada pela varredura.
 export async function reactivateTask(id: string): Promise<Task> {
   await updateTask(id, { status: "BACKLOG" });
   return unarchiveTask(id);
 }
 
-// Soft-delete CASCATEADO (ADR 0005): apaga a task, toda a subtree e os
-// comentarios. Exige task.delete (so ADMIN/MANAGER). A resposta traz
-// cascade_count = quantas FILHAS foram apagadas junto (nao conta a raiz).
+// Soft-delete em cascata (task, subárvore e comentários). `cascade_count` = filhas apagadas junto.
 export type DeleteTaskResult = Task & { cascade_count: number };
 
 export async function deleteTask(id: string): Promise<DeleteTaskResult> {
   return api<DeleteTaskResult>(`/api/v1/tasks/${id}`, { method: "DELETE" });
 }
 
-// ===============================================================
-// PROJETOS  -- Entrega 11 (pasta: agrupa tasks; tudo no time raiz)
-// ===============================================================
-// Projeto = "pasta" de um trabalho maior. Pertence a um time (o raiz,
-// Marketing geral) -> aparece pra todos. Designar e so nas tasks; o projeto
-// nao tem membros proprios. Backend ja tinha o CRUD completo desde a E1.
+// ---- Projetos: pasta de tasks, pertence a um time. Designar é só nas tasks.
 export type ProjectStatus =
   | "PLANNING"
   | "ACTIVE"
@@ -2229,34 +1428,24 @@ export type Project = {
   start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
-  // ⚠️ `is_archived` SAIU daqui em 17/09: arquivar projeto deixou de existir
-  // (a rota saiu, e não havia nenhum projeto arquivado). O backend ainda manda
-  // o campo; a tela não o lê.
+  // O backend ainda manda `is_archived`; a tela não o lê.
   team_id: string | null;
   created_by: string;
   created_at: string;
   updated_at: string;
-  // ⚠️ Spec 051, fatia A: os botões do projeto, calculados pelo servidor NO TIME
-  // do projeto -- e não `me.permissions`, que diz "o que" e nunca "onde".
-  // Obrigatórios: toda resposta de projeto os traz.
+  // Botões do projeto, calculados pelo servidor no time do projeto. Obrigatórios.
   can_update: boolean;
   can_delete: boolean;
 };
 
-// ---------------------------------------------------------------
-// LINKS COM NOME -- projeto e tarefa (Spec 052, fatia B)
-// ---------------------------------------------------------------
+// ---- Links com nome (projeto e tarefa).
 
 /** Um link salvo: o nome que aparece e o endereço. */
 export type LinkItem = { id: string; title: string; url: string };
 
 /**
- * Evento de `window` quando a lista de links de um item muda. `detail` =
- * `{ dono: "task" | "project", id }`.
- *
- * ⚠️ O detalhe da tarefa mostra os links e o MODAL os edita, e salvar links não
- * muda a tarefa em si (nem o `updated_at`) -- sem o aviso, o detalhe aberto
- * seguiria com a lista antiga. Mesmo desenho do `TIMES_MUDARAM`.
+ * Evento de `window` quando os links de um item mudam (`detail` = `{ dono, id }`).
+ * Salvar links não muda a tarefa: sem o aviso o detalhe aberto ficaria com a lista antiga.
  */
 export const LINKS_MUDARAM = "links:mudaram";
 
@@ -2307,29 +1496,8 @@ export type ProjectListResponse = {
   size: number;
 };
 
-// Lista projetos do workspace (paginado).
-//
-// ⚠️ ESTE COMENTARIO DIZIA "NAO filtra pessoal -> o pessoal do proprio usuario
-// vem junto; a tela de pastas descarta is_personal no front". O projeto
-// pessoal saiu em 10/09, e com ele o campo `is_personal` da resposta -- hoje
-// todo projeto pertence a um time e a lista nao esconde nem oferece nada.
-// ⚠️⚠️ `teamId` E OBRIGATORIO, e `null` E UMA RESPOSTA -- nao o default.
-//
-// Reportado na tela em 11/09: o seletor de projeto do modal oferecia projeto de
-// OUTRO time raiz. A rota nunca filtrou por time (so `workspace_id`), e as seis
-// chamadas do front nao tinham como pedir o recorte.
-//
-// A pergunta que cada chamador precisa responder e "esta lista e para ESCOLHER
-// ou para ROTULAR?":
-//   - ESCOLHER (o seletor do modal, a tela de projetos) -> manda o time, porque
-//     oferecer projeto de outro time e oferecer o que nao se deve escolher;
-//   - ROTULAR (o mapa id -> titulo do selo no card) -> manda `null`, porque uma
-//     tarefa que a pessoa ENXERGA tem de mostrar o nome do projeto dela, e
-//     recortar aqui apagaria o selo em vez de proteger algo. A lente do backend
-//     ja limita o que volta.
-//
-// Com default, essa pergunta ficaria sem resposta nos lugares em que ninguem
-// pensou nela -- que e exatamente como o defeito nasceu.
+// Lista projetos do workspace (paginado). `teamId` obrigatório; `null` é uma resposta, não default:
+// para ESCOLHER (seletor) manda o time; para ROTULAR (mapa id -> título) manda `null`.
 export async function listProjects(
   params: {
     teamId: string | null;
@@ -2346,9 +1514,7 @@ export async function listProjects(
   return api<ProjectListResponse>(`/api/v1/projects?${q.toString()}`);
 }
 
-// Versao completa (anti-teto): pagina ate o total, com o mesmo teto das
-// tasks. Usada pelo quadro geral pra montar o mapa id->titulo do selo de
-// projeto -- antes batia size=100 fixo e perdia projetos alem disso.
+// Versão completa (anti-teto), para o mapa id->título do selo de projeto.
 export async function listAllProjects(
   params: {
     teamId: string | null;
@@ -2393,18 +1559,11 @@ export type ProjectCreateInput = {
   priority?: string;
   start_date?: string | null;
   due_date?: string | null;
-  team_id?: string; // omitido -> resolve o time raiz (pin, ADR 0001)
+  team_id?: string; // omitido -> resolve o time raiz
 };
 
-// Cria projeto COMUM. Se team_id nao vier, usa o time raiz (Marketing geral)
-// -> a pasta fica visivel pra todos, coerente com o pin do quadro.
+// Cria projeto. Sem team_id usa o único time raiz.
 export async function createProject(input: ProjectCreateInput): Promise<Project> {
-  // ⚠️ AQUI HAVIA `if (!team_id) throw new Error("Time raiz não encontrado")`,
-  // e ele virou inalcançável na Spec 046 (fatia 1): `getRootTeamId` deixou de
-  // devolver `null` e passou a levantar `AreaIndefinidaError` -- com uma
-  // mensagem melhor, que distingue "nenhuma área" de "mais de uma".
-  // O `tsc` NÃO acusa isto (`string` cabe em `string | null`), então a linha
-  // ficaria de guarda a um caso que não existe mais.
   const team_id = input.team_id ?? (await getRootTeamId());
   return api<Project>("/api/v1/projects", {
     method: "POST",
@@ -2436,33 +1595,13 @@ export async function updateProject(
   return api<Project>(`/api/v1/projects/${id}`, { method: "PATCH", body: patch });
 }
 
-/**
- * Apaga um projeto (soft delete no backend).
- *
- * ⚠️ A ROTA EXISTE DESDE SEMPRE E O FRONT NUNCA A CHAMOU. A Camila reportou em
- * 22/08: "não dá pra excluir projeto". Não havia defeito no backend --
- * `DELETE /projects/{id}` está lá, com permissão `project.delete` e a recusa
- * do projeto pessoal. **Faltava a metade da tela**, e nenhum teste podia pegar
- * isso: não há portão para "função de API sem chamador".
- *
- * ⚠️ E O SOFT DELETE NÃO TOCA NAS TAREFAS. Ele marca `deleted_at` no projeto e
- * mais nada -- as tarefas continuam com `project_id` apontando para ele. Na
- * tela elas simplesmente deixam de mostrar a tag do projeto, porque o mapa de
- * nomes vem do `listProjects`, que não devolve apagados. Quem chamar isto
- * precisa dizer isso a quem clicou.
- */
+/** Apaga um projeto (soft delete). Não toca nas tarefas: elas só perdem a tag do projeto na tela. */
 export async function deleteProject(id: string): Promise<Project> {
   return api<Project>(`/api/v1/projects/${id}`, { method: "DELETE" });
 }
 
 
-// ---------------------------------------------------------------
-// USUARIO LOGADO (memoizado)  -- Entrega 14
-// ---------------------------------------------------------------
-// getMe() bate na API toda vez. O thread de comentarios precisa do `id`
-// (mostrar editar/apagar so no proprio comentario) e das `permissions`
-// (task.delete -> moderacao). Memoiza igual aos outros caches; limpa no
-// clearTokens. O AppShell continua usando getMe() direto (revalida a sessao).
+// ---- Usuário logado, memoizado; limpa no clearTokens. O AppShell usa getMe() direto (revalida a sessão).
 let _me: CurrentUser | undefined; // undefined = ainda nao buscado
 
 export async function currentUser(): Promise<CurrentUser> {
@@ -2471,26 +1610,12 @@ export async function currentUser(): Promise<CurrentUser> {
   return _me;
 }
 
-/**
- * Evento de `window` quando o PRÓPRIO nome muda (Spec 051, fatia E). O
- * `detail` é o nome novo.
- *
- * ⚠️ Mesmo desenho do `TIMES_MUDARAM`: a barra lateral buscou o usuário uma vez
- * na montagem e mostra o nome dele; trocar o nome no `/perfil` não navega, e
- * sem o aviso a barra seguiria com o nome velho até recarregar.
- */
+/** Evento de `window` quando o próprio nome muda (`detail` = nome novo), para a barra lateral. */
 export const NOME_MUDOU = "me:nome-mudou";
 
 /**
- * Troca o PRÓPRIO nome (Spec 051, fatia E -- decisão 8: "só o próprio").
- *
- * ⚠️ Não há `userId`, e a ausência é a regra: o servidor pega o alvo do token.
- *
- * ⚠️ TRÊS CACHES MOSTRAM O NOME, e os três são acertados aqui, e não na tela:
- *   - `_me` (quem chamar `currentUser()` depois recebe o nome novo);
- *   - a lista de membros (`invalidateMembers`): seletores, responsáveis e o
- *     `@` mostram o nome das pessoas, inclusive o meu;
- *   - a barra lateral, que tem o seu próprio estado -- pelo evento.
+ * Troca o próprio nome (o servidor pega o alvo do token).
+ * Acerta os três lugares que mostram o nome: `_me`, a lista de membros e a barra (pelo evento).
  */
 export async function renameSelf(name: string): Promise<string> {
   const r = await api<{ name: string }>("/api/v1/auth/me", {
@@ -2505,13 +1630,8 @@ export async function renameSelf(name: string): Promise<string> {
   return r.name;
 }
 
-// ---------------------------------------------------------------
-// COMENTARIOS  (Entrega 14)
-// ---------------------------------------------------------------
-// Thread por task, 1 nivel de replica. Visibilidade = visibilidade da task
-// (404 se nao ve -> o backend ja garante; o front so propaga o erro).
-// is_deleted=true => tombstone (content ja vem mascarado pelo backend).
-// edited_at != null => foi editado.
+// ---- Comentários: thread por task, 1 nível de réplica. 404 se não vê a task.
+// is_deleted=true => tombstone (conteúdo mascarado); edited_at != null => editado.
 
 export type Comment = {
   id: string;
@@ -2522,11 +1642,7 @@ export type Comment = {
   edited_at: string | null;
   created_at: string;
   is_deleted: boolean;
-  /**
-   * Spec 050: a fileira de reacoes, na ordem de chegada de cada emoji. Vazia
-   * em comentario apagado. `user_ids` (e nao contagem) porque a tela mostra
-   * QUEM reagiu -- a contagem e o tamanho da lista.
-   */
+  /** Reações na ordem de chegada de cada emoji; vazia em comentário apagado. `user_ids` porque a tela mostra quem reagiu. */
   reactions: { emoji: string; user_ids: string[] }[];
 };
 
@@ -2537,8 +1653,7 @@ export type CommentList = {
   size: number;
 };
 
-// Thread da task, created_at ASC (mais antigo -> mais novo). size default 50
-// no backend; aqui so manda o que for passado.
+// Thread da task, mais antigo primeiro.
 export async function listComments(
   taskId: string,
   params: { page?: number; size?: number } = {}
@@ -2552,8 +1667,7 @@ export async function listComments(
   );
 }
 
-// parentCommentId so quando for replica. Regra de 1 nivel (pai tem que ser de
-// topo) e validada no backend -> 422 se furar.
+// parentCommentId só em réplica; 1 nível validado no backend (422).
 export async function createComment(
   taskId: string,
   content: string,
@@ -2590,16 +1704,8 @@ export async function deleteComment(
   });
 }
 
-// ---------------------------------------------------------------
-// REACOES NO COMENTARIO  (Spec 050)
-// ---------------------------------------------------------------
-// ⚠️ `PUT`, e nao `POST`: a operacao e "a minha reacao neste comentario passa
-// a ser X" -- idempotente, e trocar e o mesmo gesto que por. As duas devolvem
-// o COMENTARIO inteiro, com a fileira nova, para a tela trocar a linha sem
-// recarregar o thread.
-// ⚠️ Emoji invalido e 422 do servidor, e nao validacao aqui: quem decide o que
-// e um emoji e a biblioteca do backend (spec §4.3). A tela so oferece o
-// catalogo gerado, que o `test_emoji_catalogo_front` prova que ele aceita.
+// ---- Reações no comentário. `PUT` idempotente (trocar = pôr); devolve o comentário inteiro.
+// Emoji inválido é 422 do servidor; a tela só oferece o catálogo gerado.
 export async function setCommentReaction(
   taskId: string,
   commentId: string,
@@ -2622,33 +1728,24 @@ export async function deleteCommentReaction(
   );
 }
 
-// ---------------------------------------------------------------
-// NOTIFICACOES IN-APP  (Spec 018)
-// ---------------------------------------------------------------
-// Pessoais: o backend escopa tudo por recipient == usuario logado.
-// Sem cache: o badge e pollado e o feed e sempre buscado fresco.
-// O type se chama AppNotification (e nao Notification) de proposito --
-// "Notification" e um tipo GLOBAL do DOM (Web Notifications API) e
-// sombrea-lo causaria confusao/erro de tipo.
+// ---- Notificações in-app, escopadas pelo backend ao usuário logado. Sem cache.
+// `AppNotification`, não `Notification`: esse é um tipo global do DOM.
 
 export type NotificationType =
   | "TASK_ASSIGNED"
   | "TASK_COMMENTED"
   | "TASK_MENTIONED"
-  // Spec 050 (fatia B): reagiram ao comentario da pessoa.
+  // Reagiram ao comentário da pessoa.
   | "TASK_COMMENT_REACTED"
-  // Auditoria 11/11 (item 13): responderam ao comentario da pessoa.
+  // Responderam ao comentário da pessoa.
   | "TASK_COMMENT_REPLIED"
-  // ⚠️ Os tres abaixo o backend emite desde as Specs 023 e 037, e o front nao
-  // os conhecia: caiam no texto generico "Atualização em ..." (Spec 053, A).
   | "TASK_DUE_SOON"
   | "TASK_OVERDUE"
   | "ACCESS_LOST"
-  // Spec 053 (B): outra pessoa colocou ou tirou quem recebe como seguidor.
+  // Outra pessoa colocou ou tirou quem recebe como seguidor.
   | "TASK_WATCH_ADDED"
   | "TASK_WATCH_REMOVED"
-  // Spec 053 (C): o que acontece na tarefa, para quem segue, e responsavel ou
-  // criou. So o gesto direto avisa, e avisos seguidos do mesmo autor se juntam.
+  // Mudanças na tarefa, para quem segue, é responsável ou criou; avisos seguidos do mesmo autor se juntam.
   | "TASK_COLUMN_CHANGED"
   | "TASK_DUE_CHANGED"
   | "TASK_DESCRIPTION_CHANGED"
@@ -2665,15 +1762,14 @@ export type AppNotification = {
   actor_id: string | null;
   task_id: string | null;
   comment_id: string | null;
-  // `emoji` so em TASK_COMMENT_REACTED (Spec 050): o que foi, no momento.
-  // `due_date` (YYYY-MM-DD) nos avisos de prazo; `quantidade` no ACCESS_LOST.
+  // `emoji` só em TASK_COMMENT_REACTED; `due_date` (YYYY-MM-DD) nos avisos de prazo; `quantidade` no ACCESS_LOST.
   payload: {
     actor_name?: string;
     task_title?: string;
     emoji?: string;
     due_date?: string;
     quantidade?: number;
-    // Spec 053 (C). Colunas vao pelo NOME: o aviso e retrato do momento.
+    // Colunas vão pelo nome: o aviso é retrato do momento.
     from_column?: string | null;
     to_column?: string | null;
     from_due?: PrazoDoAviso | null;
@@ -2681,14 +1777,9 @@ export type AppNotification = {
   } | null;
   read_at: string | null; // null = nao lida
   created_at: string;
-  // Spec 053 (C): a ULTIMA mudanca. Difere de `created_at` quando avisos seguidos
-  // do mesmo autor se juntaram -- e o horario que a tela mostra.
+  // A última mudança (difere de `created_at` quando avisos se juntaram); é o horário que a tela mostra.
   updated_at?: string;
-  /**
-   * Spec 053 (E, D27): "ok" = a tarefa existe e quem le a alcanca; "gone" =
-   * excluida ou fora do alcance -- o servidor ja tirou `task_title` do payload
-   * (menos no aviso de exclusao); null = aviso sem tarefa.
-   */
+  /** "ok" = a tarefa existe e quem lê a alcança; "gone" = excluída ou fora do alcance (sem `task_title`); null = aviso sem tarefa. */
   task_access?: "ok" | "gone" | null;
 };
 
@@ -2699,22 +1790,12 @@ export type NotificationListResponse = {
   size: number;
 };
 
-/**
- * Os filtros da tela de notificacoes (Spec 053, D22). Os MESMOS vao para a
- * listagem e para o "marcar estas como lidas" (D25) -- por isso um tipo so.
- */
+/** Filtros da tela de notificações; os mesmos vão para a listagem e para o "marcar estas como lidas". */
 export type FiltroDeNotificacoes = {
   types?: readonly string[];
   task_id?: string | null;
   project_id?: string | null;
-  /**
-   * Spec 054 (D5): a aba "Silenciadas". Ausente/`false` = o de sempre, que
-   * ESCONDE as silenciadas.
-   *
-   * ⚠️ Mora no FILTRO, e não só na listagem, porque o "marcar todas" usa o
-   * mesmo objeto (D25): o botão tem de marcar o que a aba mostrou, e um
-   * `muted` que ficasse de fora faria a aba "Silenciadas" marcar as outras.
-   */
+  /** A aba "Silenciadas"; ausente/`false` esconde as silenciadas. Fica no filtro porque o "marcar todas" usa o mesmo objeto. */
   muted?: boolean;
 };
 
@@ -2741,10 +1822,7 @@ export async function listNotifications(
   return api<NotificationListResponse>(`/api/v1/notifications?${q.toString()}`);
 }
 
-// Contagem de nao-lidas (endpoint leve; e o que o sino polla).
-//
-// ⚠️ O sino NAO conta silenciadas (Spec 054, D14) -- e o padrao do servidor.
-// `muted` conta as da aba "Silenciadas".
+// Contagem de não-lidas (o que o sino polla). O padrão não conta silenciadas; `muted` conta as da aba.
 export async function getUnreadCount(muted = false): Promise<number> {
   const qs = muted ? "?muted=true" : "";
   const r = await api<{ count: number }>(`/api/v1/notifications/unread-count${qs}`);
@@ -2756,8 +1834,7 @@ export async function markNotificationRead(id: string): Promise<void> {
   await api<void>(`/api/v1/notifications/${id}/read`, { method: "POST" });
 }
 
-// Marca as nao-lidas como lidas -- todas, ou so as do filtro (Spec 053, D25).
-// Retorna quantas.
+// Marca as não-lidas como lidas (todas, ou só as do filtro). Retorna quantas.
 export async function markAllNotificationsRead(
   filtro: FiltroDeNotificacoes = {}
 ): Promise<number> {
@@ -2771,12 +1848,12 @@ export async function markAllNotificationsRead(
   return r.updated;
 }
 
-/** Um toggle da tela de preferencias (Spec 054, §6.5). */
+/** Um toggle da tela de preferências. */
 export type NotificationToggle = {
   type_group: string;
   role: string;
   enabled: boolean;
-  /** Travado (D3): sempre ligado, e o PUT recusa 422. */
+  /** Travado: sempre ligado, e o PUT recusa 422. */
   locked: boolean;
 };
 
@@ -2801,7 +1878,7 @@ export async function setNotificationPreference(pref: {
   return r.items;
 }
 
-/** Uma sugestao do campo "Tarefa ou projeto" (Spec 053, D23). */
+/** Uma sugestão do campo "Tarefa ou projeto". */
 export type AlvoDeNotificacao = {
   kind: "task" | "project";
   id: string;
@@ -2822,14 +1899,7 @@ export async function listNotificationTargets(
 // SOLICITAÇÕES (formulário público FazAê + fila de triagem)
 // ---------------------------------------------------------------
 
-/**
- * ⚠️ IN_PROGRESS e DONE entraram na fatia D (Spec 043).
- *
- * ⚠️ E ELES NAO SAO UMA SEGUNDA TRIAGEM: a decisao (aprovar/rejeitar) continua
- * sendo uma porta so, e passar por "em andamento" ou "concluída" nao reescreve
- * quem aprovou nem quando. Sao rotas diferentes no backend justamente por
- * isso.
- */
+/** IN_PROGRESS e DONE são andamento, não segunda triagem: não reescrevem quem aprovou nem quando. */
 export type SolicitacaoStatus =
   | "PENDING"
   | "APPROVED"
@@ -2846,13 +1916,7 @@ export const STATUS_ACEITOS: SolicitacaoStatus[] = [
 
 export type SolicitacaoAnswer = { label: string; value: string };
 
-/**
- * Detalhe de UMA solicitação — espelha `SolicitationResponse` do backend.
- * Retorno de aprovar / rejeitar / marcar tarefa.
- *
- * Não existe mais listagem plana: a fila é agrupada por envio
- * (`listarEnvios`), e o card já traz as `answers` de cada seção.
- */
+/** Detalhe de uma solicitação (`SolicitationResponse`); retorno de aprovar/rejeitar/marcar tarefa. */
 export type Solicitacao = {
   id: string;
   batch_id: string;
@@ -2860,11 +1924,7 @@ export type Solicitacao = {
   batch_total: number;
   requester_name: string;
   requester_email: string;
-  /**
-   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
-   * "este formulário não perguntou", que é diferente de "" ("perguntou e
-   * ficou em branco"). Nome e e-mail continuam obrigatórios.
-   */
+  /** Opcionais: `null` = o formulário não perguntou; "" = perguntou e ficou em branco. */
   requester_phone: string | null;
   requester_department: string | null;
   requester_polo: string | null;
@@ -2886,17 +1946,7 @@ export type SolicitacaoItemEnvio = {
   answers: SolicitacaoAnswer[];
 };
 
-// PÚBLICA (sem auth): entrada do formulário /solicitar.
-// UM POST por envio, mesmo com várias categorias selecionadas — o rate
-// limit é por IP (5/10min), então N requests bloqueariam o solicitante no
-// meio do próprio pedido. A ORDEM de `items` é a ordem de seleção dele.
-// O campo `website` é o honeypot anti-bot: SEMPRE enviar vazio da UI.
-// ---- GESTAO DOS FORMULARIOS (Spec 043, fatia C) ----
-//
-// ⚠️ AUTENTICADAS, e com permissao PROPRIA no backend
-// (`solicitation_form.manage`). Ela e distinta de `solicitation.review`: triar
-// o que chegou e definir o que se pergunta sao trabalhos diferentes, e
-// frequentemente de pessoas diferentes.
+// ---- Gestão dos formulários: permissão própria (`solicitation_form.manage`), distinta de `solicitation.review`.
 
 export type Formulario = {
   id: string;
@@ -2905,20 +1955,13 @@ export type Formulario = {
   title: string;
   description: string;
   is_published: boolean;
-  /** `null` = o formulário não pergunta este campo (Spec 043, fatia G). */
+  /** `null` = o formulário não pergunta este campo. */
   phone_label: string | null;
   department_label: string | null;
   polo_label: string | null;
 };
 
-/**
- * Os formulários de um time (Spec 048, fatia E).
- *
- * ⚠️⚠️ `teamId` OBRIGATÓRIO, `null` é resposta -- a mesma decisão de
- * `listProjects` e `listarEnvios`. Aqui ela pesa mais do que parece: desta
- * lista se abre o EDITOR de cada formulário, e editar formulário de outro time
- * muda a porta pública dele.
- */
+/** Os formulários de um time. `teamId` obrigatório, `null` é resposta: daqui se abre o editor, e editar formulário de outro time muda a porta pública dele. */
 export async function listarFormularios(
   teamId: string | null
 ): Promise<Formulario[]> {
@@ -2930,11 +1973,7 @@ export async function listarFormularios(
   );
 }
 
-/**
- * ⚠️ NASCE DESPUBLICADO, e `is_published` nem e parametro -- a decisao e do
- * backend. Formulario nasce vazio; publicado na criacao, ele apareceria na
- * lista publica como uma porta que nao pergunta nada.
- */
+/** Nasce despublicado (decisão do backend): publicado vazio seria uma porta que não pergunta nada. */
 export async function criarFormulario(input: {
   team_id: string;
   slug: string;
@@ -2952,15 +1991,8 @@ export async function criarFormulario(input: {
   });
 }
 
-/** ⚠️ `team_id` NAO ENTRA: mudar o time e mudar QUEM TRIA, inclusive do que ja
- * chegou. O backend recusa o campo. */
-/**
- * ⚠️ NOS TRÊS RÓTULOS, `null` SIGNIFICA "DESLIGUE O CAMPO" -- o oposto dos
- * outros campos deste PATCH, em que omitir é "não mexa". Por isso eles só
- * podem ser enviados quando a intenção é mesmo mudá-los: o backend distingue
- * "não veio" de "veio null" pelo corpo, e aplicar um `null` por descuido
- * apagaria a identificação do formulário.
- */
+/** `team_id` não entra: mudar o time muda quem tria. O backend recusa o campo. */
+/** Nos três rótulos, `null` = desligar o campo (nos outros, omitir = não mexer). Só envie quando for mudá-los. */
 export async function renomearFormulario(
   id: string,
   patch: {
@@ -2994,7 +2026,7 @@ export async function apagarFormulario(id: string): Promise<void> {
   });
 }
 
-// ---- O EDITOR: secoes e perguntas (Spec 043, fatia C2) ----
+// ---- O editor: seções e perguntas.
 
 export type PerguntaDoEditor = {
   id: string;
@@ -3018,7 +2050,7 @@ export type SecaoDoEditor = {
   sla_text: string | null;
   summary_question_id: string | null;
   position: number;
-  /** Spec 059: seção repetível e o nome de cada repetição. */
+  /** Seção repetível e o nome de cada repetição. */
   repeatable?: boolean;
   repeat_label?: string | null;
   questions: PerguntaDoEditor[];
@@ -3045,14 +2077,8 @@ export async function criarSecao(
 }
 
 /**
- * ⚠️ **NAO ACEITA `slug`, e a ausencia e a regra.** O slug da secao viaja
- * gravado em cada pedido (`solicitation_item.category`) e e por ele que a fila
- * descobre a categoria. Troca-lo deixaria todo pedido antigo aparecendo como
- * texto cru, sem titulo e sem emoji -- para sempre e sem erro nenhum.
- *
- * Titulo e emoji podem mudar a vontade justamente porque NAO sao gravados: a
- * fila os resolve pelo slug, entao renomear conserta o passado junto com o
- * presente. Essa e a diferenca entre os campos, e o backend recusa o slug.
+ * Não aceita `slug`: ele está gravado em cada pedido e é como a fila acha a categoria.
+ * Título e emoji mudam à vontade porque a fila os resolve pelo slug.
  */
 export async function editarSecao(
   sectionId: string,
@@ -3104,10 +2130,7 @@ export async function criarPergunta(
   );
 }
 
-/**
- * ⚠️ `options` OMITIDO E "NAO MEXE", e nao "esvazia" -- quem so corrigiu uma
- * vírgula no título não pode perder a lista de alternativas por omissão.
- */
+/** `options` omitido = não mexe (não esvazia). */
 export async function editarPergunta(
   questionId: string,
   patch: {
@@ -3125,10 +2148,7 @@ export async function editarPergunta(
   });
 }
 
-/**
- * ⚠️ ROTA PROPRIA, e nao um campo do PATCH: DESLIGAR e mandar `null`, e num
- * PATCH `null` se confunde com "nao mexe neste campo".
- */
+/** Rota própria: desligar é mandar `null`, que num PATCH se confundiria com "não mexe". */
 export async function definirCondicional(
   questionId: string,
   alvoId: string | null,
@@ -3146,11 +2166,7 @@ export async function apagarPergunta(questionId: string): Promise<void> {
   });
 }
 
-/**
- * ⚠️ AS DUAS MANDAM O CONJUNTO INTEIRO, e o backend recusa lista parcial.
- * Aceita-la deixaria uma aba aberta desde antes de alguem criar uma secao
- * sobrescrever a ordem com um mundo que nao existe mais.
- */
+/** As duas mandam o conjunto inteiro; o backend recusa lista parcial. */
 export async function reordenarSecoes(
   formId: string,
   ids: string[]
@@ -3171,11 +2187,7 @@ export async function reordenarPerguntas(
   );
 }
 
-// ---- O FORMULARIO PUBLICO, LIDO DO BANCO (Spec 043, fatia B) ----
-//
-// ⚠️ `auth: false` NAS DUAS, e nao e detalhe: quem preenche o formulario nao
-// tem login. Mandar credencial aqui faria a chamada falhar para justamente
-// quem ela existe para atender.
+// ---- O formulário público, lido do banco. `auth: false`: quem preenche não tem login.
 
 export type PerguntaPublica = {
   id: string;
@@ -3185,7 +2197,7 @@ export type PerguntaPublica = {
   options: string[];
   placeholder: string | null;
   help: string | null;
-  /** ⚠️ O ID da outra pergunta -- ver `lib/formularioDoBanco.ts`. */
+  /** O id da outra pergunta (ver `lib/formularioDoBanco.ts`). */
   show_if_question_id: string | null;
   show_if_value: string | null;
 };
@@ -3196,7 +2208,7 @@ export type SecaoPublica = {
   emoji: string;
   sla_text: string | null;
   summary_question_id: string | null;
-  /** Spec 059: a pessoa preenche a seção mais de uma vez no envio. */
+  /** A pessoa preenche a seção mais de uma vez no envio. */
   repeatable?: boolean;
   repeat_label?: string | null;
   questions: PerguntaPublica[];
@@ -3207,14 +2219,7 @@ export type FormularioPublico = {
   slug: string;
   title: string;
   description: string;
-  /**
-   * Os rótulos da identificação (Spec 043, fatia G). `null` = o formulário
-   * NÃO pergunta este campo.
-   *
-   * ⚠️ NOME E E-MAIL NÃO ESTÃO AQUI porque não são configuráveis: a fila é
-   * organizada por quem pediu, e a resposta automática de mudança de status
-   * precisa do endereço.
-   */
+  /** Rótulos da identificação; `null` = não pergunta. Nome e e-mail não são configuráveis. */
   phone_label: string | null;
   department_label: string | null;
   polo_label: string | null;
@@ -3240,14 +2245,7 @@ export async function listarFormulariosPublicos(): Promise<
   );
 }
 
-/**
- * Um formulario publicado, pelo slug.
- *
- * ⚠️ 404 AQUI SIGNIFICA QUATRO COISAS (nao existe, despublicado, apagado, de
- * outro workspace) -- o backend responde igual para as quatro de proposito,
- * para nao virar um enumerador de slugs. Quem chama trata todas como "este
- * endereco nao serve", que e o que a pessoa precisa saber.
- */
+/** Um formulário publicado, pelo slug. 404 cobre não existe/despublicado/apagado/outro workspace (não enumera slugs). */
 export async function obterFormularioPublico(
   slug: string
 ): Promise<FormularioPublico> {
@@ -3259,23 +2257,17 @@ export async function obterFormularioPublico(
   );
 }
 
+// Pública (sem auth). Um POST por envio (o rate limit é por IP); `items` na ordem de seleção.
+// `website` é o honeypot anti-bot: sempre vazio.
 export async function enviarSolicitacaoPublica(payload: {
   /**
-   * De qual formulário veio (Spec 043, fatia B).
-   *
-   * ⚠️ OPCIONAL NO TIPO porque o backend o aceita ausente -- é a
-   * compatibilidade para a aba que ficou aberta durante o deploy. Mas a tela
-   * SEMPRE manda: sem ele a solicitação nasce órfã e cai na fila do workspace
-   * inteiro, em vez da do time dono do formulário.
+   * De qual formulário veio. Opcional no tipo (aba aberta durante deploy), mas a tela sempre manda:
+   * sem ele a solicitação cai na fila do workspace inteiro.
    */
   form_id?: string;
   requester_name: string;
   requester_email: string;
-  /**
-   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
-   * "este formulário não perguntou", que é diferente de "" ("perguntou e
-   * ficou em branco"). Nome e e-mail continuam obrigatórios.
-   */
+  /** Opcionais: `null` = o formulário não perguntou; "" = perguntou e ficou em branco. */
   requester_phone: string | null;
   requester_department: string | null;
   requester_polo: string | null;
@@ -3296,26 +2288,20 @@ export async function enviarSolicitacaoPublica(payload: {
 
 export type SolicitacaoFiltro =
   | SolicitacaoStatus
-  | "ACTIVE" // aprovada ou em andamento (15/10)
+  | "ACTIVE" // aprovada ou em andamento
   | "SEM_TAREFA"; // aprovadas que ninguém virou tarefa
 
-/** As abas da fila (15/10); `WITHOUT_TASK` é o "só sem tarefa". */
+/** As abas da fila; `WITHOUT_TASK` é o "só sem tarefa". */
 export type FilaAba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL" | "WITHOUT_TASK";
 
 export type BatchItem = {
   id: string;
   batch_seq: number;
-  /** ⚠️ O SLUG GRAVADO NO PEDIDO. É a chave, não a etiqueta. */
+  /** O slug gravado no pedido: é a chave, não a etiqueta. */
   category: string;
   /**
-   * ⚠️ COMO A CATEGORIA SE APRESENTA, resolvido pelo backend NA HORA e não
-   * gravado no pedido -- renomear uma seção arruma a fila inteira, inclusive
-   * o passado.
-   *
-   * ⚠️ `null` É LEGÍTIMO (seção apagada, categoria que não existe mais), e
-   * quem desenha cai no `category` cru. Antes disso tudo vinha de
-   * `CATEGORIA_POR_SLUG`, um arquivo estático no front -- e a primeira seção
-   * criada pelo editor apareceria como slug cru e "❓".
+   * Como a categoria se apresenta, resolvido pelo backend na hora (renomear seção arruma o passado).
+   * `null` é legítimo (seção apagada): quem desenha cai no `category` cru.
    */
   category_title: string | null;
   category_emoji: string | null;
@@ -3326,19 +2312,9 @@ export type BatchItem = {
   review_note: string | null;
   reviewed_at: string | null;
   task_created_at: string | null;
-  /** ⚠️ LEGADO: texto livre das marcações antigas. Ver `task_id`. */
+  /** Legado: texto livre das marcações antigas. Ver `task_id`. */
   task_ref: string | null;
-  /**
-   * A tarefa DE VERDADE (Spec 043, fatia E).
-   *
-   * ⚠️ `task_ref` ERA TEXTO LIVRE -- não dava para clicar, não seguia a
-   * tarefa quando ela era renomeada e não sabia dizer se ela ainda existia.
-   * Os dois convivem: o novo para o que nasce daqui em diante, o velho como
-   * registro do que já foi marcado.
-   *
-   * ⚠️ `task_title` VEM `null` QUANDO A TAREFA FOI APAGADA -- a tela mostra
-   * "tarefa vinculada" sem nome, e não um link que leva a lugar nenhum.
-   */
+  /** A tarefa vinculada. `task_title` vem `null` quando ela foi apagada. */
   task_id: string | null;
   task_title: string | null;
 };
@@ -3348,17 +2324,12 @@ export type Batch = {
   protocol: string;
   requester_name: string;
   requester_email: string;
-  /**
-   * ⚠️ OS TRÊS SÃO OPCIONAIS DESDE A FATIA G (Spec 043): `null` significa
-   * "este formulário não perguntou", que é diferente de "" ("perguntou e
-   * ficou em branco"). Nome e e-mail continuam obrigatórios.
-   */
+  /** Opcionais: `null` = o formulário não perguntou; "" = perguntou e ficou em branco. */
   requester_phone: string | null;
   requester_department: string | null;
   requester_polo: string | null;
   created_at: string;
-  /** Por qual formulário o envio entrou (15/10). `null` = pedido antigo,
-   *  de antes de existir formulário por time. */
+  /** Por qual formulário o envio entrou; `null` = pedido de antes de existir formulário por time. */
   form_id?: string | null;
   form_title?: string | null;
   items: BatchItem[];
@@ -3378,16 +2349,8 @@ export type BatchListResponse = {
 };
 
 /**
- * Fila de triagem: um card por envio, com todas as seções dentro.
- *
- * ⚠️⚠️ `teamId` É OBRIGATÓRIO, e `null` é uma resposta -- mesma decisão de
- * `listProjects`, e pelo mesmo motivo. A fila recortada e a fila da organização
- * são coisas muito diferentes para sair de um parâmetro omitido: quem tria
- * veria pedido de outro time e agiria sobre ele.
- *
- * ⚠️ OS BADGES VÃO NO MESMO PAYLOAD (`pending_total`,
- * `approved_without_task_total`) e o backend os conta com o MESMO `team_id` --
- * contador que diverge da lista é pior que não ter contador.
+ * Fila de triagem: um card por envio. `teamId` obrigatório, `null` é resposta.
+ * Os badges vêm no mesmo payload, contados com o mesmo `team_id`.
  */
 export async function listarEnvios(
   params: {
@@ -3395,7 +2358,7 @@ export async function listarEnvios(
     filtro?: SolicitacaoFiltro;
     page?: number;
     size?: number;
-    /** Nome, e-mail ou protocolo (15/10). */
+    /** Nome, e-mail ou protocolo. */
     busca?: string;
     formId?: string | null;
     /** Só demandas aceitas que ainda não viraram tarefa. */
@@ -3414,18 +2377,7 @@ export async function listarEnvios(
 }
 
 /** Marca/desmarca "tarefa criada" numa solicitação APROVADA. */
-/**
- * Cria a tarefa A PARTIR do pedido e já a vincula (Spec 043, fatia E).
- *
- * ⚠️ SUBSTITUI UM COPIA-E-COLA DE SEIS PASSOS: copiar o briefing, sair da
- * fila, abrir o quadro, criar a tarefa, colar, voltar e marcar. O último era o
- * que mais se esquecia -- e é a razão de o filtro "aprovadas sem tarefa"
- * existir.
- *
- * ⚠️ SEM `assignee_ids`, QUEM CLICA VIRA RESPONSÁVEL: toda tarefa precisa de
- * ao menos um, e a pessoa que acabou de aceitar o pedido é quem responde por
- * ele até repassar.
- */
+/** Cria a tarefa a partir do pedido e já a vincula. Sem `assignee_ids`, quem clica vira responsável. */
 export async function criarTarefaDaSolicitacao(
   id: string,
   board_id?: string | null
@@ -3448,12 +2400,8 @@ export async function marcarTarefaCriada(
 }
 
 /**
- * Move um pedido ACEITO entre aprovada, em andamento e concluída.
- *
- * ⚠️ ROTA SEPARADA DE `/aprovar`, e não um campo dela: triar e acompanhar são
- * trabalhos diferentes. Aprovar grava QUEM decidiu e QUANDO; andar não toca
- * nesses campos, e reaproveitar a rota de triagem os reescreveria a cada
- * mudança de andamento — apagando a decisão original.
+ * Move um pedido aceito entre aprovada, em andamento e concluída. Rota separada de `/aprovar`,
+ * que reescreveria quem decidiu e quando.
  */
 export async function andarSolicitacao(
   id: string,
@@ -3485,15 +2433,7 @@ export async function rejeitarSolicitacao(
   });
 }
 
-// ---------------------------------------------------------------
-// BASE -- a tabela que a equipe monta (Spec 056)
-// ---------------------------------------------------------------
-// ⚠️ OS BOTÕES VÊM DO SERVIDOR, por base (`can_*`). Hoje todo mundo da árvore
-// edita célula, e seria tentador a tela mostrar tudo -- no dia em que um verbo
-// for desligado para alguém, a tela continuaria oferecendo o botão e o
-// servidor recusaria (spec §5.6). A tela nunca deduz de papel.
-// ⚠️ Sem cache de módulo: a base muda o tempo todo (outras pessoas editam), e
-// a página recarrega a cada 10 s até o ao vivo da fatia G.
+// ---- Base. Os botões vêm do servidor, por base (`can_*`); a tela nunca deduz de papel. Sem cache de módulo.
 
 export type BaseColumnType =
   | "title"
@@ -3564,9 +2504,8 @@ export type BaseDetail = BaseSummary & {
   can_delete_view: boolean;
 };
 
-/** Valor de célula como o servidor guarda (spec §7.1). Ausente = vazia. */
-/** Fatia J: a célula de link guarda uma lista, cada um com nome opcional. ⚠️
- *  Células gravadas antes podem ter o texto solto -- leia por `linksDaCelula`. */
+/** Valor de célula como o servidor guarda. Ausente = vazia. */
+/** Célula de link: lista, cada um com nome opcional. Células antigas podem ter texto solto: leia por `linksDaCelula`. */
 export type BaseLinkValue = { title: string; url: string };
 export type BaseCellValue = string | number | boolean | string[] | BaseLinkValue[];
 
@@ -3639,24 +2578,21 @@ export async function createBaseColumn(
     name: string;
     type: BaseColumnType;
     options?: BaseOptionInput[];
-    /** Fatia I ("Inserir à esquerda/direita"); ausente = no fim. */
+    /** "Inserir à esquerda/direita"; ausente = no fim. */
     position?: number;
   }
 ): Promise<BaseColumn> {
   return api<BaseColumn>(`/api/v1/bases/${baseId}/columns`, { method: "POST", body });
 }
 
-/** Fatia I: "Duplicar propriedade" -- nome, tipo, opções e valores, à direita. */
+/** "Duplicar propriedade": nome, tipo, opções e valores, à direita. */
 export async function duplicateBaseColumn(baseId: string, columnId: string): Promise<BaseColumn> {
   return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}/duplicate`, {
     method: "POST",
   });
 }
 
-/**
- * Spec 061: a coluna de TEXTO vira a principal (o título dos cards), e a de
- * antes vira texto. As duas trocam de lugar; os valores não mudam.
- */
+/** A coluna de texto vira a principal (título dos cards) e a de antes vira texto; os valores não mudam. */
 export async function makeBaseColumnTitle(baseId: string, columnId: string): Promise<BaseColumn> {
   return api<BaseColumn>(`/api/v1/bases/${baseId}/columns/${columnId}/make-title`, {
     method: "POST",
@@ -3708,7 +2644,7 @@ export async function createBaseRow(
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows`, { method: "POST", body: { values } });
 }
 
-/** Várias linhas numa ação só (Spec 057: colar além da última linha). */
+/** Várias linhas numa ação só (colar além da última linha). */
 export async function createBaseRows(
   baseId: string,
   rows: Record<string, BaseCellValue | null>[]
@@ -3728,13 +2664,8 @@ export async function updateBaseCells(
 }
 
 /**
- * O canal ao vivo de uma base (Spec 056, fatia G): um `fetch` lido em fluxo.
- *
- * ⚠️ NÃO PASSA PELO `api()`, e é a única chamada assim: o `api()` lê o corpo
- * inteiro, e este corpo não acaba (dura 60 s). Por isso o 401 não renova o
- * token aqui -- quem chama recarrega a base pelo `api()`, que renova, e reabre.
- * O token vai no CABEÇALHO, como em toda chamada, e não na URL (ver
- * `lib/sse.ts`).
+ * O canal ao vivo de uma base: um `fetch` lido em fluxo. Não passa pelo `api()` (o corpo não acaba),
+ * então o 401 não renova aqui: quem chama recarrega pelo `api()` e reabre. Token no cabeçalho, não na URL.
  */
 export function abrirCanalDaBase(baseId: string, signal: AbortSignal): Promise<Response> {
   const token = getToken();
@@ -3748,11 +2679,7 @@ export function abrirCanalDaBase(baseId: string, signal: AbortSignal): Promise<R
   });
 }
 
-/**
- * Desfazer e refazer (Spec 056, fatia H, §9): a ação mais recente DA PESSOA
- * naquela base, dentro de 1 dia. ⚠️ Conflito não é erro: vem 200 com
- * `conflict: true` (o servidor tirou a entrada da pilha, e isso é gravação).
- */
+/** Desfazer/refazer a ação mais recente da pessoa na base (até 1 dia). Conflito não é erro: 200 com `conflict: true`. */
 export type BaseUndoResult = { applied: boolean; conflict: boolean; kind: string | null };
 
 export async function undoBase(baseId: string): Promise<BaseUndoResult> {
@@ -3763,7 +2690,7 @@ export async function redoBase(baseId: string): Promise<BaseUndoResult> {
   return api<BaseUndoResult>(`/api/v1/bases/${baseId}/redo`, { method: "POST" });
 }
 
-/** Visões são COMPARTILHADAS (D14): mudar filtro ou ordem muda para todos. */
+/** Visões são compartilhadas: mudar filtro ou ordem muda para todos. */
 export async function createBaseView(
   baseId: string,
   body: { name: string; layout: BaseView["layout"]; config?: Record<string, unknown> }
@@ -3787,12 +2714,7 @@ export async function deleteBaseRow(baseId: string, rowId: string): Promise<Base
   return api<BaseRow>(`/api/v1/bases/${baseId}/rows/${rowId}`, { method: "DELETE" });
 }
 
-// ---------------------------------------------------------------
-// TELA INICIAL DO TIME (Spec 058)
-// ---------------------------------------------------------------
-// ⚠️ UM PEDIDO, TODOS OS CARDS. E o servidor que decide quem ve o quê: card
-// sem permissão vem `null` (a carga sem `team_workload.read`, a fila sem
-// `solicitation.read`), e a tela só esconde.
+// ---- Tela inicial do time: um pedido, todos os cards. Card sem permissão vem `null`.
 
 export type DashboardTask = {
   id: string;
@@ -3862,14 +2784,7 @@ export async function getDashboard(
   return api<DashboardResponse>(`/api/v1/dashboard${s ? `?${s}` : ""}`);
 }
 
-// ---------------------------------------------------------------
-// ARQUIVOS (15/10): baixar uma planilha
-// ---------------------------------------------------------------
-// ⚠️ NÃO PASSA POR `api()`: ela é JSON nos dois sentidos, e aqui a resposta é
-// binária. O resto é o mesmo: o token, UM refresh no 401, e o erro no
-// envelope `{ error: { code, message, details } }`. (O envio de planilha vai
-// em base64 no JSON -- ver `runImport` --, e o `uploadForm` daqui saiu em
-// 16/10 sem nunca ter tido chamador.)
+// ---- Arquivos: baixar planilha. Não passa por `api()` (resposta binária); mesmo token, refresh e envelope de erro.
 
 async function _rawRequest(path: string, init: RequestInit, isRetry = false): Promise<Response> {
   const headers = new Headers(init.headers);
@@ -3922,7 +2837,7 @@ export async function downloadFile(
   URL.revokeObjectURL(url);
 }
 
-/** O painel em planilha, com os mesmos filtros da tela (Spec 058, 15/10). */
+/** O painel em planilha, com os mesmos filtros da tela. */
 export async function exportDashboard(
   teamId: string | null,
   assigneeId: string | null,
@@ -3939,9 +2854,7 @@ export async function exportDashboard(
   await downloadFile(`/api/v1/dashboard/export${s ? `?${s}` : ""}`, "painel.xlsx");
 }
 
-// ---------------------------------------------------------------
-// BASE: PLANILHA (Spec 057, 15/10)
-// ---------------------------------------------------------------
+// ---- Base: planilha.
 
 /** A Base em planilha, com as linhas e colunas DA VISÃO (na ordem da tela). */
 export async function exportBase(

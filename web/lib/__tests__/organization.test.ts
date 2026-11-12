@@ -1,24 +1,16 @@
-/**
- * Spec 047, fatia B -- a logica da tela `/organizacao`.
- *
- * ⚠️ Estes testes existem porque `app/` esta FORA do `include` do vitest, e a
- * §7 da spec avisa: *"`temAcaoPossivel` mora em `lib/`, entao tem guardiao. O
- * resto da tela nao."* Toda decisao desta tela mora em `lib/organization.ts`
- * por causa disso.
- */
+// Lógica da tela `/organizacao` (`app/` fica fora do vitest, por isso a regra mora em `lib/`).
 
 import { describe, it, expect } from "vitest";
 import {
   searchPeople,
   papeisDeOrganizacaoAtribuiveis,
-  areaCards,
+  rootTeamCards,
   matchesSearch,
   organizationManagers,
-  peopleWithoutArea,
+  peopleWithoutRoot,
   podeAbrirOrganizacao,
 } from "../organization";
-// ⚠️ Importado de OUTRO modulo de proposito: o teste de concordancia entre as
-// duas telas so tem valor se ele chamar as duas implementacoes de verdade.
+// Importado de outro módulo de propósito: o teste de concordância chama as duas implementações.
 import { subteamCards } from "../teamScreen";
 import type { Member, Team, OrgRole } from "../api";
 
@@ -40,7 +32,7 @@ const TIMES: Team[] = [
 
 function pessoa(
   nome: string,
-  areas: string[],
+  roots: string[],
   extra: {
     email?: string;
     org_role?: OrgRole | null;
@@ -54,42 +46,37 @@ function pessoa(
     email: extra.email ?? `${nome.toLowerCase()}@t.dev`,
     is_active: extra.is_active ?? true,
     org_role: extra.org_role ?? null,
-    area_ids: areas,
+    root_team_ids: roots,
     team_ids: [],
   };
 }
 
-describe("areaCards", () => {
-  it("conta pessoas por area e subtimes por arvore", () => {
-    const cards = areaCards(TIMES, [
+describe("rootTeamCards", () => {
+  it("conta pessoas por time raiz e subtimes por arvore", () => {
+    const cards = rootTeamCards(TIMES, [
       pessoa("Ana", [MKT]),
       pessoa("Bia", [MKT]),
       pessoa("Caio", [TI]),
     ]);
-    expect(cards.map((c) => [c.area.name, c.pessoas, c.subteams])).toEqual([
+    expect(cards.map((c) => [c.root.name, c.pessoas, c.subteams])).toEqual([
       ["Marketing", 2, 2], // SEO + SEO Junior
       ["TI", 1, 0],
     ]);
   });
 
-  it("⚠️ NAO duplica quem esta na area E num subtime dela", () => {
-    // ⚠️ E o cadastro normal de quem coordena. Somar o `membros` de cada time
-    // da arvore -- a implementacao obvia -- contaria esta pessoa duas vezes,
-    // e o card diria uma a mais. O backend ja deduplica com `DISTINCT`; este
-    // teste garante que a tela nao reintroduza a soma.
-    const cards = areaCards(TIMES, [pessoa("Ana", [MKT])]);
+  it("⚠️ NAO duplica quem esta no time E num subtime dele", () => {
+    // Somar os membros de cada time da árvore contaria esta pessoa duas vezes.
+    const cards = rootTeamCards(TIMES, [pessoa("Ana", [MKT])]);
     expect(cards[0].pessoas).toBe(1);
   });
 
   it("conta neto como subtime -- a arvore tem tres niveis", () => {
-    expect(areaCards(TIMES, [])[0].subteams).toBe(2);
+    expect(rootTeamCards(TIMES, [])[0].subteams).toBe(2);
   });
 
   it("⚠️ NAO conta inativo -- o card diz quem trabalha ali", () => {
-    // ⚠️ Reportado pela Camila em 10/09, na tela: o card do Marketing dizia
-    // "8 pessoas" contando quem ja saiu. O inativo continua tendo aba propria
-    // na tela da area, com o proprio numero -- nada o esconde.
-    const cards = areaCards(TIMES, [
+    // O inativo tem aba própria na tela do time.
+    const cards = rootTeamCards(TIMES, [
       pessoa("Ana", [MKT]),
       pessoa("Bia", [MKT], { is_active: false }),
     ]);
@@ -97,61 +84,53 @@ describe("areaCards", () => {
   });
 
   it("⚠️ concorda com `subteamCards`: a regra de inativo e UMA", () => {
-    // ⚠️⚠️ ESTE TESTE AMARRA DUAS TELAS. `subteamCards` (tela de time) e
-    // `areaCards` (tela da organizacao) contam pessoas para o MESMO tipo de
-    // cartao; se uma passar a incluir inativo e a outra nao, o mesmo subtime
-    // mostra dois numeros em telas diferentes -- e ninguem ve as duas lado a
-    // lado, entao o defeito vive muito tempo.
+    // Amarra duas telas: o mesmo tipo de cartão não pode contar diferente.
     const so = [time(MKT, "Marketing", null), time(SEO, "SEO", MKT)];
     const vinculo = [{ team_id: SEO, role: "OPERATOR" as const }];
     const gente: Member[] = [
       { ...pessoa("Ana", [MKT]), memberships: vinculo },
       { ...pessoa("Bia", [MKT], { is_active: false }), memberships: vinculo },
     ];
-    expect(areaCards(so, gente)[0].pessoas).toBe(
+    expect(rootTeamCards(so, gente)[0].pessoas).toBe(
       subteamCards(MKT, so, gente)[0].pessoas,
     );
   });
 
-  it("area vazia mostra zero, e nao some da grade", () => {
-    const cards = areaCards(TIMES, []);
+  it("time vazio mostra zero, e nao some da grade", () => {
+    const cards = rootTeamCards(TIMES, []);
     expect(cards).toHaveLength(2);
     expect(cards.every((c) => c.pessoas === 0)).toBe(true);
   });
 
-  it("as areas vem ordenadas por nome", () => {
+  it("os times raiz vem ordenados por nome", () => {
     const invertido = [TIMES[3], TIMES[0], TIMES[1], TIMES[2]];
-    expect(areaCards(invertido, []).map((c) => c.area.name)).toEqual([
+    expect(rootTeamCards(invertido, []).map((c) => c.root.name)).toEqual([
       "Marketing",
       "TI",
     ]);
   });
 });
 
-describe("peopleWithoutArea", () => {
-  it("⭐ acha quem nao esta em area nenhuma", () => {
-    // ⚠️ Sem este card a pessoa NAO APARECE em lugar nenhum do produto -- a
-    // grade e feita de areas. E nao e hipotetico: a conta de administracao da
-    // Camila esta assim desde 08/09, de proposito.
-    const soltas = peopleWithoutArea([
+describe("peopleWithoutRoot", () => {
+  it("⭐ acha quem nao esta em time nenhum", () => {
+    // Sem este cartão a pessoa não aparece em lugar nenhum do produto.
+    const soltas = peopleWithoutRoot([
       pessoa("Ana", [MKT]),
       pessoa("Admin", []),
     ]);
     expect(soltas.map((m) => m.name)).toEqual(["Admin"]);
   });
 
-  it("⚠️ NAO confunde 'so na area' com 'sem area'", () => {
-    // O erro que `team_ids` produziria: quem esta apenas na raiz tem
-    // `team_ids` vazio -- e cairia aqui junto com os gerentes.
+  it("⚠️ NAO confunde 'so no time raiz' com 'sem time'", () => {
+    // Quem está só na raiz tem `team_ids` vazio; por isso a regra usa `root_team_ids`.
     const gerente: Member = { ...pessoa("Gerente", [MKT]), team_ids: [] };
-    expect(peopleWithoutArea([gerente])).toEqual([]);
+    expect(peopleWithoutRoot([gerente])).toEqual([]);
   });
 
-  it("trata a ausencia do campo como 'sem area'", () => {
-    // Respostas de MUTACAO nao resolvem `area_ids`; a tela nunca deve quebrar
-    // por causa disso.
-    const semCampo = { ...pessoa("X", []), area_ids: undefined } as Member;
-    expect(peopleWithoutArea([semCampo]).map((m) => m.name)).toEqual(["X"]);
+  it("trata a ausencia do campo como 'sem time'", () => {
+    // Respostas de mutação não trazem `root_team_ids`.
+    const semCampo = { ...pessoa("X", []), root_team_ids: undefined } as Member;
+    expect(peopleWithoutRoot([semCampo]).map((m) => m.name)).toEqual(["X"]);
   });
 });
 
@@ -195,9 +174,9 @@ describe("papeisDeOrganizacaoAtribuiveis -- o teto do gestor (Spec 049, fatia G)
 });
 
 describe("searchPeople", () => {
-  it("⭐ diz em QUAIS areas a pessoa esta -- a pergunta que a grade esconde", () => {
+  it("⭐ diz em QUAIS times raiz a pessoa esta -- a pergunta que a grade esconde", () => {
     const achadas = searchPeople("ana", [pessoa("Ana", [MKT, TI])], TIMES);
-    expect(achadas[0].areas.map((t) => t.name)).toEqual(["Marketing", "TI"]);
+    expect(achadas[0].roots.map((t) => t.name)).toEqual(["Marketing", "TI"]);
   });
 
   it("ignora acento e caixa", () => {
@@ -212,24 +191,22 @@ describe("searchPeople", () => {
   });
 
   it("term vazio nao lista o workspace inteiro", () => {
-    // ⚠️ Sem isto, abrir a tela despejaria todo mundo embaixo da grade.
+    // Sem isto, abrir a tela listaria todo mundo embaixo da grade.
     expect(searchPeople("", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
     expect(searchPeople("   ", [pessoa("Ana", [MKT])], TIMES)).toEqual([]);
   });
 
-  it("quem nao tem area aparece na busca, com lista de areas vazia", () => {
-    // ⚠️ Ela precisa ser ACHAVEL: e justamente quem a grade nao mostra.
+  it("quem nao tem time aparece na busca, com lista de times vazia", () => {
+    // É justamente quem a grade não mostra.
     const achadas = searchPeople("admin", [pessoa("Admin", [])], TIMES);
     expect(achadas).toHaveLength(1);
-    expect(achadas[0].areas).toEqual([]);
+    expect(achadas[0].roots).toEqual([]);
   });
 });
 
 describe("matchesSearch", () => {
   it("⭐ ignora acento — a divergência que o code review achou", () => {
-    // ⚠️ `/membros` nascera com `toLowerCase()` puro: "jose" achava "José" na
-    // `/organizacao` e ninguém na outra tela. Mesma pessoa, mesmo term, duas
-    // respostas. Agora as duas perguntam AQUI.
+    // As duas telas de pessoas usam esta regra.
     expect(matchesSearch("jose", pessoa("José", [MKT]))).toBe(true);
     expect(matchesSearch("JOSÉ", pessoa("Jose", [MKT]))).toBe(true);
   });
@@ -240,9 +217,7 @@ describe("matchesSearch", () => {
   });
 
   it("term vazio casa com todo mundo — quem decide filtrar é a tela", () => {
-    // ⚠️ Ao contrário de `searchPeople`, que devolve vazio: lá o term vazio
-    // significa "não busquei nada"; aqui é um predicado por pessoa, e a tela
-    // é que decide se está filtrando.
+    // Ao contrário de `searchPeople`: aqui é predicado por pessoa.
     expect(matchesSearch("", pessoa("Ana", [MKT]))).toBe(true);
     expect(matchesSearch("   ", pessoa("Ana", [MKT]))).toBe(true);
   });
@@ -259,9 +234,7 @@ describe("podeAbrirOrganizacao -- a guarda da /organizacao (Spec 051, fatia F)",
   });
 
   it("⚠️ sem papel de organizacao nao abre -- mesmo com vinculo de gerente", () => {
-    // O defeito: a pagina abria para quem digitasse o endereco. O papel de
-    // TIME (inclusive o ADMIN antigo de time) nao entra: a pergunta e so
-    // `org_role`.
+    // Papel de time não entra: a pergunta é só `org_role`.
     expect(podeAbrirOrganizacao({ org_role: null })).toBe(false);
     expect(podeAbrirOrganizacao({})).toBe(false);
   });

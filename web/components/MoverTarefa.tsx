@@ -24,12 +24,8 @@ import {
 } from "@/lib/moverTarefa";
 
 /**
- * O modal "Mover…" (Spec 062): quadro, "vai como" e, se for subtarefa, a
- * busca da tarefa principal com o caminho inteiro.
- *
- * ⚠️ A PREVIA E O PROPRIO SERVIDOR (`dry_run`), refeita a cada escolha. O que
- * ela diz -- quem sai, quem assume, o projeto -- e o que o "Mover" vai fazer:
- * o servidor roda a operacao num savepoint e desfaz.
+ * O modal "Mover…": quadro, "vai como" e, se for subtarefa, a busca da tarefa
+ * principal. A prévia é o próprio servidor (`dry_run`), refeita a cada escolha.
  */
 export default function MoverTarefa({
   task,
@@ -50,8 +46,7 @@ export default function MoverTarefa({
   const [mae, setMae] = useState<AchadoDaBusca | null>(null);
   const [previa, setPrevia] = useState<PreviaDoMover | null>(null);
   const [erro, setErro] = useState<string | null>(null);
-  // O erro do MOVER mora separado do da previa (auditoria 11/11, item 7):
-  // juntos, uma falha de rede desligava o botao ate trocar de destino.
+  // Separado do erro da prévia: juntos, uma falha de rede desligava o botão até trocar de destino.
   const [erroAoMover, setErroAoMover] = useState<string | null>(null);
   const [movendo, setMovendo] = useState(false);
   const seletorRef = useRef<HTMLSelectElement | null>(null);
@@ -131,15 +126,13 @@ export default function MoverTarefa({
 
   const frases = previa ? frasesDaPrevia(previa) : [];
   const podeMover = !!corpo && !!previa?.mudou && !erro && !movendo;
-  const areas = destinos ? [...new Set(destinos.map((d) => d.area))] : [];
+  const rootTeams = destinos ? [...new Set(destinos.map((d) => d.rootTeam))] : [];
 
   return (
     <CaixaDeDialogo
       ariaLabel={`Mover a tarefa ${task.title}`}
       largura={520}
-      // Durante o "Movendo…" o Esc e ENGOLIDO, e nao ignorado (auditoria
-      // 11/11, item 6): sem dono, ele subia ao detalhe, que fechava -- e o
-      // erro de um movimento que falhasse nao aparecia em lugar nenhum.
+      // Durante o "Movendo…" o Esc é engolido: sem dono, ele subiria ao detalhe e fecharia tudo.
       onEsc={movendo ? () => {} : onFechar}
       onFundo={movendo ? undefined : onFechar}
     >
@@ -165,10 +158,10 @@ export default function MoverTarefa({
         }}
       >
         {!destinos && <option value="">Carregando…</option>}
-        {areas.map((area) => (
-          <optgroup key={area} label={area}>
+        {rootTeams.map((rootTeam) => (
+          <optgroup key={rootTeam} label={rootTeam}>
             {destinos!
-              .filter((d) => d.area === area)
+              .filter((d) => d.rootTeam === rootTeam)
               .map((d) => (
                 <option key={d.chave} value={d.chave}>
                   {d.rotulo}
@@ -219,9 +212,7 @@ export default function MoverTarefa({
             onKeyDown={(e) => e.stopPropagation()}
             onChange={(e) => {
               setBusca(e.target.value);
-              // A escolhida sai da lista com a busca nova: valendo escondida,
-              // a tarefa ia para baixo de quem a tela nao mostra mais
-              // (auditoria 11/11, item 8).
+              // A escolhida pode sumir da lista nova; não pode valer escondida.
               setMae(null);
             }}
           />

@@ -1,11 +1,9 @@
-"""Spec 062 -- mover tarefa e subtarefa para qualquer quadro e qualquer nivel.
+"""Mover tarefa e subtarefa para qualquer quadro e qualquer nivel.
 
-O MUNDO (`_mundo`): duas areas, Marketing (subtimes SEO e Design) e Comercial,
-cada uma com o seu Quadro geral; o Design tem um quadro avulso.
+`_mundo`: dois times raiz, Marketing (subtimes SEO e Design) e Comercial, cada
+um com o seu Quadro geral; o Design tem um quadro avulso.
     `ator`: ADMIN de organizacao, quem move.
     `gi`  : OPERATOR do Design -- enxerga Design + Marketing, nunca o Comercial.
-
-Uma decisao da spec por bloco de teste; as recusas no fim.
 """
 
 from __future__ import annotations
@@ -122,10 +120,9 @@ async def m(db):
 async def test_para_o_nivel_de_cima_trava_a_tarefa_antes_de_escrever(
     db, m, connection
 ) -> None:
-    """Auditoria 11/11, item 5: so o ramo "subtarefa de..." travava. Sem a
-    trava, um movimento cruzado deixava as filhas com o path de antes. A
-    corrida em si nao cabe num teste de uma conexao so; o que se prova aqui e
-    que a linha e travada ANTES da primeira escrita."""
+    """Mover para o nivel de cima trava a linha antes da primeira escrita, senao
+    um movimento concorrente deixaria as filhas com o path antigo.
+    """
     _, filha, _ = await _arvore(db, m)
     sqls: list[str] = []
 
@@ -151,9 +148,9 @@ def _capturar(connection):
 
 
 async def test_mover_trava_a_subarvore_antes_de_listar(db, m, connection) -> None:
-    """Auditoria 11/11, item 19: a lista da subarvore era tirada sem trava, e
-    uma subtarefa criada no meio ficava com o quadro antigo. A trava vem antes
-    da lista, numa consulta separada (a lista precisa de snapshot novo)."""
+    """A subarvore e travada antes de ser listada, numa consulta separada (a
+    lista precisa de snapshot novo).
+    """
     mae, _, _ = await _arvore(db, m)
     sqls, _anota = _capturar(connection)
     event.listen(connection.sync_connection, "before_cursor_execute", _anota)
@@ -170,8 +167,7 @@ async def test_mover_trava_a_subarvore_antes_de_listar(db, m, connection) -> Non
 
 
 async def test_criar_subtarefa_trava_a_mae_para_leitura(db, m, connection) -> None:
-    """Auditoria 11/11, item 19, o outro lado: o `create` trava a mae com
-    `FOR SHARE`, e por isso espera um mover que a esteja levando."""
+    """Criar subtarefa trava a mae com `FOR SHARE`, e espera um mover em curso."""
     mae, _, _ = await _arvore(db, m)
     sqls, _anota = _capturar(connection)
     event.listen(connection.sync_connection, "before_cursor_execute", _anota)
@@ -188,11 +184,11 @@ async def test_criar_subtarefa_trava_a_mae_para_leitura(db, m, connection) -> No
     assert any(q.endswith("FOR SHARE") for q in sqls[:primeira_escrita])
 
 
-# ------------------------------------------------ decisoes 1 e 2: tudo vai junto
+# ------------------------------------------------ tudo vai junto
 async def test_status_sem_coluna_no_destino_muda_e_a_previa_avisa(db, m) -> None:
-    """Auditoria 11/11: num quadro de quatro colunas, `BLOCKED` vira outro
-    status (ADR 0042, degrau 2). Mudava calado; agora a previa conta e o
-    historico grava o antes e o depois."""
+    """Num quadro de quatro colunas `BLOCKED` vira outro status: a previa avisa e o
+    historico grava o antes e o depois.
+    """
     quatro = await f.make_board(
         db, workspace_id=m["ws"], team_id=m["design"], name="Quatro", colunas=COLUNAS_BASE
     )
@@ -286,10 +282,10 @@ async def test_subtarefa_vira_principal(db, m) -> None:
     assert neta.depth == 1 and neta.path.startswith(filha.path + ".")
 
 
-# ---------------------------------------------------------- decisao 4: projeto
+# ---------------------------------------------------------- projeto
 
 
-async def test_principal_em_outra_area_perde_o_projeto(db, m) -> None:
+async def test_principal_em_outro_time_raiz_perde_o_projeto(db, m) -> None:
     proj = await f.make_project(
         db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["mkt"]
     )
@@ -300,7 +296,7 @@ async def test_principal_em_outra_area_perde_o_projeto(db, m) -> None:
     assert mae.project_id is None and filha.project_id is None
 
 
-async def test_principal_na_mesma_area_mantem_o_projeto(db, m) -> None:
+async def test_principal_no_mesmo_time_raiz_mantem_o_projeto(db, m) -> None:
     proj = await f.make_project(
         db, workspace_id=m["ws"], created_by=m["ator"], team_id=m["mkt"]
     )
@@ -321,7 +317,7 @@ async def test_subtarefa_herda_o_projeto_da_mae_nova(db, m) -> None:
     assert solta.project_id == proj
 
 
-# ----------------------------------------- decisoes 3 e 6: quem sai, quem assume
+# ----------------------------------------- quem sai, quem assume
 
 
 async def _responsaveis(db, task_id) -> set[uuid.UUID]:
@@ -521,7 +517,7 @@ async def test_busca_em_quadro_fora_da_lente_e_404(db, m) -> None:
     assert r.status_code == 404
 
 
-# ------------------------------------------------- revisao de 05/11 (antes do deploy)
+# ------------------------------------------------- subarvore e lente
 
 
 async def test_quem_nao_edita_uma_FILHA_nao_move_a_mae(db, m) -> None:
@@ -577,11 +573,10 @@ async def test_excluir_id_inexistente_nao_e_404(db, m) -> None:
 
 
 async def test_operadora_nao_joga_a_tarefa_num_time_fora_da_lente(db, m) -> None:
-    """Auditoria 11/11, item 15: a conferencia "criar no destino" (o
-    `_assert_team_in_reach` do relocate) nao tinha teste que falhasse sem ela
-    -- os outros rodam como ADMIN, sem lente. A `gi` (OPERATOR do Design)
-    alcanca o Quadro geral do Marketing, e o SEO e da mesma area; so a lente
-    impede a tarefa dela de ir para o SEO, que ela nao ve."""
+    """A `gi` alcanca o Quadro geral do Marketing, mas nao o SEO: a conferencia
+    "criar no destino" (`_assert_team_in_reach`) impede a tarefa de ir para la.
+    Os outros testes rodam como ADMIN e nao a exercitam.
+    """
     minha = await f.make_task(
         db, workspace_id=m["ws"], created_by=m["gi"], team_id=m["design"],
         board_id=m["geral_mkt"], title="minha",

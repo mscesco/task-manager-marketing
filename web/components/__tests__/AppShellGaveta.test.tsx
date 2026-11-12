@@ -1,7 +1,4 @@
-/**
- * Spec 063 -- o menu conforme a largura: gaveta no celular, sobreposto no
- * tablet, e o computador intocado. As faixas em si sao de `lib/sidebar.ts`.
- */
+// Menu conforme a largura: gaveta no celular, sobreposto no tablet, fixo no computador.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
@@ -43,7 +40,7 @@ function montar(largura: number) {
   return screen.findByText("conteudo");
 }
 
-const areaDoConteudo = () => screen.getByText("conteudo").closest("main")!.parentElement!;
+const regiaoDoConteudo = () => screen.getByText("conteudo").closest("main")!.parentElement!;
 
 beforeEach(() => localStorage.clear());
 afterEach(() => {
@@ -55,14 +52,14 @@ describe("celular", () => {
   it("abre pela barra, prende o foco na gaveta e o Escape devolve ao botao", async () => {
     await montar(375);
     const botao = screen.getByRole("button", { name: "Abrir menu" });
-    expect(areaDoConteudo().hasAttribute("inert")).toBe(false);
+    expect(regiaoDoConteudo().hasAttribute("inert")).toBe(false);
 
     fireEvent.click(botao);
-    await waitFor(() => expect(areaDoConteudo().hasAttribute("inert")).toBe(true));
+    await waitFor(() => expect(regiaoDoConteudo().hasAttribute("inert")).toBe(true));
     expect(document.activeElement).toBe(screen.getByLabelText("Retrair menu"));
 
     fireEvent.keyDown(window, { key: "Escape" });
-    await waitFor(() => expect(areaDoConteudo().hasAttribute("inert")).toBe(false));
+    await waitFor(() => expect(regiaoDoConteudo().hasAttribute("inert")).toBe(false));
     expect(document.activeElement).toBe(botao);
   });
 
@@ -89,7 +86,7 @@ describe("tablet", () => {
   it("sem o botao da barra, o foco volta ao Expandir", async () => {
     await montar(800);
     fireEvent.click(screen.getByLabelText("Expandir menu"));
-    await waitFor(() => expect(areaDoConteudo().hasAttribute("inert")).toBe(true));
+    await waitFor(() => expect(regiaoDoConteudo().hasAttribute("inert")).toBe(true));
 
     fireEvent.keyDown(window, { key: "Escape" });
     await waitFor(() => expect(document.activeElement).toBe(screen.getByLabelText("Expandir menu")));

@@ -1,35 +1,8 @@
-"""Fatia 5b-2 -- os caminhos que escrevem STATUS, contra quadro de 4 colunas.
+"""Caminhos que escrevem status, contra quadro de quatro colunas.
 
-⚠️ ESTE ARQUIVO EXISTE PORQUE UMA LEITURA VIROU MEDICAO E DEU ERRADO. O plano
-da 5b registrou, em 11/08, que todos os caminhos de escrita por status eram
-seguros num quadro de quatro colunas, "porque `OPEN`, `IN_PROGRESS`, `DONE` e
-`CANCELLED` sempre tem coluna nas quatro base". A frase e verdadeira e a
-conclusao e falsa: ela vale para `COLUNAS_BASE` intacto, e o CRUD da 5b-4
-existe justamente para nao deixar o quadro intacto.
-
-O levantamento, feito no codigo em 11/08:
-
-  | caminho                                    | resolve a coluna por    | ok |
-  |--------------------------------------------|-------------------------|----|
-  | `TaskService.create` SEM pai                | `default_board_and_...` | *  |
-  | `TaskService.create` COM pai                | `coluna_para_status`    | ok |
-  | `TaskService.update` por `status`           | `coluna_para_status`    | ok |
-  | `TaskService.update` por `column_id`        | `coluna_no_quadro`      | ok |
-  | `TaskRepository.complete_descendants`       | SQL PROPRIO             | ** |
-  | duplicacao de tarefa                        | passa pelo `create`     | ok |
-  | varredura de arquivamento                   | so LE, pela semantica   | ok |
-  | bloqueio de alcance (`tarefas_que_barram`)  | so LE, pela semantica   | ok |
-
-  (*)  sempre o Quadro geral, que tem as 8 colunas com ponte. ⚠️ DEIXA DE SER
-       verdade se o CRUD passar a editar as colunas do Quadro geral -- item
-       explicito da 5b-4, que por ora RECUSA mexer nele.
-  (**) era o furo. UPDATE em massa por `ltree`, com subconsulta propria que so
-       conhecia a ponte. Corrigido em 11/08 com os dois degraus da ADR 0042.
-
-⚠️ A DUPLICACAO DA REGRA E DELIBERADA. A cascata nao pode chamar o repositorio
-uma vez por linha -- e um UPDATE unico sobre a subarvore. O preco e a regra
-existir em dois lugares, e este arquivo e o unico lugar onde essa duplicacao
-fica honesta. Mesmo remedio de `TERMINAL_SEMANTICS` x `TERMINAL_STATUSES`.
+A cascata de conclusao (`TaskRepository.complete_descendants`) repete em SQL a
+regra de achar a coluna (ponte primeiro, depois a coluna alvo da semantica);
+estes testes mantem as duas copias concordando.
 """
 
 from __future__ import annotations
@@ -54,7 +27,6 @@ pytestmark = pytest.mark.integration
 async def _mundo(db):
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
-    # ADMIN de organizacao: sem vinculo de time (desde a 0031).
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     quadro4 = await f.make_board(
         db,
@@ -86,9 +58,8 @@ async def _coluna_por_nome(db, *, board_id, nome: str):
 async def _mae_com_filha(db, ctx, ws, raiz, user, quadro):
     """Mae e filha vivas no quadro dado, as duas em `Backlog`.
 
-    ⚠️ A COLUNA E RESOLVIDA ANTES DE ENCOSTAR EM `board_id`. Consultar depois
-    dispara AUTOFLUSH e grava o par `(quadro novo, coluna velha)`, que nao
-    existe -- a FK composta recusa antes de o teste testar coisa nenhuma.
+    A coluna e resolvida antes de mexer em `board_id`: consultar depois dispara
+    autoflush com o par (quadro novo, coluna velha) e a FK composta recusa.
     """
     backlog = await _coluna_por_nome(db, board_id=quadro.id, nome="Backlog")
     mae = await f.make_task(
@@ -114,12 +85,8 @@ async def _mae_com_filha(db, ctx, ws, raiz, user, quadro):
 
 
 async def test_cascata_conclui_a_filha_no_quadro_de_quatro_colunas(db) -> None:
-    """O caso feliz: `Concluido` tem ponte, o degrau 1 responde.
-
-    ⚠️ NAO E O TESTE QUE IMPORTA -- este passava ANTES do conserto de 11/08. Ele
-    esta aqui como CONTROLE do que vem abaixo: sem ele, o teste seguinte poderia
-    ficar verde por a cascata ter parado de funcionar por inteiro.
-    """
+    """Controle: `Concluido` tem ponte. Sem ele o teste seguinte passaria se a
+    cascata parasse de funcionar por inteiro."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     mae, filha = await _mae_com_filha(db, ctx, ws, raiz, user, quadro4)
 
@@ -141,17 +108,8 @@ async def test_cascata_conclui_a_filha_no_quadro_de_quatro_colunas(db) -> None:
 
 
 async def test_cascata_acha_a_coluna_DONE_sem_ponte(db) -> None:
-    """⚠️ O TESTE DA FATIA. Quadro cuja unica coluna `DONE` nao tem ponte.
-
-    Estado alcancavel pelo CRUD da 5b-4 sem quebrar nenhuma trava: criar
-    `Entregue` (semantica `DONE`, sem ponte, marcada como alvo) e apagar
-    `Concluido`. A ADR 0042 D4 PERMITE, porque continua havendo uma coluna
-    `DONE` -- a trava e sobre a SEMANTICA existir, nao sobre a ponte.
-
-    Antes do conserto de 11/08 a subconsulta da cascata devolvia NULL aqui, e
-    `column_id` e NOT NULL desde a `0011`: concluir a mae explodia para quem
-    clicou, num quadro que essa pessoa talvez nem conhecesse.
-    """
+    """A unica coluna `DONE` nao tem ponte: a cascata acha pela semantica, em vez
+    de gravar `column_id` NULL."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     mae, filha = await _mae_com_filha(db, ctx, ws, raiz, user, quadro4)
 
@@ -182,15 +140,10 @@ async def test_cascata_acha_a_coluna_DONE_sem_ponte(db) -> None:
 
 
 async def test_a_cascata_nao_come_a_ponte_quando_as_duas_existem(db) -> None:
-    """⚠️ A ORDEM DOS DEGRAUS, DENTRO DA CASCATA.
+    """Com duas colunas `DONE`, a de ponte ganha da alvo sem ponte.
 
-    Duas colunas `DONE` no mesmo quadro: `Concluido` com ponte, e `Entregue`
-    sem ponte e marcada como alvo. A ponte tem de ganhar, igual no repositorio.
-
-    ⚠️ E O `DESC NULLS LAST` DA SUBCONSULTA. `legacy_status = 'COMPLETED'` e
-    NULL -- e nao FALSE -- para `Entregue`, e o Postgres poe NULL primeiro num
-    `DESC`. Sem o `NULLS LAST` a coluna sem ponte ganha, e a cascata manda as
-    filhas para a coluna errada sem erro nenhum.
+    Depende do `DESC NULLS LAST`: a comparacao com a ponte da NULL (nao FALSE)
+    na coluna sem ponte, e o Postgres poe NULL primeiro num `DESC`.
     """
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     mae, filha = await _mae_com_filha(db, ctx, ws, raiz, user, quadro4)
@@ -237,16 +190,11 @@ async def test_a_cascata_nao_come_a_ponte_quando_as_duas_existem(db) -> None:
 async def test_duplicacao_em_quadro_de_quatro_colunas_deriva_o_status(
     db,
 ) -> None:
-    """Duplicar passa pelo `create`, entao herda a regra da ADR 0042.
-
-    ⚠️ NAO E REDUNDANTE com o teste de subtarefa da 5b-1: a duplicacao chama o
-    `create` uma vez POR NO da arvore, e um erro de coluna aqui aparece so a
-    partir do segundo nivel.
-    """
+    """Status que o quadro de quatro colunas nao tem cai na coluna da semantica
+    e o status efetivo vem dela."""
     ctx, ws, raiz, user, quadro4 = await _mundo(db)
     mae, filha = await _mae_com_filha(db, ctx, ws, raiz, user, quadro4)
 
-    # A filha vai para um status que o quadro de quatro colunas nao conhece.
     with acting_as(**ctx):
         await TaskService(db).update(
             task_id=filha.id,
@@ -263,33 +211,29 @@ async def test_duplicacao_em_quadro_de_quatro_colunas_deriva_o_status(
     )
     assert filha.board_id == quadro4.id
 
-# ------------------------------------------------------------ auditoria de 16/10
 
-
-async def test_tarefa_de_topo_em_area_de_quatro_colunas_tem_o_status_da_coluna(db) -> None:
-    """O asterisco (*) do levantamento acima virou realidade: area criada pela
-    tela nasce com QUATRO colunas (desde 10/09), e o ramo sem pai e sem quadro
-    gravava o status PEDIDO. `BLOCKED` caia em "Em Andamento" e ficava
-    `BLOCKED` -- coluna e status discordando (invariante 3)."""
+async def test_tarefa_de_topo_em_time_raiz_de_quatro_colunas_tem_o_status_da_coluna(db) -> None:
+    """Tarefa sem pai e sem quadro num time raiz de quatro colunas: o status
+    gravado e o da coluna, nao o pedido."""
     import uuid
 
     from app.db.models import Team
     from app.modules.tasks.application.board_service import BoardService
 
     ws = await f.make_workspace(db)
-    area = uuid.uuid4()
-    db.add(Team(id=area, workspace_id=ws, parent_team_id=None, name="Area nova", slug="area-nova"))
+    raiz = uuid.uuid4()
+    db.add(Team(id=raiz, workspace_id=ws, parent_team_id=None, name="Raiz nova", slug="raiz-nova"))
     await db.flush()
-    await BoardService(db).create_default_board(workspace_id=ws, team_id=area, colunas=COLUNAS_BASE)
+    await BoardService(db).create_default_board(workspace_id=ws, team_id=raiz, colunas=COLUNAS_BASE)
     user = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     ctx = dict(
-        workspace_id=ws, user_id=user, team_tree=(node(area),), org_role="ADMIN"
+        workspace_id=ws, user_id=user, team_tree=(node(raiz),), org_role="ADMIN"
     )
 
     with acting_as(**ctx):
         t = await TaskService(db).create(
             CreateTaskCommand(
-                title="bloqueada", team_id=area, assignee_ids=[user], status=TaskStatus.BLOCKED
+                title="bloqueada", team_id=raiz, assignee_ids=[user], status=TaskStatus.BLOCKED
             )
         )
     nome_da_coluna = (
@@ -299,9 +243,7 @@ async def test_tarefa_de_topo_em_area_de_quatro_colunas_tem_o_status_da_coluna(d
 
 
 async def test_patch_por_status_grava_no_historico_o_que_aconteceu(db) -> None:
-    """O diff rodava ANTES de a coluna devolver o status efetivo: pedir
-    `BLOCKED` num quadro de quatro gravava `-> BLOCKED` (que nao aconteceu) e
-    nao registrava a troca de coluna (que aconteceu)."""
+    """O historico registra o status efetivo e a troca de coluna, nao o status pedido."""
     from app.db.models import TaskHistory
 
     ctx, ws, raiz, user, quadro4 = await _mundo(db)

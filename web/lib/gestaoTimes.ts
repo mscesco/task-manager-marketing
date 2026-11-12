@@ -1,17 +1,5 @@
-// web/lib/gestaoTimes.ts
-// =====================================================================
-// Regras da tela de gestao de times (Spec 029, Fatia 4).
-//
-// Fronteira da Spec 027: `lib/` decide, `components/` e `app/` desenham. O
-// JSX nao carrega `if` de permissao nem monta mensagem de bloqueio -- ele
-// pergunta aqui e desenha a resposta.
-//
-// ⚠️ NADA AQUI AUTORIZA COISA ALGUMA. Estas funcoes escondem botao que nao
-// vai funcionar; quem decide de verdade e o backend, no clique. Duas razoes:
-// as contagens envelhecem entre carregar a tela e apertar o botao (medido em
-// 29/07: um subtime foi de 0 para 2 membros em vinte minutos), e permissao
-// checada no cliente e sugestao, nao trava.
-// =====================================================================
+// Regras da tela de gestão de times. Só escondem botão que não vai funcionar;
+// quem autoriza é o backend, no clique.
 
 /** O que aponta para um time. Vem em lote no GET /current/teams. */
 export type ContagensTime = {
@@ -19,8 +7,7 @@ export type ContagensTime = {
   projetos: number;
   membros: number;
   filhos: number;
-  // Auditoria de 16/10: também seguram o time. Sem eles, a tela via tudo
-  // zerado, oferecia "remover" e o servidor dava 500.
+  // Também seguram o time no banco.
   quadros?: number;
   formularios?: number;
 };
@@ -30,33 +17,21 @@ export type TimeGerenciavel = ContagensTime & {
   name: string;
   slug: string;
   parent_team_id: string | null;
-  /** Spec 051, fatia D: o servidor diz se quem olha APAGA este time. */
+  /** O servidor diz se quem olha apaga este time. */
   can_delete?: boolean;
 };
 
-/** Raiz = sem pai. E a ancora do tenant: nao se edita nem se remove (D5). */
+/** Raiz = sem pai. E a ancora do tenant: nao se edita nem se remove. */
 export function ehRaiz(time: { parent_team_id: string | null }): boolean {
   return time.parent_team_id === null;
 }
 
-/** Zero em tudo. Unico estado em que o backend aceita o DELETE (D3-A). */
+/** Zero em tudo. Unico estado em que o backend aceita o DELETE. */
 export function estaVazio(c: ContagensTime): boolean {
   return !(c.tarefas || c.projetos || c.membros || c.filhos || c.quadros || c.formularios);
 }
 
-/**
- * Pode editar este time? O SERVIDOR responde, por time (Spec 049, fatia F).
- *
- * ⚠️⚠️ ATE A FATIA F ESTA FUNCAO OLHAVA A PERMISSAO (`subteam.update`), e isso
- * so dava certo porque quem a tinha editava a arvore inteira. Com o
- * SUPERVISOR editando SO o proprio subtime, a mesma linha desenharia o lapis
- * em todos os subtimes, e todos menos um dariam 403 -- a tela nao sabe "onde".
- * Agora ela le `can_update`, que a listagem calcula com a mesma pergunta do
- * PATCH (mesma regra do cadeado do vinculo, Spec 047 §3.1).
- *
- * ⚠️ AUSENTE E "NAO". `can_update` so vem da listagem de times; um `Team` de
- * outra origem nao abre lapis por engano.
- */
+/** Pode editar este time? Lê `can_update` da listagem; ausente é "não". */
 export function podeEditar(time: {
   parent_team_id: string | null;
   can_update?: boolean;
@@ -65,17 +40,7 @@ export function podeEditar(time: {
   return time.can_update === true;
 }
 
-/**
- * Pode APAGAR este time? O SERVIDOR responde, por time (Spec 051, fatia D).
- *
- * ⚠️⚠️ ATE A FATIA D ESTA PERGUNTA ERA `permissoes.includes("subteam.delete")`
- * -- e so dava certo porque o verbo era do ADMIN, que apaga em qualquer arvore.
- * O gerente passou a apagar subtime da PROPRIA arvore (decisao 4, 16/09); com a
- * pergunta "em algum lugar", a lixeira apareceria em todo subtime do workspace
- * e todos os de outra arvore dariam 403. Mesma virada do `podeEditar`.
- *
- * ⚠️ AUSENTE E "NAO": `can_delete` so vem da listagem de times.
- */
+/** Pode apagar este time? Lê `can_delete` da listagem; ausente é "não". */
 export function podeApagarTime(time: {
   parent_team_id: string | null;
   can_delete?: boolean;
@@ -85,12 +50,8 @@ export function podeApagarTime(time: {
 }
 
 /**
- * Da para esvaziar e remover? (D3-B)
- *
- * Aqui o time PODE ter conteudo -- ele sera
- * movido para a raiz e arquivado. O que ainda bloqueia e ser a raiz, nao ter
- * permissao, ou ter subtime filho (o filho tem de sair antes, senao a FK
- * `fk_team_parent` recusaria).
+ * Dá para esvaziar e remover? O conteúdo vai para a raiz; bloqueia ser raiz,
+ * não ter permissão ou ter subtime filho (a FK `fk_team_parent` recusaria).
  */
 export function podeEsvaziarERemover(time: TimeGerenciavel): boolean {
   if (!podeApagarTime(time)) return false;
@@ -158,9 +119,7 @@ export function resumoDoEsvaziamento(p: {
 export function motivoNaoRemove(time: TimeGerenciavel): string | null {
   if (ehRaiz(time)) return "O time principal não pode ser removido.";
   if (!podeApagarTime(time)) {
-    // ⚠️ Spec 051: nao e mais "so administrador" -- o gerente apaga na arvore
-    // dele. A frase diz o que vale para os dois casos.
-    return "Você não remove times nesta área.";
+    return "Você não remove subtimes neste time.";
   }
   if (estaVazio(time)) return null;
   return `Ainda tem ${descreveConteudo(time)}.`;
@@ -192,13 +151,7 @@ export function descreveConteudo(c: ContagensTime): string {
     .join(", ");
 }
 
-/**
- * A confirmacao por digitacao (D2) — exigida SEMPRE, inclusive em time vazio.
- *
- * Tolerante ao que nao muda a intencao (espaco nas pontas, caixa) e rigorosa
- * no resto. Um clique nao apaga um departamento; um "copy" com C maiusculo
- * tambem nao deveria travar quem sabe o que esta fazendo.
- */
+/** Confirmação por digitação, sempre exigida; tolera espaço nas pontas e caixa. */
 export function confirmacaoValida(digitado: string, nomeDoTime: string): boolean {
   const norm = (s: string) => s.trim().toLocaleLowerCase("pt-BR");
   const alvo = norm(nomeDoTime);

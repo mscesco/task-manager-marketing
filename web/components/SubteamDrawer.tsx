@@ -1,21 +1,6 @@
 "use client";
-// components/SubteamDrawer.tsx
-// A gaveta do subtime — Spec 047, redesenho de 09/09.
-//
-// ⚠️ MESMO FORMATO da gaveta do membro, e isso é intencional: o alternador
-// Membros|Subtimes troca O QUE a tela lista, e a gaveta responde "detalhe
-// disto" nos dois lados. Duas formas diferentes para a mesma posição na tela
-// obrigariam a pessoa a reaprender a interface ao virar a chave.
-//
-// ⚠️ ELA NÃO SUBSTITUI A TELA `/times`, e a diferença importa: lá se mexe na
-// ÁRVORE inteira do workspace; aqui se mexe no subtime que está aberto. As
-// duas chamam as MESMAS funções (`updateTeam`, `previaRemocaoTeam`,
-// `esvaziarERemoverTeam`) e a MESMA confirmação por digitação --
-// `confirmacaoValida`, testada em `lib/gestaoTimes.ts`. Reescrever a
-// confirmação aqui criaria uma porta mais frouxa para a operação mais
-// destrutiva do produto.
-//
-// ⚠️ MORA EM `components/` -- `app/` fica fora do `include` do vitest.
+// Gaveta do time (raiz ou subtime): membros, cargos, renomear e excluir.
+// Usa as mesmas funções e a mesma confirmação por digitação da tela `/times`.
 
 import Gaveta from "@/components/Gaveta";
 import { useEffect, useState } from "react";
@@ -71,39 +56,24 @@ export default function SubteamDrawer({
   team: Team;
   /** Todo mundo da árvore do time PAI — de onde saem os candidatos. */
   members: Member[];
-  /** Só administrador remove time (Spec 029, D1). */
+  /** Só administrador remove time. */
   isAdmin: boolean;
   canManage: boolean;
   scope: Alcance;
-  /**
-   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar" pergunta o verbo
-   * (`membership.delete`), e o alcance amplo sozinho não basta -- o GESTOR o
-   * tem e não tira ninguém de time. Ver `podeRemoverDoTime`.
-   */
+  /** "Tirar" pergunta o verbo `membership.delete`; alcance amplo não basta. */
   permissoes: readonly Permission[];
   onClose: () => void;
   /** Mudou algo que FECHA a gaveta (renomear, excluir). */
   onChanged: (aviso: string) => Promise<void>;
-  /**
-   * Mudou algo que a gaveta continua mostrando (entrou, saiu, trocou cargo).
-   *
-   * ⚠️⚠️ SEPARADO DE `onChanged` por causa de um defeito relatado: *"quando
-   * adiciono alguém a tela reseta e tenho que abrir o time de novo"*. Fechar
-   * a gaveta depois de adicionar obrigava a reabrir para adicionar o próximo,
-   * que é justamente o que se faz em série.
-   */
+  /** Mudou algo que a gaveta continua mostrando; não fecha, para adicionar em série. */
   onRefresh: () => Promise<void>;
 }) {
-  // ⚠️ A GAVETA ATENDE OS DOIS NÍVEIS desde a unificação de 09/09: da tela
-  // da organização ela abre uma ÁREA; da tela de um time, um subtime. Chamar
-  // tudo de "subtime" mentiria para metade dos casos.
-  const ehArea = team.parent_team_id === null;
+  // Atende os dois níveis: time raiz e subtime.
+  const isRoot = team.parent_team_id === null;
   const dentro = directMembers(team.id, members);
   const candidates = subteamCandidates(team.id, members);
 
-  // ⚠️⚠️ O CADEADO VEM DO BACKEND, por vínculo, e é o que permite oferecer o
-  // seletor aqui. A tela NÃO recalcula escopo -- a Spec 034 já desfez essa
-  // tentativa uma vez, e o resultado foi gestor e admin sumindo dos seletores.
+  // O cadeado vem do backend, por vínculo; a tela não recalcula escopo.
   const [doServidor, setDoServidor] = useState<
     Map<string, { canEdit: boolean; isActive: boolean }>
   >(new Map());
@@ -123,16 +93,13 @@ export default function SubteamDrawer({
         }
       })
       .catch(() => {
-        // ⚠️ FALHA FECHA O CADEADO, e não abre: um mapa vazio deixa tudo em
-        // leitura. Oferecer edição sem saber se ela é permitida termina em 403
-        // depois do clique.
+        // Falha fecha o cadeado: mapa vazio deixa tudo em leitura.
         if (vivo) setDoServidor(new Map());
       });
     return () => {
       vivo = false;
     };
-    // ⚠️ `members` na dependência: depois de adicionar alguém, o cadeado do
-    // recém-chegado ainda não foi buscado.
+    // `members` na dependência: o cadeado de quem acabou de entrar ainda não foi buscado.
   }, [team.id, members]);
 
   return (
@@ -141,29 +108,23 @@ export default function SubteamDrawer({
       titulo={team.name}
       subtitulo={
         <>
-          {ehArea ? "Time" : "Subtime"} · {dentro.length}{" "}
+          {isRoot ? "Time" : "Subtime"} · {dentro.length}{" "}
           {dentro.length === 1 ? "pessoa" : "pessoas"}
         </>
       }
       onClose={onClose}
     >
-          {/* ⚠️ RENOMEAR PERGUNTA AO SERVIDOR, e não ao alcance (Spec 049, fatia
-              F). O supervisor edita o próprio subtime sem ter alcance amplo; e
-              o gerente de uma árvore tem alcance amplo sem editar o subtime da
-              outra. `canManage` responde as duas errado. */}
+          {/* Renomear pergunta ao servidor (`podeEditar`), não ao alcance. */}
           {podeEditar(team) && <Identity team={team} onChanged={onChanged} />}
 
           <section className="mt-5">
             <h3 className="label mb-2">Quem está aqui</h3>
             {dentro.length === 0 ? (
               <div className="muted text-xs">
-                Ninguém {ehArea ? "neste time" : "neste subtime"} ainda.
+                Ninguém {isRoot ? "neste time" : "neste subtime"} ainda.
               </div>
             ) : (
-              // ⚠️ `AnimatePresence` + `layout`: quem entra DESLIZA para o
-              // lugar e quem sai some suave, em vez de a lista pular. Foi o
-              // pedido dela para o "adicionar" -- *"atualize entrando com uma
-              // animaçãozinha de slider"*.
+              // `AnimatePresence` + `layout`: quem entra desliza, quem sai some, sem a lista pular.
               <ul className="m-0 list-none space-y-1.5 p-0">
                 <AnimatePresence initial={false}>
                   {dentro.map(({ member, role }) => (
@@ -177,22 +138,8 @@ export default function SubteamDrawer({
                       className="flex flex-wrap items-center gap-2 rounded border border-border p-2"
                     >
                     <strong className="text-sm">{member.name}</strong>
-                    {/* ⚠️⚠️ O CARGO SE EDITA AQUI, e a mudança é de 09/09: o
-                        selo abria a gaveta da pessoa, e ela não queria isso --
-                        *"eu só quero editar a permissão da pessoa nesse time,
-                        então é pra ser só o dropdown"*.
-                        ⚠️ SEM CADEADO, É SÓ INFORMAÇÃO -- *"se não tenho
-                        acesso, é só pra exibir a informação, não é pra ser
-                        clicável"*. E quem responde isso é o backend. */}
-                    {/* ⚠️⚠️ INATIVO NEM APARECE AQUI desde 10/09 -- decisão
-                        dela: *"não quero nem que a pessoa apareça aqui se ela
-                        está inativa. Os inativos só aparecem na aba de
-                        inativos em membros"*. O filtro está em
-                        `directMembers`, testado.
-                        ⚠️ `is_active` continua vindo da rota porque o CADEADO
-                        depende dele -- se um vínculo escapar do filtro (dado
-                        recém-mudado noutra aba, por exemplo), ele nasce em
-                        leitura em vez de editável. */}
+                    {/* Cargo se edita aqui; sem cadeado é só selo. */}
+                    {/* Inativo é filtrado em `directMembers`; `is_active` ainda chega porque o cadeado depende dele. */}
                     <RoleCell
                       member={member}
                       team={team}
@@ -225,25 +172,13 @@ export default function SubteamDrawer({
             />
           )}
 
-          {/* ⚠️⚠️ QUEM APAGA VEM DO SERVIDOR, por time (Spec 051, fatia D). Até
-              ali era `isAdmin` -- a trava da Spec 029 dizia "só administrador".
-              O gerente passou a apagar subtime da PRÓPRIA árvore (decisão 4), e
-              `can_delete` responde onde: sem ele, o gerente veria o botão em
-              subtime de outra árvore e levaria 403 depois de digitar o nome.
-
-              ⚠️⚠️ E **NUNCA PARA ÁREA**: o backend responde 409 *"se for a
-              raiz"* nas DUAS rotas (`delete_team` e `esvaziar-e-remover`).
-              Oferecer aqui seria pedir que a pessoa digitasse o nome da área
-              para confirmar e só então levar o erro -- o padrão "botão que a
-              tela oferece e o servidor recusa" que a Spec 044 registrou.
-              Quem quer apagar uma área move ou apaga os subtimes e fala com
-              quem administra o workspace. */}
-          {!ehArea && podeApagarTime(team) && (
+          {/* Quem apaga vem do servidor (`can_delete`). Time raiz nunca: o backend recusa com 409. */}
+          {!isRoot && podeApagarTime(team) && (
             <DeleteTeam team={team} onChanged={onChanged} />
           )}
-          {isAdmin && ehArea && (
+          {isAdmin && isRoot && (
             <div className="muted mt-6 border-t border-border pt-3 text-xs">
-              Área não se exclui por aqui — ela é a raiz de uma árvore, e o
+              Time raiz não se exclui por aqui — ele é a raiz de uma árvore, e o
               servidor recusa. Esvazie os subtimes primeiro.
             </div>
           )}
@@ -278,11 +213,7 @@ function Identity({
         onChange={(e) => setNome(e.target.value)}
       />
 
-      {/* ⚠️⚠️ O IDENTIFICADOR É SÓ LEITURA, e não é limitação de tela: o
-          `updateTeam` do backend aceita `name` e `description`, e mais nada.
-          Um campo editável aqui prometeria uma escrita que a rota não faz --
-          o padrão "botão que a tela oferece e o servidor recusa" que a Spec
-          044 registrou. */}
+      {/* Só leitura: `updateTeam` aceita só `name` e `description`. */}
       <div className="muted mt-2 text-xs">
         Identificador: <code>{team.slug}</code> — fixo desde a criação.
       </div>
@@ -367,9 +298,7 @@ function RemoveFromTeam({
               await onChanged(`${member.name} saiu de ${team.name}.`);
             } catch (e) {
               const a = e as ApiError;
-              // ⚠️ A MENSAGEM VEM DO SERVIDOR -- ver o comentário gêmeo em
-              // `MemberDrawer`. O 409 tem mais de uma razão, e a tela não sabe
-              // qual foi.
+              // A mensagem vem do servidor: o 409 tem mais de uma razão.
               setErro(a.message || "Não consegui tirar do time.");
               setSalvando(false);
             }
@@ -407,10 +336,7 @@ function AddMember({
   return (
     <section className="mt-4">
       <h3 className="label mb-2">Adicionar membro</h3>
-      {/* ⚠️ SÓ QUEM JÁ ESTÁ NA ÁRVORE, e não a organização inteira: cadastrar
-          pessoa nova dispara senha provisória e é outra ação (D3 da Spec 028).
-          Misturar as duas num mesmo seletor faria o "adicionar" às vezes criar
-          uma conta sem avisar. */}
+      {/* Só quem já está na árvore; cadastrar pessoa nova é outra ação. */}
       <MenuSelect
         aria-label="Pessoa"
         placeholder="— escolha a pessoa —"
@@ -446,15 +372,7 @@ function AddMember({
   );
 }
 
-/**
- * Excluir o subtime.
- *
- * ⚠️⚠️ A CONFIRMAÇÃO POR DIGITAÇÃO É A MESMA DA TELA `/times`
- * (`confirmacaoValida`, testada), e a prévia vem do servidor. Uma versão mais
- * curta aqui seria uma porta mais frouxa para a operação mais destrutiva do
- * produto — e seria a porta que fica mais perto do dedo de quem administra o
- * time todo dia.
- */
+/** Excluir o subtime: mesma confirmação por digitação da tela `/times`; a prévia vem do servidor. */
 function DeleteTeam({
   team,
   onChanged,
@@ -514,8 +432,7 @@ function DeleteTeam({
       {carregandoPrevia ? (
         <div className="muted mt-1 text-xs">Conferindo o que há dentro…</div>
       ) : temFilhos ? (
-        // ⚠️ O backend recusa apagar time com filho (409). Dizer isso ANTES
-        // evita que a pessoa digite o nome para depois levar erro.
+        // O backend recusa time com filho (409); avisar antes de digitar o nome.
         <div className="muted mt-1 text-xs">
           Este subtime tem {previa?.filhos}{" "}
           {previa?.filhos === 1 ? "subtime dentro" : "subtimes dentro"}. Apague
@@ -559,11 +476,8 @@ function DeleteTeam({
             setSalvando(true);
             setErro(null);
             try {
-              // ⚠️ Vazio -> DELETE simples; com conteúdo -> esvazia e remove
-              // numa transação. É a mesma escolha de rota da tela `/times`.
-              // ⚠️ "Vazio" conta a lixeira, os quadros e os formulários
-              // (auditoria de 16/10): eles seguram o time no banco, e o DELETE
-              // simples era recusado mesmo com a tela dizendo "vazio".
+              // Vazio -> DELETE simples; com conteúdo -> esvazia e remove numa transação.
+              // "Vazio" conta lixeira, quadros e formulários.
               const vazio =
                 previa !== null &&
                 estaVazio({
@@ -582,8 +496,7 @@ function DeleteTeam({
               await onChanged(`${team.name} foi excluído.`);
             } catch (e) {
               const a = e as ApiError;
-              // O 409 do backend já vem com os números — e ele é a fonte da
-              // verdade: a prévia da tela pode ter envelhecido.
+              // O 409 traz os números atuais; a prévia pode ter envelhecido.
               setErro(
                 a.status === 403
                   ? "Só um administrador remove times."
@@ -614,18 +527,8 @@ function DeleteTeam({
 }
 
 /**
- * O cargo da pessoa NESTE time: dropdown se der para editar, selo se não.
- *
- * ⚠️⚠️ APLICA NO CLIQUE, sem Salvar, ao contrário da gaveta do membro. E a
- * diferença é de CONTEXTO, não de descuido: lá a lista mostra TODOS os
- * vínculos da pessoa, e a escolha de um deles depende dos outros (invariante
- * de nível, Spec 045) — por isso a consequência aparece antes de gravar. Aqui
- * o assunto é um time só, e a Camila pediu o caminho curto: *"é pra ser só o
- * dropdown com animação mesmo com as permissões possíveis"*.
- *
- * ⚠️ AS OPÇÕES SAEM DE `papeisAtribuiveis`, que já cruza NÍVEL (invariante da
- * Spec 045) com ALCANCE de quem edita (matriz da Spec 016). Escrever a lista
- * aqui criaria uma segunda cópia dela no front.
+ * Cargo da pessoa neste time: aplica no clique (dropdown) ou selo se não edita.
+ * As opções vêm de `papeisAtribuiveis`.
  */
 function RoleCell({
   member,
@@ -649,8 +552,7 @@ function RoleCell({
   const options = papeisAtribuiveis(scope, isAdmin, team.parent_team_id === null);
 
   if (!canEdit || options.length === 0) {
-    // ⚠️ SELO, e não botão desabilitado: "não é pra ser clicável". Um botão
-    // apagado convida ao clique e não responde.
+    // Selo, não botão desabilitado: botão apagado convida ao clique.
     return (
       <span title="Você não administra este vínculo">
         <Badge tone="neutral" size="sm" className="border">

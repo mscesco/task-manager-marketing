@@ -1,4 +1,4 @@
-// Regras da tela de gestao de times (Spec 029, Fatia 4).
+// Regras da tela de gestão de times.
 import { describe, expect, it } from "vitest";
 import {
   confirmacaoValida,
@@ -15,11 +15,7 @@ import {
   type TimeGerenciavel,
 } from "@/lib/gestaoTimes";
 
-// ⚠️ Spec 051, fatia D: quem APAGA vem do servidor, por time (`can_delete`), e
-// nao mais de `me.permissions`. Ate ali estes testes montavam listas de
-// permissao (ADMIN com `subteam.delete`, MANAGER sem) -- e o gerente passou a
-// apagar subtime da propria arvore, que uma lista "em algum lugar" nao sabe
-// dizer.
+// Quem apaga vem do servidor, por time (`can_delete`).
 const APAGA = { can_delete: true };
 const NAO_APAGA = { can_delete: false };
 
@@ -197,9 +193,7 @@ describe("ordenaParaTela", () => {
   });
 });
 
-// -------------------------------------------------------------------
-// Fatia 3 -- esvaziar e remover (D3-B)
-// -------------------------------------------------------------------
+// Esvaziar e remover
 describe("podeEsvaziarERemover", () => {
   it("aceita time COM conteudo", () => {
     const cheio = time({ ...APAGA, tarefas: 14, membros: 2 });
@@ -220,9 +214,7 @@ describe("resumoDoEsvaziamento", () => {
   const base = { tarefas_vivas: 0, tarefas_na_lixeira: 0, projetos: 0, membros: 0 };
 
   it("separa vivas de lixeira -- juntar seria mentira", () => {
-    // "10 tarefas serao arquivadas" e falso quando 7 estao na lixeira e so
-    // trocam de time. Este e o caso real do CRM e Automacao (3 vivas, 7 na
-    // lixeira), medido em 29/07.
+    // "10 tarefas serão arquivadas" é falso quando 7 estão na lixeira e só trocam de time.
     const linhas = resumoDoEsvaziamento({
       ...base,
       tarefas_vivas: 3,
@@ -250,9 +242,7 @@ describe("resumoDoEsvaziamento", () => {
   });
 });
 
-// Auditoria de 16/10: quadro e formulário seguram o time no banco. Sem eles
-// nas contas, a tela via o subtime "vazio", oferecia remover e o servidor
-// dava 500.
+// Quadro e formulário seguram o time no banco.
 describe("quadros e formulários contam como conteúdo", () => {
   const zerado = { tarefas: 0, projetos: 0, membros: 0, filhos: 0 };
 
@@ -262,7 +252,7 @@ describe("quadros e formulários contam como conteúdo", () => {
     expect(estaVazio({ ...zerado, formularios: 2 })).toBe(false);
   });
 
-  it("descreve e resume o que sobe para a área", () => {
+  it("descreve e resume o que sobe para o time principal", () => {
     expect(descreveConteudo({ ...zerado, quadros: 1, formularios: 2 })).toBe("1 quadro, 2 formulários");
     expect(
       resumoDoEsvaziamento({ tarefas_vivas: 0, tarefas_na_lixeira: 0, projetos: 0, membros: 0, quadros: 2 })

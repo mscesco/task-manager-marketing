@@ -1,12 +1,4 @@
-/**
- * Spec 047, revisão de 09/09 — o que a barra mostra acima do nome da pessoa.
- *
- * ⚠️ POR QUE ESTES TESTES EXISTEM: nenhum erro aqui dá tela vermelha. Errar
- * some com um caminho de navegação, ou mostra a alguém uma lista de áreas que
- * não é dela — e as duas coisas passam pelos portões sem um ruído.
- *
- * SABOTAGENS medidas -- ver o fim do arquivo.
- */
+// O que a barra mostra: erro aqui some com navegação sem dar tela vermelha.
 
 import { describe, it, expect } from "vitest";
 import {
@@ -49,30 +41,24 @@ function pessoa(vinculos: string[]): CurrentUser {
 }
 
 describe("rootsForPerson", () => {
-  it("⭐ quem está SÓ num subtime enxerga a área dele", () => {
-    // ⚠️ A raiz sai do vínculo RESOLVIDO na árvore, e não do vínculo direto.
-    // Com o vínculo direto, quem está apenas no SEO Junior ficaria sem
-    // contexto nenhum na barra — e é metade da equipe.
+  it("⭐ quem está SÓ num subtime enxerga o time raiz dele", () => {
+    // A raiz sai do vínculo resolvido na árvore, não do vínculo direto.
     const raizes = rootsForPerson(TIMES, pessoa([JR]), false);
     expect(raizes.map((t) => t.name)).toEqual(["Marketing"]);
   });
 
-  it("⭐⭐ quem NÃO administra a organização não vê a área alheia", () => {
-    // ⚠️ Não é cosmético: para um operador do Marketing, "TI" na lista é uma
-    // tela que ele abre e não entende — ou que o servidor recusa.
+  it("⭐⭐ quem NÃO administra a organização não vê o time alheio", () => {
     const raizes = rootsForPerson(TIMES, pessoa([SEO]), false);
     expect(raizes.map((t) => t.name)).toEqual(["Marketing"]);
     expect(raizes.map((t) => t.id)).not.toContain(TI);
   });
 
   it("quem administra a organização vê TODAS, mesmo sem vínculo nenhum", () => {
-    // ⚠️ E este é o caso real da conta de administração da Camila, sem área
-    // desde 08/09, de propósito (passo 2 da Spec 045).
     const raizes = rootsForPerson(TIMES, pessoa([]), true);
     expect(raizes.map((t) => t.name)).toEqual(["Marketing", "TI"]);
   });
 
-  it("quem está em duas áreas vê as duas, ordenadas por nome", () => {
+  it("quem está em dois times vê os dois, ordenadas por nome", () => {
     const raizes = rootsForPerson(TIMES, pessoa([SEO, TI]), false);
     expect(raizes.map((t) => t.name)).toEqual(["Marketing", "TI"]);
   });
@@ -83,16 +69,13 @@ describe("rootsForPerson", () => {
 });
 
 describe("contextChoice", () => {
-  it("⭐⭐ uma área e sem poder na organização: RÓTULO, não seletor", () => {
-    // ⚠️ A regra combinada em 19/08 e repetida em 09/09. Não há para onde ir,
-    // e item clicável que não leva a lugar nenhum é pior que um rótulo — a
-    // regra "se parece clicável, tem de ser clicável" vale ao contrário.
+  it("⭐⭐ um time e sem poder na organização: RÓTULO, não seletor", () => {
     const escolha = contextChoice(TIMES, pessoa([SEO]), false);
     expect(escolha.kind).toBe("label");
     if (escolha.kind === "label") expect(escolha.team.name).toBe("Marketing");
   });
 
-  it("⭐ duas áreas: vira seletor, mesmo sem poder na organização", () => {
+  it("⭐ dois times: vira seletor, mesmo sem poder na organização", () => {
     const escolha = contextChoice(TIMES, pessoa([SEO, TI]), false);
     expect(escolha.kind).toBe("switcher");
     if (escolha.kind === "switcher") {
@@ -101,24 +84,19 @@ describe("contextChoice", () => {
     }
   });
 
-  it("⭐⭐ quem administra a organização vê o seletor mesmo com UMA área", () => {
-    // ⚠️ Porque "Gerenciar a organização" mora dentro dele, e é a ÚNICA porta
-    // para aquela tela desde que ela saiu do menu. Virar rótulo aqui
-    // esconderia a porta justamente de quem precisa dela.
-    const umaArea = [TIMES[1], TIMES[2]];
-    const escolha = contextChoice(umaArea, pessoa([SEO]), true);
+  it("⭐⭐ quem administra a organização vê o seletor mesmo com UM time", () => {
+    // "Gerenciar a organização" só existe dentro do seletor.
+    const umaRaiz = [TIMES[1], TIMES[2]];
+    const escolha = contextChoice(umaRaiz, pessoa([SEO]), true);
     expect(escolha.kind).toBe("switcher");
     if (escolha.kind === "switcher") expect(escolha.canManageOrg).toBe(true);
   });
 
-  it("sem área e sem poder: não mostra nada", () => {
+  it("sem time e sem poder: não mostra nada", () => {
     expect(contextChoice(TIMES, pessoa([]), false).kind).toBe("none");
   });
 
   it("⚠️ a lista NUNCA traz subtime", () => {
-    // ⚠️ Pedido literal da Camila: *"subtimes não são para aparecer ali, só
-    // times raiz e a opção de gerenciar a organização"*. O seletor responde
-    // "em qual ÁREA estou"; subtime é navegação dentro da área.
     const escolha = contextChoice(TIMES, pessoa([]), true);
     if (escolha.kind !== "switcher") throw new Error("esperava seletor");
     const ids = escolha.roots.map((t) => t.id);
@@ -128,21 +106,18 @@ describe("contextChoice", () => {
 });
 
 describe("peopleEntry", () => {
-  it("uma área: cai na tela dela", () => {
+  it("um time: cai na tela dele", () => {
     expect(peopleEntry([TIMES[1]])).toEqual({ kind: "team", teamId: MKT });
   });
 
   it("⚠️ várias: a PRIMEIRA POR NOME, e não a primeira da API", () => {
-    // ⚠️ Mesma razão de `entradaDoQuadro`: a ordem da API não é contrato de
-    // ninguém. Sem ordenar, duas visitas seguidas cairiam em áreas
-    // diferentes sem a pessoa ter mudado nada.
     const raizes = [TIMES[1], TIMES[0]].sort((a, b) =>
       a.name.localeCompare(b.name, "pt-BR"),
     );
     expect(peopleEntry(raizes)).toEqual({ kind: "team", teamId: MKT });
   });
 
-  it("nenhuma área: não inventa destino", () => {
+  it("nenhum time: não inventa destino", () => {
     expect(peopleEntry([])).toEqual({ kind: "none" });
   });
 });
@@ -150,16 +125,14 @@ describe("peopleEntry", () => {
 describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
   const ORG = "UniFECAF";
 
-  it("na tela da área: o nome da área", () => {
+  it("na tela do time: o nome do time", () => {
     expect(currentContext(`/times/${MKT}`, TIMES, ORG)).toEqual({
       label: "Marketing",
       activeRootId: MKT,
     });
   });
 
-  it("⚠️ num SUBTIME: sobe e mostra a ÁREA", () => {
-    // ⚠️ O botão abre uma lista de ÁREAS. Mostrar "SEO" daria um nome que não
-    // existe no menu, e o ✓ não teria onde pousar.
+  it("⚠️ num SUBTIME: sobe e mostra o TIME RAIZ", () => {
     expect(currentContext(`/times/${SEO}`, TIMES, ORG)).toEqual({
       label: "Marketing",
       activeRootId: MKT,
@@ -170,28 +143,22 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
     expect(currentContext(`/times/${JR}`, TIMES, ORG).label).toBe("Marketing");
   });
 
-  it("⚠️ no QUADRO do time: é a mesma área", () => {
-    // ⚠️ É a tela onde se passa o dia, e ela TEM time na URL. Deixá-la de fora
-    // apagaria o contexto justamente onde ele é mais verdadeiro.
+  it("⚠️ no QUADRO do time: é o mesmo time", () => {
     expect(currentContext(`/quadro/${SEO}`, TIMES, ORG)).toEqual({
       label: "Marketing",
       activeRootId: MKT,
     });
   });
 
-  it("na tela da organização: o NOME dela, e nenhuma área marcada", () => {
-    // ⚠️ Antes de 10/09 era o literal "Organização" -- o nome próprio é o
-    // pedido dela: *"se estiver no gerenciamento da organização, aparecer o
-    // nome da organização"*.
+  it("na tela da organização: o NOME dela, e nenhum time marcado", () => {
     expect(currentContext("/organizacao", TIMES, ORG)).toEqual({
       label: ORG,
       activeRootId: null,
     });
   });
 
-  it("⚠️⚠️ NUNCA diz 'Trocar de área' — sem área na URL, é a organização", () => {
-    // ⚠️ Era este o defeito reportado: o botão dizia o que ele FAZ, não onde a
-    // pessoa está. Estas são as telas que não têm time na URL.
+  it("⚠️⚠️ sem time na URL, mostra a organização (e não o que o botão faz)", () => {
+    // Telas sem time na URL.
     for (const rota of [
       "/minhas-tarefas",
       "/projetos",
@@ -210,14 +177,12 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
   });
 
   it("id desconhecido na URL não inventa nome", () => {
-    // A lista de times ainda carregando, ou um id colado à mão.
     expect(currentContext("/times/nao-existe", TIMES, ORG).label).toBe(ORG);
     expect(currentContext(`/times/${MKT}`, [], ORG).label).toBe(ORG);
   });
 
   it("sem o nome da organização, cai num rótulo em vez de vazio", () => {
-    // ⚠️ O instante antes de `getWorkspace()` voltar. Sem isto o botão pisca
-    // vazio em cada carga de página.
+    // Antes de `getWorkspace()` responder.
     expect(currentContext("/minhas-tarefas", TIMES, "").label).toBe(
       "Organização",
     );
@@ -227,18 +192,13 @@ describe("currentContext — o botão diz ONDE VOCÊ ESTÁ", () => {
   });
 
   it("caminho com sufixo resolve o MESMO time", () => {
-    // `/times/<id>/` ou uma sub-rota futura não podem apagar o contexto.
     expect(currentContext(`/times/${MKT}/`, TIMES, ORG).label).toBe("Marketing");
   });
 });
 
 describe("ownRootTeams — onde a pessoa TRABALHA", () => {
-  it("⚠️⚠️ subconjunto de `rootsForPerson`, e a diferença é o defeito da §4.5", () => {
-    // ⚠️ Quem administra a organização ALCANÇA todos os times e TRABALHA em um.
-    // A spec dizia que a entrada cai no "time da pessoa, pela mesma conta de
-    // `peopleEntry`" -- e `peopleEntry` recebe o alcance. Para a conta dela
-    // (ADMIN, vínculo no Marketing) isso dava "Comercial", o primeiro do
-    // alfabeto.
+  it("⚠️⚠️ subconjunto de `rootsForPerson`, e a diferença importa", () => {
+    // Quem administra a organização alcança todos os times e trabalha em um.
     const admin = pessoa([MKT]);
     expect(rootsForPerson(TIMES, admin, true).map((t) => t.name)).toEqual([
       "Marketing",
@@ -256,9 +216,8 @@ describe("ownRootTeams — onde a pessoa TRABALHA", () => {
     ]);
   });
 
-  it("⚠️ VAZIO é resposta válida -- é o cadastro dela desde 08/09", () => {
-    // Papel de organização pode não ter vínculo nenhum (Spec 045, fatia B).
-    // Quem trata esse caso é `preferredTeams`, caindo no alcance.
+  it("⚠️ VAZIO é resposta válida", () => {
+    // Papel de organização pode não ter vínculo; `preferredTeams` cai no alcance.
     expect(ownRootTeams(TIMES, pessoa([]))).toEqual([]);
   });
 
@@ -274,22 +233,10 @@ describe("ownRootTeams — onde a pessoa TRABALHA", () => {
   });
 });
 
-// SABOTAGENS medidas (contando também os testes de desenho, em
-// `components/__tests__/ContextSwitcher.test.tsx` -- 20 no total):
-//   A. Resolver a raiz pelo vínculo DIRETO, sem subir a árvore. **Cai 9**:
-//      quem está só num subtime perde o contexto, e a barra inteira muda.
-//   B. Devolver todas as raízes para todo mundo. **Cai 7**.
-//   C. Virar rótulo quando há uma área só, ignorando `canManageOrg`.
-//      **Cai 3**: some a única porta para a tela de organização.
-
-// ⚠️⚠️ A §4.2 DA SPEC 048, que ficou para a fatia C de propósito: escrever
-// `?time=` antes de as telas honrarem o parâmetro poria uma URL que mente.
 describe("switcherHref -- trocar de time preserva a tela", () => {
   const B = "time-b";
 
   it("nas cinco telas recortadas, fica na MESMA tela", () => {
-    // Decisão dela: "trocar de time é gesto de trabalho, e jogar a pessoa para
-    // outra tela no meio dele é perder o lugar".
     for (const tela of [
       "/minhas-tarefas",
       "/projetos",
@@ -302,25 +249,20 @@ describe("switcherHref -- trocar de time preserva a tela", () => {
   });
 
   it("⚠️ e PRESERVA os outros parâmetros da tela", () => {
-    // Sem isto a pessoa perderia a aba ou o filtro que escolheu por ter
-    // trocado de time.
     expect(switcherHref("/minhas-tarefas", "?ver=lista&time=time-a", B)).toBe(
       `/minhas-tarefas?ver=lista&time=${B}`,
     );
   });
 
   it("no quadro, vai para o QUADRO do outro time (caminho, não parâmetro)", () => {
-    // ⚠️ `withTeam` aqui produziria `/quadro/<A>?time=<B>`, que o `activeTeam`
-    // ignora de propósito (o caminho ganha do parâmetro) -- a URL passaria a
-    // mentir sem efeito.
+    // O time está no caminho; `?time=` seria ignorado.
     expect(switcherHref("/quadro/time-a", "", B)).toBe(`/quadro/${B}`);
     expect(switcherHref("/quadro/time-a", "?quadro=xyz", B)).toBe(`/quadro/${B}`);
     // O endereço legado, sem time no caminho, também é quadro.
     expect(switcherHref("/quadro", "", B)).toBe(`/quadro/${B}`);
   });
 
-  it("na organização, vai para a tela do time (a exceção da spec)", () => {
-    // "não há tela equivalente para preservar".
+  it("na organização, vai para a tela do time", () => {
     expect(switcherHref("/organizacao", "", B)).toBe(`/times/${B}`);
   });
 
@@ -330,15 +272,12 @@ describe("switcherHref -- trocar de time preserva a tela", () => {
   });
 
   it("⚠️ numa tela que NÃO lê o parâmetro, não inventa `?time=`", () => {
-    // A tarefa pertence a UM time; "a mesma tarefa no outro time" não existe.
     // Escrever o parâmetro aqui daria uma URL que diz o time e não filtra nada.
     expect(switcherHref("/tarefa/t-1", "", B)).toBe(`/times/${B}`);
     expect(switcherHref("/perfil", "", B)).toBe(`/times/${B}`);
   });
 });
 
-// ⚠️⚠️ DEFEITO DE 14/09: com o Comercial ativo, "Time" no menu abria o Marketing.
-// O item ignorava o time ativo e usava o primeiro preferido.
 describe("peopleEntryFor -- o item Time segue o time ativo", () => {
   const MKT_T: Team = { id: "mkt", workspace_id: "ws", parent_team_id: null, name: "Marketing", slug: "mkt" };
   const COM_T: Team = { id: "com", workspace_id: "ws", parent_team_id: null, name: "Comercial", slug: "com" };

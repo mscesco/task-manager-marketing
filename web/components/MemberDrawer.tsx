@@ -1,20 +1,6 @@
 "use client";
-// components/MemberDrawer.tsx
-// A gaveta do membro — Spec 047, redesenho de 09/09.
-//
-// ⚠️⚠️ ELA SUBSTITUI O `⋯` **E** O MODAL, e isso foi decisão da Camila
-// olhando a tela: *"o ponto agora é tirar os três pontos e editar, deixar só
-// o editar, que traz uma side bar"*. Antes havia DUAS portas para o mesmo
-// assunto — o lápis mexia em QUAIS times, o `⋯` mexia no cargo — e a pessoa
-// precisava lembrar qual abria o quê.
-//
-// Uma porta. A gaveta faz as duas coisas, porque as duas são "o vínculo".
-//
-// ⚠️ GAVETA, e não modal centralizado: a tabela continua visível à esquerda,
-// e é ela o contexto do que se está editando. Um modal centralizado tapa
-// justamente a linha que a pessoa clicou.
-//
-// ⚠️ MORA EM `components/` -- o `include` do vitest cobre isso, e `app/` não.
+// Gaveta do membro: vínculos (em quais times, com que cargo) e ações da conta.
+// Gaveta, não modal, para a tabela continuar visível.
 
 import Gaveta from "@/components/Gaveta";
 import { useAvisar } from "@/components/Toasts";
@@ -66,12 +52,7 @@ const ORG_ROLE_LABEL: Record<OrgRole, string> = {
   GESTOR: "Gestor",
 };
 
-/**
- * Papéis que mandam na ÁRVORE inteira, e não só no time onde estão.
- *
- * ⚠️ Espelha `COMMAND_ROLES` de `auth/domain/team_scope.py`. Vira a bolinha
- * cheia do seletor — ver `PillOption.comanda`.
- */
+/** Papéis que mandam na árvore inteira (espelha `COMMAND_ROLES` de `team_scope.py`). */
 const COMMAND_ROLES: MemberRole[] = ["MANAGER"];
 
 export default function MemberDrawer({
@@ -89,19 +70,10 @@ export default function MemberDrawer({
   teams: Team[];
   scope: Alcance;
   isAdmin: boolean;
-  /**
-   * Os papéis de organização que quem olha pode dar a ESTA pessoa; `null` = a
-   * seção não aparece. ⚠️ Era `canManageOrg: boolean`, e um booleano não
-   * cabia o teto da Spec 049 (fatia G): o GESTOR mexe em gestor, e não em
-   * admin, nem oferece admin. Ver `papeisDeOrganizacaoAtribuiveis`.
-   */
+  /** Papéis de organização que quem olha pode dar a esta pessoa; `null` = a seção não aparece. */
   opcoesDeOrganizacao: readonly (OrgRole | null)[] | null;
   isSelf: boolean;
-  /**
-   * ⚠️ OBRIGATÓRIA desde a Spec 049, fatia D: "Tirar de…" pergunta o verbo
-   * (`membership.delete`), e o alcance amplo não basta -- o GESTOR o tem e não
-   * tira ninguém de time. Ver `podeRemoverDoTime`.
-   */
+  /** "Tirar de…" pergunta o verbo `membership.delete`; alcance amplo não basta. */
   permissoes: readonly Permission[];
   onClose: () => void;
   onChanged: (aviso: string) => Promise<void>;
@@ -109,24 +81,14 @@ export default function MemberDrawer({
   const [vinculos, setVinculos] = useState<MemberTeamComCadeado[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [adicionando, setAdicionando] = useState(false);
-  // ⚠️⚠️ A SENHA PROVISORIA MORA AQUI DENTRO desde 09/09, a pedido dela:
-  // *"essa tela em azul deve aparecer (...) dentro dessa sobreposição, não na
-  // tela comum"*. Antes ela subia para a página e aparecia atrás da gaveta.
-  //
-  // ⚠️ E ENQUANTO ELA ESTA NA TELA, A GAVETA NAO FECHA -- nem pelo X, nem pelo
-  // scrim, nem pelo Esc. O segredo volta UMA vez (ADR 0021) e não há rota para
-  // relê-lo: fechar por engano o perderia, e a saída é o "Concluir".
+  // Enquanto a senha provisória está na tela, a gaveta não fecha: ela volta uma vez só.
   const [revelado, setRevelado] = useState<{
     title: string;
     email: string;
     password: string;
   } | null>(null);
   const podeFechar = revelado === null;
-  // ⚠️⚠️ Spec 051, fatia E: OS BOTÕES DA CONTA VÊM DO SERVIDOR, por pessoa. Até
-  // aqui eram `podeResetarSenha(scope)` e `podeDesativarConta(scope)` --
-  // "alcance amplo", sem olhar QUEM é a pessoa. Desde que a conta respeita o
-  // papel do alvo (#57), o gerente via os dois na conta de outro gerente e
-  // levava 403. `null` enquanto não chegou: nenhum botão aparece por palpite.
+  // Botões da conta vêm do servidor, por pessoa; `null` enquanto não chegou.
   const [acoes, setAcoes] = useState<AcoesDaConta | null>(null);
 
   useEffect(() => {
@@ -136,8 +98,7 @@ export default function MemberDrawer({
       .catch((e) =>
         vivo ? setErro((e as ApiError).message || "Não consegui carregar.") : null,
       );
-    // ⚠️ `catch` que só deixa os botões fechados: falhar aqui não pode derrubar
-    // a gaveta inteira -- os vínculos e o cargo continuam úteis sem eles.
+    // Falhar aqui só deixa os botões fechados; o resto da gaveta segue útil.
     memberAccountActions(member.id)
       .then((a) => vivo && setAcoes(a))
       .catch(() => {});
@@ -147,10 +108,7 @@ export default function MemberDrawer({
   }, [member.id]);
 
   const rows = vinculos ? drawerMemberships(vinculos, teams) : [];
-  // ⚠️ DOIS FILTROS, e nenhum é dispensável: `jaEsta` espelha o
-  // `UNIQUE (user_id, team_id)` do banco (oferecer daria 409), e
-  // `timesParaAdicionar` corta pelo ALCANCE — o supervisor só puxa gente para
-  // os próprios subtimes (D1 da Spec 028).
+  // `jaEsta` espelha o `UNIQUE (user_id, team_id)`; `timesParaAdicionar` corta pelo alcance.
   const jaEsta = new Set(rows.map((l) => l.team.id));
   const availableTeams = timesParaAdicionar(
     scope,
@@ -166,8 +124,7 @@ export default function MemberDrawer({
       podeFechar={podeFechar}
       motivoParaNaoFechar="Copie a senha e clique em Concluir"
     >
-          {/* ⚠️ Entra deslizando de cima: o bloco aparece DEPOIS de um clique
-              em "Resetar senha", e sem transição ele lê-se como um erro. */}
+          {/* Entra deslizando: sem transição, lê-se como erro. */}
           <AnimatePresence>
             {revelado && (
               <motion.div
@@ -189,11 +146,7 @@ export default function MemberDrawer({
 
           {erro && <div className="error-box mb-3 text-xs">{erro}</div>}
 
-          {/* ---- AÇÕES DA CONTA ------------------------------------------
-              ⚠️ As duas são sobre a ORGANIZAÇÃO, não sobre um time — por isso
-              ficam no topo, longe da relação de times. Numa tela com o nome de
-              um time acima, "Desativar" lido junto dos vínculos parece "tirar
-              deste time" (§4.2). */}
+          {/* Ações da conta: são da organização, por isso longe dos vínculos. */}
           <div className="mb-5 flex flex-wrap gap-2">
             {acoes?.can_reset_password && (
               <ResetPassword member={member} onReveal={setRevelado} />
@@ -203,9 +156,7 @@ export default function MemberDrawer({
             {member.is_active && acoes?.can_deactivate && !isSelf && (
               <Deactivate member={member} onChanged={onChanged} />
             )}
-            {/* ⚠️ 06/10/2026: a volta. Conta desativada não ganha senha (o
-                servidor fecha "Resetar senha"), e "Reativar" é o único botão
-                da conta -- é ele que destrava o resto. */}
+            {/* Conta desativada só tem "Reativar". */}
             {!member.is_active && acoes?.can_reactivate && (
               <Reactivate member={member} onChanged={onChanged} />
             )}
@@ -255,9 +206,6 @@ export default function MemberDrawer({
               </ul>
             )}
 
-            {/* ⚠️ ADICIONAR A UM TIME MORA AQUI, e é o que antes era o lápis.
-                Uma porta só para "o vínculo": em quais times, e com que cargo
-                em cada um. */}
             {availableTeams.length > 0 && (
               <div className="mt-3">
                 <Reveal show={!adicionando}>
@@ -284,17 +232,7 @@ export default function MemberDrawer({
   );
 }
 
-/**
- * Um vínculo: o time e o cargo, com dropdown + Salvar.
- *
- * ⚠️⚠️ O DROPDOWN NÃO GRAVA AO ESCOLHER, e a Camila confirmou isso em 09/09
- * (*"pode ter o salvar e isso aí"*). A regra da §4.3: prioridade erra e você
- * desfaz; cargo erra e a pessoa ganha alcance no sistema inteiro, em
- * silêncio. Escolher mostra a CONSEQUÊNCIA; Salvar aplica.
- *
- * ⚠️ E a consequência NOMEIA O TIME — "Administra os operadores do SEO" diz
- * algo; "tem permissões de supervisor" não diz nada a quem está decidindo.
- */
+/** Um vínculo: time e cargo. O dropdown não grava; mostra a consequência e Salvar aplica. */
 function MembershipRow({
   row,
   member,
@@ -310,7 +248,7 @@ function MembershipRow({
   isAdmin: boolean;
   /** É a própria pessoa que está olhando? Ver o `!isSelf` no "Tirar". */
   isSelf: boolean;
-  /** Ver a prop homônima do `MemberDrawer` (Spec 049, fatia D). */
+  /** Ver a prop homônima do `MemberDrawer`. */
   permissoes: readonly Permission[];
   onChanged: (aviso: string) => Promise<void>;
 }) {
@@ -319,7 +257,7 @@ function MembershipRow({
   const [erro, setErro] = useState<string | null>(null);
   const [confirmandoSaida, setConfirmandoSaida] = useState(false);
 
-  const options = papeisAtribuiveis(scope, isAdmin, row.ehArea);
+  const options = papeisAtribuiveis(scope, isAdmin, row.isRoot);
   const mudou = escolhido !== row.role;
 
   async function salvar() {
@@ -348,15 +286,7 @@ function MembershipRow({
       await onChanged(`${member.name} saiu de ${row.team.name}.`);
     } catch (e) {
       const a = e as ApiError;
-      // ⚠️⚠️ A MENSAGEM VEM DO SERVIDOR, e não de um palpite meu sobre o 409.
-      // Eu traduzia TODO 409 para "é o único time da pessoa" -- e a rota tem
-      // pelo menos três razões para recusar: o último vínculo, o PRÓPRIO
-      // vínculo (anti-lockout) e deixar tarefa órfã. A Camila levou a mensagem
-      // errada estando em DOIS times, duas vezes.
-      //
-      // ⚠️ Inventar a razão a partir do status é o espelho do "botão que a
-      // tela oferece e o servidor recusa": aqui a tela EXPLICA uma recusa que
-      // ela não tem como explicar.
+      // A mensagem vem do servidor: o 409 tem mais de uma razão.
       setErro(a.message || "Não consegui tirar do time.");
       setConfirmandoSaida(false);
     } finally {
@@ -368,17 +298,13 @@ function MembershipRow({
     <li className="rounded border border-border p-2">
       <div className="flex flex-wrap items-center gap-2">
         <strong className="text-sm">{row.team.name}</strong>
-        {row.ehArea && (
+        {row.isRoot && (
           <Badge tone="outline" size="sm">
-            Área
+            Time
           </Badge>
         )}
 
-        {/* ⚠️⚠️ QUANDO O ROLE_LABEL VEM DE CIMA, SOME O SELETOR. Para quem tem
-            comando na área, a linha do subtime não é cargo — é ALOCAÇÃO, e
-            pela invariante de nível ela nunca conseguirá repetir ali o papel
-            da raiz. Foi este detalhe que fez a Camila querer apagar o próprio
-            vínculo, olhando a tela antiga. */}
+        {/* Com comando no time raiz, a linha do subtime é alocação: sem seletor. */}
         {row.autoridadeVemDe ? (
           <span className="muted ml-auto text-xs">
             Alocado · autoridade de {row.autoridadeVemDe.name}
@@ -398,8 +324,7 @@ function MembershipRow({
             />
           </span>
         ) : (
-          // ⚠️ O CADEADO VEM DO BACKEND (`can_edit_role`). A tela NÃO
-          // recalcula escopo — a Spec 034 já desfez essa tentativa uma vez.
+          // O cadeado vem do backend (`can_edit_role`); a tela não recalcula.
           <span className="ml-auto" title="Você não administra este vínculo">
             <Badge tone="neutral" size="sm" className="border">
               {ROLE_LABEL[row.role]}
@@ -432,13 +357,7 @@ function MembershipRow({
         </div>
       </Reveal>
 
-      {/* ---- TIRAR DO TIME ---------------------------------------------
-          ⚠️ Pedido dela em 09/09. Fica DENTRO da linha do vínculo, e não num
-          menu à parte: a ação é sobre ESTE time, e o nome dele está ali.
-          ⚠️ A pergunta é `podeRemoverDoTime` e NÃO `podeEditarCargo`: são
-          permissões diferentes (`membership.delete` e `membership.update`) —
-          o GESTOR, por exemplo, troca cargo e não tira do time. Usar o
-          cadeado de cargo aqui mostraria a ele um botão que dá 403. */}
+      {/* Tirar do time: `podeRemoverDoTime` (`membership.delete`), não o cadeado de cargo. */}
       {!mudou && podeRemoverDoTime(scope, row.team.id, row.role, permissoes) && (
         <div className="mt-2">
           <Reveal show={!confirmandoSaida}>
@@ -456,9 +375,7 @@ function MembershipRow({
                 conta continua ativa e os outros times não mudam.
               </div>
               {row.role !== "OPERATOR" && (
-                // ⚠️ O CARGO SE PERDE, e remarcar depois traz a pessoa como
-                // Operador. É a mesma perda silenciosa que o seletor antigo
-                // avisava — a gaveta não pode ser mais frouxa que ele.
+                // O cargo se perde: remarcar traz a pessoa como Operador.
                 <div className="muted mt-1 text-xs">
                   Ela deixa de ser {ROLE_LABEL[row.role].toLowerCase()} ali. Se
                   voltar depois, entra como Operador.
@@ -508,8 +425,7 @@ function AddToTeam({
 
   return (
     <div className="rounded border border-border p-2">
-      {/* ⚠️ MENU PRÓPRIO, e não `<select>` nativo: o nativo desenha a lista
-          pelo sistema operacional, e a dica "(área)" só cabe aqui. */}
+      {/* Menu próprio para caber a dica por linha. */}
       <MenuSelect
         aria-label="Time"
         placeholder="— escolha o time —"
@@ -522,10 +438,7 @@ function AddToTeam({
           hint: t.parent_team_id === null ? undefined : "subtime",
         }))}
       />
-      {/* ⚠️ OPERADOR É O PADRÃO, por um motivo estrutural: operador é o piso
-          do modelo, então adicionar alguém NUNCA viola a regra da Spec 044
-          §4.1-bis ("o papel na raiz não pode ser menor"). O cargo se ajusta
-          depois, no dropdown acima. */}
+      {/* Operador é o piso, então adicionar nunca viola a regra de nível. */}
       <div className="muted mt-1 text-xs">Entra como Operador.</div>
       {erro && <div className="error-box mt-2 text-xs">{erro}</div>}
       <div className="mt-2 flex gap-2">
@@ -576,16 +489,11 @@ function OrgRoleField({
 
   return (
     <div>
-      {/* ⚠️ O MESMO SELETOR do cargo de time, e não um `<select>`: são as duas
-          permissões da mesma pessoa, lado a lado na mesma gaveta. Dois
-          desenhos diferentes seriam duas coisas para aprender onde há uma só.
-          ⚠️ A ordem vai do maior para o menor, como a de prioridade. */}
       <PillSelect
         value={escolhido}
         disabled={salvando || isSelf}
         label="Papel na organização"
         options={[
-          // ⚠️ ADMIN só para quem pode dar ADMIN (Spec 049, fatia G).
           ...(opcoes.includes("ADMIN")
             ? [{ id: "ADMIN" as const, label: ORG_ROLE_LABEL.ADMIN, commands: true }]
             : []),
@@ -667,10 +575,7 @@ function ResetPassword({
         setSalvando(true);
         try {
           const r = await resetMemberPassword(member.id);
-          // ⚠️ O segredo volta UMA vez (ADR 0021) e sobe UM nível, para a
-          // gaveta -- que o desenha por cima do conteúdo dela e se recusa a
-          // fechar enquanto ele estiver na tela. Até 09/09 ele subia para a
-          // PÁGINA, e o bloco aparecia atrás da gaveta aberta.
+          // O segredo volta uma vez e sobe para a gaveta, que não fecha enquanto ele está na tela.
           onReveal({
             title: `Senha nova de ${member.name}`,
             email: member.email,
@@ -745,12 +650,7 @@ function Deactivate({
   );
 }
 
-/**
- * ⚠️ SEM CONFIRMAÇÃO, ao contrário de `Deactivate`: reativar devolve o acesso
- * que a pessoa já tinha, e o caminho de volta (desativar) existe. Confirmar
- * pesa onde o clique errado custa -- e foi o clique errado em "Desativar" que
- * criou este botão (06/10/2026).
- */
+/** Sem confirmação: reativar devolve o acesso que a pessoa já tinha. */
 function Reactivate({
   member,
   onChanged,
@@ -770,8 +670,7 @@ function Reactivate({
           await reactivateMember(member.id);
           await onChanged(`${member.name} foi reativado na organização.`);
         } catch (e) {
-          // ⚠️ Sem isto, um 403/409 virava rejeição não tratada e a tela não
-          // dizia nada (revisão de 08/10). O mesmo no `Deactivate`.
+          // Sem isto, um 403/409 vira rejeição não tratada. O mesmo no `Deactivate`.
           avisar((e as ApiError).message || "Não consegui reativar.");
         } finally {
           setSalvando(false);

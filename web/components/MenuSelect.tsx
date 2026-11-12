@@ -1,20 +1,6 @@
 "use client";
-// components/MenuSelect.tsx
-// Escolher um item de uma lista — Spec 047, revisão de 09/09.
-//
-// ⚠️⚠️ ELE SUBSTITUI O `<select>` NATIVO nos dois pontos em que a Camila
-// apontou: *"esse seletor aqui do escolha o time ou de adicionar membro, quero
-// igual o que você acabou de fazer do rodapé"*. É o mesmo desenho e a mesma
-// animação do `ContextSwitcher`.
-//
-// ⚠️ E NÃO É SÓ ESTÉTICA: o `<select>` nativo desenha a lista pelo sistema
-// operacional — fonte, cores e tamanho vêm do Windows, não do produto. Já o
-// menu próprio também cabe uma DICA por linha ("área", "3 pessoas"), coisa que
-// `<option>` não suporta em lugar nenhum.
-//
-// ⚠️ A MECÂNICA DO PAINEL mora em `AnchoredPanel`: `fixed` (as gavetas rolam
-// por dentro e recortariam um `absolute`), medido na abertura, fechando ao
-// rolar, e abrindo para cima quando não há espaço embaixo.
+// Seletor de lista com menu próprio no lugar do `<select>` nativo: cabe uma dica
+// por linha ("time", "3 pessoas"). O painel é o `AnchoredPanel`.
 
 import { useCallback, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
@@ -28,7 +14,7 @@ import AnchoredPanel, {
 export type MenuOption<T extends string> = {
   readonly id: T;
   readonly label: string;
-  /** Texto apagado à direita — o que `<option>` nunca permitiu. */
+  /** Texto apagado à direita. */
   readonly hint?: string;
 };
 
@@ -58,8 +44,7 @@ export default function MenuSelect<T extends string>({
 
   return (
     <>
-      {/* ⚠️ `.input` no gatilho: ele OCUPA O LUGAR de um campo de formulário,
-          então tem de parecer um. O que muda é só a lista que ele abre. */}
+      {/* `.input` no gatilho: ocupa o lugar de um campo de formulário. */}
       <button
         ref={anchorRef}
         type="button"
