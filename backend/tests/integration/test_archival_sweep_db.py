@@ -9,22 +9,19 @@ Cobre, contra Postgres real:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
 from app.core.config import settings
-from app.core.deps import get_db_session
 from app.db.models import TaskHistory
 from app.db.models.enums import TaskStatus
-from app.main import create_app
 from app.modules.tasks.application.stale_archival_service import (
     StaleArchivalService,
 )
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
@@ -100,23 +97,13 @@ async def test_workspace_sem_admin_e_pulado(db) -> None:
 
 
 # ---- Endpoint HTTP (trava de token) ----
-def _client(db) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    app.dependency_overrides[get_db_session] = _session
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def test_endpoint_token_certo_200(db, monkeypatch) -> None:
     monkeypatch.setattr(settings, "system_api_token", "tok-correto-123")
     ws, team, admin = await _ws_with_admin(db)
     await _stale_completed(db, ws=ws, team=team, user=admin)
     await db.flush()
 
-    async with _client(db) as client:
+    async with cliente(db) as client:
         r = await client.post(
             "/api/v1/system/tasks/archive-stale",
             headers={"X-System-Token": "tok-correto-123"},
@@ -127,7 +114,7 @@ async def test_endpoint_token_certo_200(db, monkeypatch) -> None:
 
 async def test_endpoint_token_errado_401(db, monkeypatch) -> None:
     monkeypatch.setattr(settings, "system_api_token", "tok-correto-123")
-    async with _client(db) as client:
+    async with cliente(db) as client:
         r = await client.post(
             "/api/v1/system/tasks/archive-stale",
             headers={"X-System-Token": "errado"},

@@ -18,19 +18,14 @@ tira o Comercial quando ele olha o Marketing.
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
+from app.core.tenant import Membership, TenantContext
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
     permissions_for_roles,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -104,27 +99,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _titulos(cli, query: str = "") -> set[str]:
     r = await cli.get(f"/api/v1/projects{query}")
     assert r.status_code == 200, r.text
@@ -138,7 +112,7 @@ async def test_supervisor_nao_ve_projeto_de_outra_raiz(db) -> None:
     """A lente da supervisora de SEO e {SEO, Marketing}: o projeto do Comercial
     (outra raiz) nao e dela para ver, nem pelo titulo."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         titulos = await _titulos(cli)
 
     assert "Metas" not in titulos
@@ -151,7 +125,7 @@ async def test_admin_de_organizacao_ve_as_duas_raizes(db) -> None:
     """A lente `None` do admin de organizacao continua sendo `None`: ele
     alcanca o Comercial de verdade."""
     m = await _setup(db)
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         titulos = await _titulos(cli)
 
     assert titulos == {"Campanha Q3", "Palavras-chave", "Metas"}
@@ -164,7 +138,7 @@ async def test_recorte_pela_raiz_traz_o_projeto_do_subtime(db) -> None:
     """`?team_id=<raiz>` casa a raiz E os descendentes, e tira a outra raiz
     mesmo para o admin. Igualdade pura esconderia o projeto do subtime."""
     m = await _setup(db)
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         titulos = await _titulos(cli, f"?team_id={m['marketing']}")
 
     assert titulos == {"Campanha Q3", "Palavras-chave"}
@@ -173,7 +147,7 @@ async def test_recorte_pela_raiz_traz_o_projeto_do_subtime(db) -> None:
 async def test_recorte_pelo_subtime_traz_so_o_dele(db) -> None:
     """Pedir o SUBTIME nao sobe para a raiz -- descendentes, nao ancestrais."""
     m = await _setup(db)
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         titulos = await _titulos(cli, f"?team_id={m['seo']}")
 
     assert titulos == {"Palavras-chave"}
@@ -183,7 +157,7 @@ async def test_team_id_nao_alarga_a_lente(db) -> None:
     """O parametro estreita, nunca alarga: a supervisora de SEO pede o
     Comercial e recebe vazio. Quem garante e o AND entre lente e recorte."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         titulos = await _titulos(cli, f"?team_id={m['comercial']}")
 
     assert titulos == set()
@@ -198,7 +172,7 @@ async def test_projeto_de_outra_raiz_responde_404_no_get(db) -> None:
     ⚠️ 404 e nao 403: responder 403 confirmaria que o id existe.
     """
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.get(f"/api/v1/projects/{m['p_comercial']}")
 
     assert r.status_code == 404, r.text
@@ -207,7 +181,7 @@ async def test_projeto_de_outra_raiz_responde_404_no_get(db) -> None:
 async def test_get_do_proprio_projeto_segue_funcionando(db) -> None:
     """A trava do `get` nao pode fechar a porta de quem tem a chave."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.get(f"/api/v1/projects/{m['p_seo']}")
 
     assert r.status_code == 200, r.text

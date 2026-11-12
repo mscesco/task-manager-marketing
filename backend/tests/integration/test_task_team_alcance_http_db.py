@@ -19,21 +19,16 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Task
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import (
     permissions_for_actor,
     permissions_for_roles,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -105,27 +100,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 def _payload(*, team_id: uuid.UUID | None, assignee: uuid.UUID, titulo="T"):
     corpo: dict = {"title": titulo, "assignee_ids": [str(assignee)]}
     if team_id is not None:
@@ -140,7 +114,7 @@ async def test_supervisor_nao_cria_tarefa_em_subtime_irmao(db) -> None:
     """A supervisora de SEO manda `team_id` do Design. A tela nunca faz isso,
     mas n8n, Swagger e curl fazem."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json=_payload(team_id=m["design"], assignee=m["dsg"]),
@@ -154,7 +128,7 @@ async def test_supervisor_nao_cria_tarefa_em_subtime_irmao(db) -> None:
 async def test_supervisor_nao_cria_tarefa_em_time_de_outro_workspace(db) -> None:
     """`team_id` de fora da arvore do tenant tambem cai, e no mesmo 422."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json=_payload(team_id=m["raiz_b"], assignee=m["sup"]),
@@ -170,7 +144,7 @@ async def test_supervisor_nao_cria_tarefa_em_time_de_outro_workspace(db) -> None
 async def test_o_pin_na_raiz_continua_funcionando(db) -> None:
     """A tela manda o `team_id` da raiz explicitamente em todo POST."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json=_payload(team_id=m["raiz"], assignee=m["sup"]),
@@ -183,7 +157,7 @@ async def test_o_pin_na_raiz_continua_funcionando(db) -> None:
 async def test_supervisor_cria_no_proprio_subtime(db) -> None:
     """O outro caminho da tela: `/quadro/[teamId]` do proprio subtime."""
     m = await _setup(db)
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json=_payload(team_id=m["seo"], assignee=m["sup"]),
@@ -201,7 +175,7 @@ async def test_admin_alcanca_qualquer_time_da_arvore(db) -> None:
     tudo -- erro plausivel e que os outros testes nao pegariam.
     """
     m = await _setup(db)
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json=_payload(team_id=m["design"], assignee=m["dsg"]),
@@ -226,7 +200,7 @@ async def test_subtarefa_com_pai_fora_da_lente_para_no_404(db) -> None:
         title="Pai no Design",
     )
 
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json={
@@ -263,7 +237,7 @@ async def test_patch_nao_move_tarefa_para_time_fora_da_lente(db) -> None:
         title="Tarefa do SEO",
     )
 
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"team_id": str(m["design"])}
         )
@@ -288,7 +262,7 @@ async def test_patch_para_time_dentro_da_lente_continua_passando(db) -> None:
         title="Tarefa do SEO",
     )
 
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"team_id": str(m["raiz"])}
         )
@@ -309,7 +283,7 @@ async def test_subtarefa_com_team_id_explicito_nao_pendura_em_pai_invisivel(db) 
     pai = await f.make_task(
         db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"], title="Pai no Design"
     )
-    async with _client(db, m["ctx_sup"]) as cli:
+    async with cliente(db, m["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/tasks",
             json={
@@ -332,7 +306,7 @@ async def test_mover_para_projeto_de_outro_time_e_recusado(db) -> None:
         db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"]
     )
     tarefa = await f.make_task(db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["seo"])
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         r = await cli.post(f"/api/v1/tasks/{tarefa.id}/move", json={"project_id": str(projeto)})
     assert r.status_code == 422, r.text
     assert r.json()["error"]["details"]["field"] == "team_id"
@@ -346,7 +320,7 @@ async def test_trocar_o_time_para_fora_do_projeto_e_recusado(db) -> None:
     tarefa = await f.make_task(
         db, workspace_id=m["ws"], created_by=m["adm"], team_id=m["design"], project_id=projeto
     )
-    async with _client(db, m["ctx_adm"]) as cli:
+    async with cliente(db, m["ctx_adm"]) as cli:
         r = await cli.patch(f"/api/v1/tasks/{tarefa.id}", json={"team_id": str(m["seo"])})
     assert r.status_code == 422, r.text
     assert r.json()["error"]["details"]["field"] == "team_id"

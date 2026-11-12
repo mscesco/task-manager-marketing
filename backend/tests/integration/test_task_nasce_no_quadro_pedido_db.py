@@ -13,16 +13,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import TenantContext, set_tenant
+from app.core.tenant import TenantContext
 from app.db.models.boards import BoardColumn
 from app.db.models.enums import ColumnSemantic, TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import BoardService
 from app.modules.tasks.application.task_service import (
@@ -32,7 +27,7 @@ from app.modules.tasks.application.task_service import (
 )
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -252,16 +247,6 @@ async def test_SUBTAREFA_ignora_o_board_id_e_herda_o_do_pai(db) -> None:
 
 
 def _client(db, ws, user, team_id, arvore):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
     ctx = TenantContext(
         workspace_id=ws,
         user_id=user,
@@ -272,15 +257,7 @@ def _client(db, ws, user, team_id, arvore):
         team_tree=arvore,
         org_role="ADMIN",
     )
-
-    async def _tenant():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+    return cliente(db, ctx)
 
 
 async def test_o_board_id_do_PAYLOAD_chega_no_comando(db) -> None:

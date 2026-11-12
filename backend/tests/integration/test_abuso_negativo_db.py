@@ -23,21 +23,15 @@ teste, pelo ASGI, sem rede.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Notification, NotificationMute, Task
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 from tests.integration.test_solicitation_form_publico_db import _form_publicado
 
 pytestmark = pytest.mark.integration
@@ -114,26 +108,6 @@ async def _mundo(db):
     return saida
 
 
-def _cliente(db, ctx) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 # ------------------------------------------------- campo que a rota nao oferece
 async def test_patch_ignora_campo_que_a_rota_nao_oferece(db) -> None:
     """⚠️ Mandar `workspace_id`, `created_by` e `id` num PATCH de tarefa nao
@@ -147,7 +121,7 @@ async def test_patch_ignora_campo_que_a_rota_nao_oferece(db) -> None:
     a, b = m["a"], m["b"]
     antes = {"workspace_id": a["ws"], "created_by": a["dono"], "id": a["tarefa_id"]}
 
-    async with _cliente(db, a["ctx"]) as cli:
+    async with cliente(db, a["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{a['tarefa_id']}",
             json={
@@ -178,7 +152,7 @@ async def test_tarefa_de_outro_workspace_e_404_e_nao_403(db) -> None:
     sonda ids isso ja e resposta. As duas situacoes (nao existe / e de outro)
     tem de ser indistinguiveis."""
     m = await _mundo(db)
-    async with _cliente(db, m["a"]["ctx"]) as cli:
+    async with cliente(db, m["a"]["ctx"]) as cli:
         alheia = await cli.get(f"/api/v1/tasks/{m['b']['tarefa_id']}")
         inexistente = await cli.get(f"/api/v1/tasks/{uuid.uuid4()}")
 
@@ -191,7 +165,7 @@ async def test_tarefa_de_outro_workspace_e_404_e_nao_403(db) -> None:
 async def test_patch_em_tarefa_de_outro_workspace_nao_muda_nada(db) -> None:
     m = await _mundo(db)
     titulo = m["b"]["tarefa_titulo"]
-    async with _cliente(db, m["a"]["ctx"]) as cli:
+    async with cliente(db, m["a"]["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{m['b']['tarefa_id']}", json={"title": "invadido"}
         )
@@ -224,7 +198,7 @@ async def test_notificacao_de_outro_workspace_nao_aparece_nem_se_marca(db) -> No
     alheio_id = alheio.id  # antes do commit: depois dele o objeto expira
     await db.commit()
 
-    async with _cliente(db, m["a"]["ctx"]) as cli:
+    async with cliente(db, m["a"]["ctx"]) as cli:
         lista = await cli.get("/api/v1/notifications")
         marcar = await cli.post(f"/api/v1/notifications/{alheio_id}/read")
         contagem = await cli.get("/api/v1/notifications/unread-count")
@@ -256,7 +230,7 @@ async def test_preferencia_nao_alcanca_outra_pessoa(db) -> None:
     m = await _mundo(db)
     a = m["a"]
 
-    async with _cliente(db, a["ctx"]) as cli:
+    async with cliente(db, a["ctx"]) as cli:
         r = await cli.put(
             "/api/v1/me/notification-preferences",
             json={
@@ -275,7 +249,7 @@ async def test_preferencia_nao_alcanca_outra_pessoa(db) -> None:
     assert [u for u, _ in linhas] == [a["dono"]]
 
     # E a colega, do mesmo workspace, continua recebendo tudo.
-    async with _cliente(db, a["ctx_colega"]) as cli:
+    async with cliente(db, a["ctx_colega"]) as cli:
         dela = await cli.get("/api/v1/me/notification-preferences")
     assert all(t["enabled"] for t in dela.json()["items"])
 
@@ -284,12 +258,12 @@ async def test_preferencia_nao_atravessa_workspace_na_leitura(db) -> None:
     """Dois workspaces, o MESMO tipo e papel desligados em cada um: cada pessoa
     le so o proprio silencio."""
     m = await _mundo(db)
-    async with _cliente(db, m["a"]["ctx"]) as cli:
+    async with cliente(db, m["a"]["ctx"]) as cli:
         await cli.put(
             "/api/v1/me/notification-preferences",
             json={"type_group": "comment", "role": "watcher", "enabled": False},
         )
-    async with _cliente(db, m["b"]["ctx"]) as cli:
+    async with cliente(db, m["b"]["ctx"]) as cli:
         do_b = await cli.get("/api/v1/me/notification-preferences")
 
     desligados = [
@@ -318,21 +292,7 @@ async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
     await db.commit()
 
     # Sem sessao: a rota publica e a unica de escrita sem login.
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://t"
-    ) as cli:
+    async with cliente(db) as cli:
         r = await cli.post(
             "/api/v1/solicitacoes/publico",
             json={

@@ -15,44 +15,18 @@ colega e observador (`test_terminal_e_observador_tambem_saem`).
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import TenantContext, set_tenant
+from app.core.tenant import TenantContext
 from app.db.models import Notification, TaskAssignment, TaskWatcher
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _mundo(db):
@@ -115,7 +89,7 @@ async def _mover(db, m):
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["seo"],
         role="OPERATOR",
     )
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         return await cli.delete(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )

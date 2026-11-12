@@ -16,23 +16,16 @@ O QUE ESTE ARQUIVO PRENDE:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import BoardColumn, Notification
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import BoardService
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -99,26 +92,6 @@ async def _setup(db):
     }
 
 
-def _cliente(db, ctx) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _avisos(db, recipient, tipo) -> list[Notification]:
     return list(
         (
@@ -138,7 +111,7 @@ def _url(c) -> str:
 # ----------------------------------------------------------------- quem recebe
 async def test_mover_de_coluna_avisa_a_audiencia_menos_o_autor(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             _url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)}
         )
@@ -165,7 +138,7 @@ async def test_apagar_coluna_no_lote_nao_avisa(db) -> None:
         {"c": andamento.id, "t": c["tarefa"].id},
     )
     await db.commit()
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             f"/api/v1/boards/{c['quadro'].id}/columns",
             json={"apagar": [{"id": str(andamento.id), "destino": str(cancelado.id)}]},
@@ -184,7 +157,7 @@ async def test_apagar_coluna_no_lote_nao_avisa(db) -> None:
 
 async def test_comentario_avisa_quem_segue(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.post(f"{_url(c)}/comments", json={"content": "olha isso"})
     assert r.status_code == 201, r.text
     assert len(await _avisos(db, c["op"], "TASK_COMMENTED")) == 1
@@ -193,7 +166,7 @@ async def test_comentario_avisa_quem_segue(db) -> None:
 # ------------------------------------------------------------------- a juncao
 async def test_ir_e_voltar_de_coluna_nao_deixa_aviso(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)})
         await cli.patch(_url(c), json={"column_id": str(c["colunas"]["Backlog"].id)})
     assert await _avisos(db, c["op"], "TASK_COLUMN_CHANGED") == []
@@ -201,7 +174,7 @@ async def test_ir_e_voltar_de_coluna_nao_deixa_aviso(db) -> None:
 
 async def test_a_para_b_para_c_vira_um_aviso_de_a_para_c(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)})
         await cli.patch(_url(c), json={"column_id": str(c["colunas"]["Cancelado"].id)})
     avisos = await _avisos(db, c["op"], "TASK_COLUMN_CHANGED")
@@ -212,7 +185,7 @@ async def test_a_para_b_para_c_vira_um_aviso_de_a_para_c(db) -> None:
 
 async def test_tres_descricoes_viram_um_aviso(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         for texto in ("um", "dois", "tres"):
             r = await cli.patch(_url(c), json={"description": texto})
             assert r.status_code == 200, r.text
@@ -221,7 +194,7 @@ async def test_tres_descricoes_viram_um_aviso(db) -> None:
 
 async def test_aviso_lido_nao_e_tocado(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"description": "um"})
         await db.execute(
             text("UPDATE notification SET read_at = now() WHERE recipient_id=:u"),
@@ -234,7 +207,7 @@ async def test_aviso_lido_nao_e_tocado(db) -> None:
 
 async def test_fora_da_janela_nasce_outro_aviso(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"description": "um"})
         await db.execute(
             text(
@@ -251,7 +224,7 @@ async def test_fora_da_janela_nasce_outro_aviso(db) -> None:
 # --------------------------------------------------------------------- prazo
 async def test_prazo_compara_valor_e_hora_conta(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         # So a data de inicio: nao e prazo, nao avisa.
         await cli.patch(
             _url(c), json={"start_date": "2026-09-18", "due_date": None, "due_time": None}
@@ -272,7 +245,7 @@ async def test_prazo_compara_valor_e_hora_conta(db) -> None:
 # ------------------------------------------------- arquivar, reativar, excluir
 async def test_arquivar_e_desarquivar_na_janela_se_anulam(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r1 = await cli.post(f"{_url(c)}/archive")
         assert r1.status_code == 200, r1.text
         assert len(await _avisos(db, c["op"], "TASK_ARCHIVED")) == 1
@@ -284,7 +257,7 @@ async def test_arquivar_e_desarquivar_na_janela_se_anulam(db) -> None:
 
 async def test_arquivar_de_novo_nao_avisa_outra_vez(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         await cli.post(f"{_url(c)}/archive")
         await cli.post(f"{_url(c)}/archive")
     assert len(await _avisos(db, c["op"], "TASK_ARCHIVED")) == 1
@@ -300,7 +273,7 @@ async def test_reativar_vira_um_aviso_so(db) -> None:
     # ⚠️ O teste usa UMA sessao para tudo, e o objeto da tarefa nela ainda diz
     # "nao arquivada". Em producao cada requisicao tem sessao propria.
     await db.refresh(c["tarefa"])
-    async with _cliente(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r1 = await cli.patch(_url(c), json={"column_id": str(c["colunas"]["Em Andamento"].id)})
         assert r1.status_code == 200, r1.text
         r2 = await cli.post(f"{_url(c)}/unarchive")
@@ -311,7 +284,7 @@ async def test_reativar_vira_um_aviso_so(db) -> None:
 
 async def test_excluir_avisa_com_o_titulo(db) -> None:
     c = await _setup(db)
-    async with _cliente(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.delete(_url(c))
     assert r.status_code == 200, r.text
     avisos = await _avisos(db, c["op"], "TASK_DELETED")
@@ -322,7 +295,7 @@ async def test_excluir_avisa_com_o_titulo(db) -> None:
 async def test_sino_ordena_pela_ultima_mudanca(db) -> None:
     """O aviso juntado sobe: a listagem ordena por `updated_at`."""
     c = await _setup(db)
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"description": "um"})
         await cli.post(f"{_url(c)}/comments", json={"content": "oi"})
     # Envelhece os dois e depois junta uma descricao nova no primeiro.
@@ -339,13 +312,13 @@ async def test_sino_ordena_pela_ultima_mudanca(db) -> None:
         )
     )
     await db.commit()
-    async with _cliente(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         await cli.patch(_url(c), json={"description": "dois"})
     ctx_op = TenantContext(
         workspace_id=c["ws"], user_id=c["op"], roles=frozenset({"OPERATOR"}),
         permissions=frozenset(), memberships=(Membership(team_id=c["seo"], role="OPERATOR"),),
     )
-    async with _cliente(db, ctx_op) as cli:
+    async with cliente(db, ctx_op) as cli:
         r = await cli.get("/api/v1/notifications")
     tipos = [n["type"] for n in r.json()["items"]]
     assert tipos[:2] == ["TASK_DESCRIPTION_CHANGED", "TASK_COMMENTED"]

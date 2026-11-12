@@ -8,44 +8,19 @@ senao a tela prometeria um DELETE que o banco recusa.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select, text
 
-from app.core.deps import get_db_session, get_uow
 from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import Team
 from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    """App com sessao/UoW/auth apontando para o teste."""
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _mundo(db, *, papel: str = "ADMIN"):
@@ -94,7 +69,7 @@ async def test_manager_cria_subtime(db) -> None:
     """MANAGER cria subtime (`team.manage`)."""
     ws, raiz, _sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             "/api/v1/workspaces/current/teams",
             json={
@@ -111,7 +86,7 @@ async def test_manager_remove_subtime_da_propria_arvore(db) -> None:
     """O gerente apaga subtime da propria arvore. A outra arvore (403) esta na matriz."""
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 204
     assert not await _existe(db, sub)
@@ -123,7 +98,7 @@ async def test_manager_remove_subtime_da_propria_arvore(db) -> None:
 async def test_manager_edita_nome_slug_nao_muda(db) -> None:
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(
             f"/api/v1/workspaces/current/teams/{sub}",
             json={"name": "Copywriting", "slug": "copywriting"},
@@ -143,7 +118,7 @@ async def test_editar_sem_descricao_preserva_a_atual(db) -> None:
         {"i": sub},
     )
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(
             f"/api/v1/workspaces/current/teams/{sub}", json={"name": "Novo"}
         )
@@ -158,7 +133,7 @@ async def test_nao_remove_time_com_tarefa_viva(db) -> None:
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 409
     assert resp.json()["error"]["details"]["tarefas"] == 1
@@ -176,7 +151,7 @@ async def test_nao_remove_time_com_tarefa_na_lixeira(db) -> None:
         text("UPDATE task SET deleted_at = now() WHERE id = :i"), {"i": task.id}
     )
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 409, (
         "tarefa na lixeira tem de bloquear igual a viva -- "
@@ -190,7 +165,7 @@ async def test_nao_remove_time_com_projeto(db) -> None:
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     await f.make_project(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 409
     assert resp.json()["error"]["details"]["projetos"] == 1
@@ -204,7 +179,7 @@ async def test_nao_remove_time_com_membro(db) -> None:
         db, workspace_id=ws, user_id=outro, team_id=sub, role="OPERATOR"
     )
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 409
     assert resp.json()["error"]["details"]["membros"] == 1
@@ -214,7 +189,7 @@ async def test_nao_remove_time_com_filho(db) -> None:
     ws, _raiz, sub, _ator, ctx = await _mundo(db)
     await f.make_team(db, workspace_id=ws, parent_team_id=sub, slug="neto")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     assert resp.status_code == 409
     assert resp.json()["error"]["details"]["filhos"] == 1
@@ -229,7 +204,7 @@ async def test_admin_nao_remove_raiz(db) -> None:
     """
     _ws, raiz, _sub, _ator, ctx = await _mundo(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{raiz}")
     assert resp.status_code == 409
     assert "time principal" in resp.json()["error"]["message"]
@@ -239,7 +214,7 @@ async def test_admin_nao_remove_raiz(db) -> None:
 async def test_admin_nao_edita_raiz(db) -> None:
     _ws, raiz, _sub, _ator, ctx = await _mundo(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(
             f"/api/v1/workspaces/current/teams/{raiz}", json={"name": "Outro"}
         )
@@ -254,7 +229,7 @@ async def test_slug_liberado_apos_remocao(db) -> None:
     """Sem soft delete de time, o UNIQUE(workspace_id, slug) libera sozinho."""
     _ws, raiz, sub, _ator, ctx = await _mundo(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         apagou = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
         assert apagou.status_code == 204
         recriou = await c.post(
@@ -267,7 +242,7 @@ async def test_slug_liberado_apos_remocao(db) -> None:
 async def test_remover_time_inexistente_404(db) -> None:
     _ws, _raiz, _sub, _ator, ctx = await _mundo(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.delete(
             f"/api/v1/workspaces/current/teams/{uuid.uuid4()}"
         )
@@ -293,7 +268,7 @@ async def test_listagem_traz_contagens_em_lote(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/workspaces/current/teams")
     assert resp.status_code == 200
     por_id = {t["id"]: t for t in resp.json()["items"]}
@@ -317,7 +292,7 @@ async def test_contagem_da_listagem_inclui_a_lixeira(db) -> None:
         text("UPDATE task SET deleted_at = now() WHERE id = :i"), {"i": task.id}
     )
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get("/api/v1/workspaces/current/teams")
     por_id = {t["id"]: t for t in resp.json()["items"]}
     assert por_id[str(sub)]["tarefas"] == 1
@@ -336,7 +311,7 @@ async def test_esvaziar_preserva_tarefas_e_arquiva(db) -> None:
     t = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -357,7 +332,7 @@ async def test_esvaziar_grava_historico_archived(db) -> None:
     ws, _raiz, sub, ator, ctx = await _mundo(db)
     t = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         await c.post(f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover")
     n = await _conta(
         db,
@@ -377,7 +352,7 @@ async def test_esvaziar_move_tarefa_da_lixeira_sem_arquivar(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -406,7 +381,7 @@ async def test_esvaziar_move_projetos(db) -> None:
     ws, raiz, sub, ator, ctx = await _mundo(db)
     p = await f.make_project(db, workspace_id=ws, created_by=ator, team_id=sub)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -428,7 +403,7 @@ async def test_esvaziar_sobe_membro_e_rebaixa_supervisor(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -453,7 +428,7 @@ async def test_supervisor_de_OUTRO_subtime_nao_ganha_a_raiz(db) -> None:
     await f.add_member(db, workspace_id=ws, user_id=ana, team_id=midias, role="SUPERVISOR")
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -477,7 +452,7 @@ async def test_membro_ja_na_raiz_so_perde_o_subtime(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -505,7 +480,7 @@ async def test_esvaziar_o_time_onde_o_ator_e_membro(db) -> None:
         db, workspace_id=ws, user_id=ator, team_id=sub, role="OPERATOR"
     )
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -517,7 +492,7 @@ async def test_esvaziar_recusa_time_com_filho(db) -> None:
     ws, _raiz, sub, _ator, ctx = await _mundo(db)
     await f.make_team(db, workspace_id=ws, parent_team_id=sub, slug="neto")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -528,7 +503,7 @@ async def test_esvaziar_recusa_time_com_filho(db) -> None:
 async def test_esvaziar_recusa_a_raiz(db) -> None:
     _ws, raiz, _sub, _ator, ctx = await _mundo(db)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{raiz}/esvaziar-e-remover"
         )
@@ -540,7 +515,7 @@ async def test_manager_esvazia_subtime_da_propria_arvore(db) -> None:
     """Mesmo gate do DELETE simples: e a mesma acao destrutiva."""
     _ws, _raiz, sub, _ator, ctx = await _mundo(db, papel="MANAGER")
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(
             f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover"
         )
@@ -561,7 +536,7 @@ async def test_previa_conta_vivas_e_lixeira_separadas(db) -> None:
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.get(
             f"/api/v1/workspaces/current/teams/{sub}/previa-remocao"
         )
@@ -581,8 +556,6 @@ async def test_falha_no_meio_nao_deixa_time_semi_esvaziado(db) -> None:
     task_id = t.id
     await db.commit()
 
-    from app.core.tenant import set_tenant
-    from app.db.unit_of_work import UnitOfWork
     from app.modules.workspaces.application.workspace_service import TeamService
 
     set_tenant(ctx)
@@ -626,7 +599,7 @@ async def test_subtime_com_quadro_ou_formulario_nao_sai_pelo_delete_e_diz_por_qu
     await f.make_board(db, workspace_id=ws, team_id=sub, name="Interno")
     await _formulario(db, ws, sub)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         lista = await c.get("/api/v1/workspaces/current/teams")
         resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
     item = next(i for i in lista.json()["items"] if i["id"] == str(sub))
@@ -651,7 +624,7 @@ async def test_esvaziar_leva_quadros_e_formularios_para_a_raiz(db) -> None:
     form = await _formulario(db, ws, sub)
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         previa = await c.get(f"/api/v1/workspaces/current/teams/{sub}/previa-remocao")
         resp = await c.post(f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover")
     assert (previa.json()["quadros"], previa.json()["formularios"]) == (2, 1)
@@ -674,7 +647,7 @@ async def test_esvaziar_arquiva_a_subarvore(db) -> None:
     mae = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=sub)
     filha = await f.make_task(db, workspace_id=ws, created_by=ator, team_id=raiz, parent=mae)
     await db.commit()
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.post(f"/api/v1/workspaces/current/teams/{sub}/esvaziar-e-remover")
     assert resp.status_code == 200
     arquivada = (

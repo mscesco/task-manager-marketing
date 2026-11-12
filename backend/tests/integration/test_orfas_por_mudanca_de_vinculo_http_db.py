@@ -26,43 +26,17 @@ O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import TenantContext, set_tenant
+from app.core.tenant import TenantContext
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
-
-
-def _client(db, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
@@ -141,7 +115,7 @@ async def test_remover_do_time_barra(db) -> None:
         role="OPERATOR",
     )
 
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.delete(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
@@ -157,7 +131,7 @@ async def test_remover_do_time_passa_quando_nao_ha_tarefa(db) -> None:
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
         role="OPERATOR",
     )
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.delete(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
@@ -177,7 +151,7 @@ async def test_ultimo_vinculo_continua_409_e_nao_422(db) -> None:
     aponta qual dos dois mudou.
     """
     m = await _mundo(db)
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.delete(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
@@ -196,7 +170,7 @@ async def test_rebaixamento_de_manager_para_operator_barra(db) -> None:
     chamada a `_assert_nao_deixa_orfa` em `change_member_role`, cai aqui.
     """
     m = await _mundo(db, papel_da_gi="MANAGER")
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/members/{m['gi']}/teams/{m['raiz']}",
             json={"role": "OPERATOR"},
@@ -214,7 +188,7 @@ async def test_promocao_nao_barra(db) -> None:
     (a de antes, ou a do ator) barra promocao, e nenhum outro teste pega.
     """
     m = await _mundo(db, papel_da_gi="OPERATOR")
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}",
             json={"role": "SUPERVISOR"},
@@ -252,7 +226,7 @@ async def _gestor_com_tarefa_no_design(db, *, responsavel: bool):
 async def test_tirar_o_papel_de_organizacao_barra(db) -> None:
     """Tirar o papel de organizacao tambem encolhe a lente, e tambem barra."""
     m, ana = await _gestor_com_tarefa_no_design(db, responsavel=True)
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/members/{ana}/organization-role", json={"role": None}
         )
@@ -264,7 +238,7 @@ async def test_tirar_o_papel_de_organizacao_barra(db) -> None:
 async def test_tirar_o_papel_de_organizacao_apaga_o_seguidor(db) -> None:
     """Sem ser responsavel, a relacao perdida sai -- como nas outras portas."""
     m, ana = await _gestor_com_tarefa_no_design(db, responsavel=False)
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.patch(
             f"/api/v1/members/{ana}/organization-role", json={"role": None}
         )
@@ -291,7 +265,7 @@ async def test_o_corpo_do_422_traz_a_lista_e_nao_a_contagem(db) -> None:
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
         role="OPERATOR",
     )
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.delete(
             f"/api/v1/members/{m['gi']}/teams/{m['design']}"
         )
@@ -318,7 +292,7 @@ async def test_desligamento_NAO_e_barrado(db) -> None:
     orfa. Se alguem "padronizar" as portas, este teste cai.
     """
     m = await _mundo(db)
-    async with _client(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.post(f"/api/v1/members/{m['gi']}/deactivate")
 
     assert r.status_code == 200, r.text

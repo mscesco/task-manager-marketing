@@ -5,22 +5,19 @@ NOW fixo 12:00 UTC = 09:00 America/Sao_Paulo, entao "hoje" local = 2026-06-25.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
 from datetime import UTC, date, datetime, time
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select, update
 
 from app.core.config import settings
-from app.core.deps import get_db_session
 from app.db.models import BoardColumn, Notification, Task
 from app.db.models.enums import ColumnSemantic, TaskStatus
-from app.main import create_app
 from app.modules.tasks.application.deadline_notify_service import (
     DeadlineNotifyService,
 )
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
@@ -290,19 +287,9 @@ async def test_hoje_com_hora_passada_e_atrasada_e_nao_em_breve(db) -> None:
 
 
 # 7 -- endpoint trancado: sem token / token errado -> 401; token certo -> 200.
-def _client(db) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    app.dependency_overrides[get_db_session] = _session
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def test_endpoint_trancado(db, monkeypatch) -> None:
     monkeypatch.setattr(settings, "system_api_token", "tok-correto-123")
-    async with _client(db) as client:
+    async with cliente(db) as client:
         r_sem = await client.post("/api/v1/system/tasks/notify-deadlines")
         assert r_sem.status_code == 401
         r_errado = await client.post(

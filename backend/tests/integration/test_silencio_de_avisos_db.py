@@ -23,7 +23,8 @@ from sqlalchemy import func, select
 
 from app.db.models import Notification, NotificationMute
 from app.modules.notifications.domain.preferences import GRUPOS
-from tests.integration.test_tela_de_notificacoes_db import _cliente, _mundo
+from tests.integration.conftest import cliente
+from tests.integration.test_tela_de_notificacoes_db import _mundo
 
 pytestmark = pytest.mark.integration
 
@@ -86,7 +87,7 @@ async def test_as_quatro_leituras_concordam(db) -> None:
     )
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         await _desligar(cli, grupo="comment", papel="watcher")
 
         comuns = await cli.get("/api/v1/notifications")
@@ -140,7 +141,7 @@ async def test_um_papel_ligado_basta_para_aparecer(db) -> None:
     )
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         await _desligar(cli, grupo="comment", papel="watcher")
         so_um = await cli.get("/api/v1/notifications")
         assert _tipos(so_um) == ["TASK_COMMENTED"]
@@ -160,7 +161,7 @@ async def test_papel_vazio_nunca_silencia(db) -> None:
     await _aviso(db, m, tipo="TASK_COMMENTED", task=m["acai"], minuto=1, roles=())
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         for papel in ("watcher", "assignee", "creator"):
             await _desligar(cli, grupo="comment", papel=papel)
         comuns = await cli.get("/api/v1/notifications")
@@ -178,7 +179,7 @@ async def test_papel_unico_silencia_pelo_tipo(db) -> None:
     await _aviso(db, m, tipo="TASK_WATCH_ADDED", task=m["acai"], minuto=2)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         await _desligar(cli, grupo="reaction", papel="none")
         comuns = await cli.get("/api/v1/notifications")
         silenciadas = await cli.get("/api/v1/notifications", params={"muted": "true"})
@@ -200,7 +201,7 @@ async def test_grupo_de_dois_tipos_desliga_os_dois(db) -> None:
     )
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         await _desligar(cli, grupo="archive", papel="creator")
         comuns = await cli.get("/api/v1/notifications")
         silenciadas = await cli.get("/api/v1/notifications", params={"muted": "true"})
@@ -220,7 +221,7 @@ async def test_travado_nunca_silencia(db) -> None:
     await _aviso(db, m, tipo="ACCESS_LOST", task=None, minuto=3)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         # desliga TUDO o que a rota aceita
         for grupo in GRUPOS:
             if grupo.locked:
@@ -241,7 +242,7 @@ async def test_tudo_nasce_ligado_e_travado_vem_marcado(db) -> None:
     m = await _mundo(db)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         r = await cli.get(PREFS)
     assert r.status_code == 200, r.text
     itens = r.json()["items"]
@@ -272,7 +273,7 @@ async def test_desligar_e_religar_e_idempotente(db) -> None:
             )
         ).scalar_one()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         primeiro = await _desligar(cli, grupo="archive", papel="creator")
         assert await _linhas() == 2  # arquivar + desarquivar
         segundo = await _desligar(cli, grupo="archive", papel="creator")
@@ -308,7 +309,7 @@ async def test_rota_recusa_travado_papel_invalido_e_grupo_desconhecido(db) -> No
     m = await _mundo(db)
     await db.commit()
 
-    async with _cliente(db, m["ctx"]) as cli:
+    async with cliente(db, m["ctx"]) as cli:
         travado = await cli.put(
             PREFS, json={"type_group": "mention", "role": "none", "enabled": False}
         )

@@ -14,38 +14,25 @@ Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 from __future__ import annotations
 
 import pytest
-from httpx import ASGITransport, AsyncClient
+from httpx import AsyncClient
 
-from app.core.deps import get_db_session, get_uow
 from app.db.models import User
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
 from app.modules.auth.api.dependencies import get_current_user
 from app.modules.auth.application.service import AuthService
 from app.shared.exceptions.base import ValidationError
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
 
 def _client(db, user: User) -> AsyncClient:
     """App real, com a sessao do teste e o usuario do token injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
 
     async def _user():
         return user
 
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_current_user] = _user
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
+    return cliente(db, overrides={get_current_user: _user})
 
 
 async def test_troca_o_proprio_nome_aparado(db) -> None:

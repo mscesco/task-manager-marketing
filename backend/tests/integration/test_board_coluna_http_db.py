@@ -26,16 +26,11 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.application.board_service import (
     CODIGO_SEM_DESTINO,
@@ -43,7 +38,7 @@ from app.modules.tasks.application.board_service import (
     BoardService,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -118,27 +113,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _colunas(db, board_id):
     return list(
         (
@@ -175,7 +149,7 @@ def _criar(nome: str, semantica: str, tmp: str = "nova") -> dict:
 async def test_supervisor_cria_coluna_pelo_lote(db) -> None:
     """O lote responde 200 com o quadro inteiro, e nao 201 com a coluna."""
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(_lote(c["quadro"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
     assert r.status_code == 200, r.text
     corpo = _por_nome_json(r.json()["colunas"], "Em Revisão")
@@ -194,7 +168,7 @@ async def test_supervisor_cria_coluna_pelo_lote(db) -> None:
 
 async def test_quadro_inexistente_devolve_404(db) -> None:
     c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.put(_lote(uuid.uuid4()), json=_criar("Em Revisão", "IN_PROGRESS"))
     assert r.status_code == 404, r.text
 
@@ -207,7 +181,7 @@ async def test_renomear_nao_mexe_em_mais_nada(db) -> None:
     antes = _por_nome(await _colunas(db, c["quadro"].id), "Em Andamento")
     semantica, cor, posicao = antes.semantic, antes.color, antes.position
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id),
             json={"renomear": [{"id": str(antes.id), "name": "Fazendo"}]},
@@ -232,7 +206,7 @@ async def test_renomear_coluna_de_OUTRO_quadro_devolve_404(db) -> None:
     # ⚠️ O ID SAI ANTES DA REQUISICAO QUE VAI FALHAR. Depois do 404 o objeto
     # esta desanexado e `db.refresh` estoura com `InvalidRequestError`.
     alheia_id = _por_nome(await _colunas(db, c["geral"].id), "Bloqueado").id
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id),
             json={"renomear": [{"id": str(alheia_id), "name": "Invadida"}]},
@@ -258,7 +232,7 @@ async def test_get_devolve_a_contagem_de_tarefas(db) -> None:
     tarefa.column_id = andamento.id
     await db.flush()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.get(
             f"/api/v1/boards/{c['quadro'].id}/columns/{andamento.id}"
         )
@@ -273,7 +247,7 @@ async def test_get_devolve_a_contagem_de_tarefas(db) -> None:
 async def test_apagar_coluna_vazia_devolve_zero_movidas(db) -> None:
     c = await _setup(db)
     cancelado = _por_nome(await _colunas(db, c["quadro"].id), "Cancelado")
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id), json={"apagar": [{"id": str(cancelado.id)}]}
         )
@@ -308,7 +282,7 @@ async def test_apagar_leva_as_tarefas_para_o_destino(db) -> None:
     cancelado = _por_nome(colunas, "Cancelado")
     tarefa = await _com_tarefa(db, c, andamento)
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id),
             json={"apagar": [{"id": str(andamento.id), "destino": str(cancelado.id)}]},
@@ -331,7 +305,7 @@ async def test_sem_destino_devolve_422_com_o_codigo_do_DESTINO(db) -> None:
     andamento = _por_nome(await _colunas(db, c["quadro"].id), "Em Andamento")
     await _com_tarefa(db, c, andamento)
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id), json={"apagar": [{"id": str(andamento.id)}]}
         )
@@ -358,7 +332,7 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
     andamento = _por_nome(colunas, "Em Andamento")
     await _com_tarefa(db, c, backlog)
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             _lote(c["quadro"].id),
             json={"apagar": [{"id": str(backlog.id), "destino": str(andamento.id)}]},
@@ -378,7 +352,7 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
 async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
     c = await _setup(db)
     quadro = c["quadro"]
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         nova = await cli.put(_lote(quadro.id), json=_criar("Ideias", "OPEN"))
         assert nova.status_code == 200, nova.text
         nova_id = _por_nome_json(nova.json()["colunas"], "Ideias")["id"]
@@ -399,7 +373,7 @@ async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
 
 async def test_PUT_columns_alvo_de_coluna_inexistente_devolve_404(db) -> None:
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.put(
             f"/api/v1/boards/{c['quadro'].id}/columns",
             json={"alvos": [str(uuid.uuid4())]},

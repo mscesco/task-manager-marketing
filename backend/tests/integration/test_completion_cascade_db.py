@@ -18,22 +18,17 @@ sobrescreveu (cascateada) ou deixou intacta (pulada).
 from __future__ import annotations
 
 import uuid
-from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
+from app.core.tenant import Membership, TeamNode, TenantContext
 from app.db.models import Task
 from app.db.models.enums import TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
+from tests.integration.conftest import cliente
 
 pytestmark = pytest.mark.integration
 
@@ -42,26 +37,6 @@ pytestmark = pytest.mark.integration
 _SENTINELA = datetime(2020, 1, 1, tzinfo=UTC)
 
 _World = tuple[uuid.UUID, uuid.UUID, uuid.UUID, uuid.UUID, TenantContext]
-
-
-def _client(db: AsyncSession, ctx: TenantContext) -> AsyncClient:
-    app = create_app()
-
-    async def _session() -> AsyncIterator[AsyncSession]:
-        yield db
-
-    async def _uow() -> AsyncIterator[UnitOfWork]:
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
 
 
 async def _world(db: AsyncSession) -> _World:
@@ -125,7 +100,7 @@ async def test_concluir_pai_cascateia_subs_e_bumpa_updated_at(
     await _set_updated_at_sentinela(db, sub, neta)
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(
             f"/api/v1/tasks/{pai.id}", json={"status": "COMPLETED"}
         )
@@ -177,7 +152,7 @@ async def test_cascata_pula_cancelada_arquivada_e_ja_concluida(
     )
     await db.commit()
 
-    async with _client(db, ctx) as c:
+    async with cliente(db, ctx) as c:
         resp = await c.patch(
             f"/api/v1/tasks/{pai.id}", json={"status": "COMPLETED"}
         )

@@ -12,21 +12,16 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models import Task
 from app.db.models.boards import BoardColumn
 from app.db.models.collaboration import TaskHistory
 from app.db.models.enums import ColumnSemantic, TaskStatus
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_roles
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -95,32 +90,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados.
-
-    Mesmo helper de `test_task_board_no_contrato_db.py` e
-    `test_boards_list_http_db.py`. Duplicado pelo mesmo motivo registrado la:
-    um helper compartilhado acoplaria o mundo de um arquivo ao do outro.
-    """
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _ctx():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _ctx
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 async def _coluna(db, *, board_id: uuid.UUID, nome: str) -> uuid.UUID:
     """O id de uma coluna pelo NOME, dentro de um quadro.
 
@@ -159,7 +128,7 @@ async def test_column_id_da_ponte_vira_o_status_daquela_coluna(db) -> None:
 
     alvo = await _coluna(db, board_id=c["quadro"].id, nome="Aprovação Externa")
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"column_id": str(alvo)}
         )
@@ -188,7 +157,7 @@ async def test_column_id_sem_ponte_deriva_pela_semantica(db) -> None:
 
     alvo = await _coluna(db, board_id=c["quadro"].id, nome=SEM_PONTE)
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"column_id": str(alvo)}
         )
@@ -225,7 +194,7 @@ async def test_mover_entre_colunas_de_mesmo_status_grava_a_coluna(db) -> None:
     alvo = await _coluna(db, board_id=c["quadro"].id, nome=SEM_PONTE)
     assert alvo != coluna_antes, "fixture nao montou duas colunas distintas"
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"column_id": str(alvo)}
         )
@@ -275,7 +244,7 @@ async def test_coluna_de_outro_quadro_e_recusada(db) -> None:
     ).scalars().first()
     assert outra is not None, "a raiz devia ter quadro padrao com colunas"
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{tarefa_id}", json={"column_id": str(outra)}
         )
@@ -314,7 +283,7 @@ async def test_status_e_column_id_juntos_sao_recusados(db) -> None:
 
     tarefa_id = t.id
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{tarefa_id}",
             json={"status": "COMPLETED", "column_id": str(alvo)},
@@ -348,7 +317,7 @@ async def test_mover_de_coluna_grava_no_historico(db) -> None:
 
     alvo = await _coluna(db, board_id=c["quadro"].id, nome=SEM_PONTE)
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/tasks/{t.id}", json={"column_id": str(alvo)}
         )

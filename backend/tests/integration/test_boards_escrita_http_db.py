@@ -21,19 +21,14 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 
-from app.core.deps import get_db_session, get_uow
-from app.core.tenant import Membership, TenantContext, set_tenant
+from app.core.tenant import Membership, TenantContext
 from app.db.models.boards import BoardColumn
-from app.db.unit_of_work import UnitOfWork
-from app.main import create_app
-from app.modules.auth.api.dependencies import get_tenant_context
 from app.modules.auth.domain.permissions import permissions_for_actor
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from tests.integration import factories as f
-from tests.integration.conftest import node
+from tests.integration.conftest import cliente, node
 
 pytestmark = pytest.mark.integration
 
@@ -89,27 +84,6 @@ async def _setup(db):
     }
 
 
-def _client(db, ctx):
-    """App real com sessao/UoW/tenant do teste injetados."""
-    app = create_app()
-
-    async def _session():
-        yield db
-
-    async def _uow():
-        async with UnitOfWork(db) as uow:
-            yield uow
-
-    async def _tenant():
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_uow] = _uow
-    app.dependency_overrides[get_tenant_context] = _tenant
-    return AsyncClient(transport=ASGITransport(app=app), base_url="http://t")
-
-
 # ---------------------------------------------------------------- POST
 
 
@@ -121,7 +95,7 @@ async def test_supervisor_cria_no_proprio_subtime_e_recebe_201(db) -> None:
     resposta fosse eco, ele passaria mesmo com o quadro nascendo vazio.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/boards",
             json={"name": "Quadro do SEO", "team_id": str(c["seo"])},
@@ -153,7 +127,7 @@ async def test_supervisor_em_subtime_alheio_recebe_403(db) -> None:
     `test_board_service_escrita_db.py`, que roda sem UoW.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.post(
             "/api/v1/boards",
             json={"name": "Quadro dos outros", "team_id": str(c["crm"])},
@@ -173,7 +147,7 @@ async def test_nome_vazio_devolve_422_e_nao_500(db) -> None:
     Se este teste virar 500, alguem moveu a regra para o schema.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.post(
             "/api/v1/boards",
             json={"name": "   ", "team_id": str(c["raiz"])},
@@ -184,7 +158,7 @@ async def test_nome_vazio_devolve_422_e_nao_500(db) -> None:
 
 async def test_time_inexistente_devolve_404(db) -> None:
     c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.post(
             "/api/v1/boards",
             json={"name": "Fantasma", "team_id": str(uuid.uuid4())},
@@ -211,7 +185,7 @@ async def test_patch_renomeia_e_nao_mexe_em_colunas(db) -> None:
         )
     ).scalars().all()
 
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         r = await cli.patch(
             f"/api/v1/boards/{quadro.id}", json={"name": "Depois"}
         )
@@ -236,7 +210,7 @@ async def test_patch_em_quadro_inexistente_devolve_404(db) -> None:
     existencia.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.patch(
             f"/api/v1/boards/{uuid.uuid4()}", json={"name": "Nada"}
         )
@@ -260,7 +234,7 @@ async def test_patch_nao_aceita_trocar_o_time(db) -> None:
     )
     await db.flush()
 
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         r = await cli.patch(
             f"/api/v1/boards/{quadro.id}",
             json={"name": "Fica no SEO", "team_id": str(c["crm"])},
@@ -286,7 +260,7 @@ async def test_GET_de_um_quadro_traz_a_contagem(db) -> None:
     sumir do JSON em silencio -- o Pydantic descarta o que o modelo nao declara.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         criado = await cli.post(
             "/api/v1/boards", json={"name": "Pauta", "team_id": str(c["seo"])}
         )
@@ -304,7 +278,7 @@ async def test_DELETE_de_um_quadro_responde_200_e_apaga(db) -> None:
     existe (o `PATCH` esta la), entao o FastAPI casa a rota e recusa o VERBO.
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
+    async with cliente(db, c["ctx_sup"]) as cli:
         criado = await cli.post(
             "/api/v1/boards", json={"name": "Descartavel", "team_id": str(c["seo"])}
         )
@@ -327,7 +301,7 @@ async def test_DELETE_do_quadro_PADRAO_devolve_422_com_code(db) -> None:
     distinguir isto de "sem permissao".
     """
     c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
+    async with cliente(db, c["ctx_adm"]) as cli:
         lista = await cli.get("/api/v1/boards")
         padrao = next(q for q in lista.json() if q["is_default"])
         r = await cli.delete(f"/api/v1/boards/{padrao['id']}")
