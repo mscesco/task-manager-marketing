@@ -153,8 +153,6 @@ class BatchListResponse(BaseModel):
     total: int  # total de ENVIOS, nao de demandas
     page: int
     size: int
-    pending_total: int
-    approved_without_task_total: int
     #: Os numeros das abas, em demandas, com a mesma busca e formulario da lista:
     #: PENDING, ACTIVE, DONE, REJECTED, ALL, WITHOUT_TASK.
     tab_totals: dict[str, int] = Field(default_factory=dict)

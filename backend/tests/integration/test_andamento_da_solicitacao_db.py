@@ -10,7 +10,7 @@
   3. o indice parcial `solicitation_aprovadas_sem_tarefa` -- se ele cobrir
      so APPROVED enquanto a consulta procura os tres, o Postgres deixa de
      usa-lo em silencio;
-  4. o filtro "SEM_TAREFA" da fila;
+  4. o filtro "so sem tarefa" da fila;
   5. a guarda do `mark_task`.
 
 ⚠️ Os estados novos sao ANDAMENTO, e nao uma segunda triagem: passar por eles
@@ -204,7 +204,7 @@ async def test_ANDAR_depois_de_marcar_a_tarefa_nao_viola_o_CHECK(db) -> None:
 # ==========================================================
 # A fila
 # ==========================================================
-async def test_SEM_TAREFA_continua_achando_o_que_ja_COMECOU(db) -> None:
+async def test_sem_tarefa_continua_achando_o_que_ja_COMECOU(db) -> None:
     """⚠️ O FILTRO PROMETE "aceito e sem tarefa", e não "aprovado e parado".
 
     Com a comparação antiga, mover um pedido para "em andamento" o tirava
@@ -218,10 +218,14 @@ async def test_SEM_TAREFA_continua_achando_o_que_ja_COMECOU(db) -> None:
         await _andar(db, pedido, "IN_PROGRESS")
 
         lotes, _ = await svc.list_batches(
-            params=PageParams(page=1, size=10), filtro="SEM_TAREFA", team_id=None)
+            params=PageParams(page=1, size=10),
+            filtro=None,
+            team_id=None,
+            without_task=True,
+        )
         # ⚠️ O CONTADOR TEM DE CONCORDAR COM A LISTA. Um badge que conta
         # diferente do que a tela mostra é pior que não ter badge.
-        assert await svc.count_approved_without_task(None) == 1
+        assert (await svc.count_by_tab(None))["WITHOUT_TASK"] == 1
     assert len(lotes) == 1
 
 
@@ -244,7 +248,7 @@ async def test_pedido_CONCLUIDO_sai_do_contador_de_pendentes(db) -> None:
     ws, pedido, team, user = await _cena(db)
     with acting_as(**_como(ws, user, team)):
         svc = SolicitationService(db)
-        assert await svc.count_pending(None) == 1
+        assert (await svc.count_by_tab(None))["PENDING"] == 1
         await _aprovar(db, pedido)
         await _andar(db, pedido, "DONE")
-        assert await svc.count_pending(None) == 0
+        assert (await svc.count_by_tab(None))["PENDING"] == 0

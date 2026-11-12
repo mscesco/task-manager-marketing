@@ -206,7 +206,7 @@ async def test_fila_escopada_por_tenant(db) -> None:
 
 
 async def test_fila_filtra_por_status_e_conta_pendentes(db) -> None:
-    """Filtro por status conta ENVIOS; pending_total conta DEMANDAS.
+    """Filtro por status conta ENVIOS; a aba PENDING conta DEMANDAS.
 
     Duas unidades diferentes na mesma tela, por isso conferidas juntas.
     """
@@ -229,7 +229,7 @@ async def test_fila_filtra_por_status_e_conta_pendentes(db) -> None:
             params=PageParams(size=100), filtro="APPROVED", team_id=None)
         assert pend == 1  # envios com ao menos uma pendente
         assert aprov == 1
-        assert await svc.count_pending(None) == 1  # demandas pendentes
+        assert (await svc.count_by_tab(None))["PENDING"] == 1  # demandas pendentes
 
         with pytest.raises(ValidationError):
             await svc.list_batches(params=PageParams(size=100), filtro="QUALQUER", team_id=None)
@@ -819,9 +819,10 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                     ReviewCommand(solicitation_id=alvo.id, approve=True, note=None),
                 )
         # duas aprovadas, nenhuma virou tarefa ainda
-        assert await svc.count_approved_without_task(None) == 2
+        assert (await svc.count_by_tab(None))["WITHOUT_TASK"] == 2
         _, total = await svc.list_batches(
-            params=PageParams(size=100), filtro="SEM_TAREFA", team_id=None)
+            params=PageParams(size=100), filtro=None, team_id=None, without_task=True
+        )
         assert total == 1
 
         # marca uma -> some da contagem
@@ -834,7 +835,7 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                     task_ref="https://quadro/tarefa/1",
                 ),
             )
-        assert await svc.count_approved_without_task(None) == 1
+        assert (await svc.count_by_tab(None))["WITHOUT_TASK"] == 1
 
         # marca a outra -> o envio inteiro sai do filtro
         async with UnitOfWork(db) as uow:
@@ -842,9 +843,10 @@ async def test_filtro_aprovadas_sem_tarefa(db) -> None:
                 uow,
                 MarkTaskCommand(solicitation_id=criadas[1].id, created=True),
             )
-        assert await svc.count_approved_without_task(None) == 0
+        assert (await svc.count_by_tab(None))["WITHOUT_TASK"] == 0
         _, total_final = await svc.list_batches(
-            params=PageParams(size=100), filtro="SEM_TAREFA", team_id=None)
+            params=PageParams(size=100), filtro=None, team_id=None, without_task=True
+        )
         assert total_final == 0
 
 

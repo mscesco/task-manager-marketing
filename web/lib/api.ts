@@ -2283,8 +2283,7 @@ export async function enviarSolicitacaoPublica(payload: {
 
 export type SolicitacaoFiltro =
   | SolicitacaoStatus
-  | "ACTIVE" // aprovada ou em andamento
-  | "SEM_TAREFA"; // aprovadas que ninguém virou tarefa
+  | "ACTIVE"; // aprovada ou em andamento
 
 /** As abas da fila; `WITHOUT_TASK` é o "só sem tarefa". */
 export type FilaAba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL" | "WITHOUT_TASK";
@@ -2335,8 +2334,6 @@ export type BatchListResponse = {
   total: number; // total de ENVIOS, não de demandas
   page: number;
   size: number;
-  pending_total: number;
-  approved_without_task_total: number;
   /** Os números das abas, em demandas, com a mesma busca e formulário. */
   tab_totals?: Partial<Record<FilaAba, number>>;
   /** Os formulários que têm pedido nesta fila -- as opções do filtro. */

@@ -55,12 +55,6 @@ class UserRepository(BaseRepository[User]):
         ids = (await self.session.execute(stmt)).scalars().all()
         return sum(1 for i in ids if i != excluindo)
 
-    async def list_all(self) -> list[User]:
-        """Lista todos os usuarios ativos do workspace, por nome."""
-        stmt = self._base_select().order_by(User.name)
-        result = await self.session.execute(stmt)
-        return list(result.scalars().all())
-
     async def list_all_with_subteams(
         self,
     ) -> list[tuple[User, list[uuid.UUID]]]:

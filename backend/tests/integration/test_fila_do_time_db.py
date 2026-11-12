@@ -216,8 +216,8 @@ async def test_contadores_recebem_o_mesmo_recorte_da_lista(db) -> None:
     with _como_admin(m):
         svc = SolicitationService(db)
         # A fila do Marketing: a do SEO + a orfa (papel de organizacao).
-        do_marketing = await svc.count_pending(m["marketing"])
-        da_organizacao = await svc.count_pending(None)
+        do_marketing = (await svc.count_by_tab(m["marketing"]))["PENDING"]
+        da_organizacao = (await svc.count_by_tab(None))["PENDING"]
         linhas_do_marketing = await _forms_na_fila(db, team_id=m["marketing"])
 
     assert do_marketing == len(linhas_do_marketing) == 2

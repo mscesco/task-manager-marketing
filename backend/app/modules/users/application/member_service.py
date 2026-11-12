@@ -34,7 +34,6 @@ from app.modules.auth.infrastructure.security import (
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
-from app.modules.tasks.application.project_service import ProjectService
 from app.modules.tasks.application.task_guards import (
     TaskScopeGuards,
     user_can_view_team,
@@ -116,7 +115,6 @@ class MemberService:
     def __init__(self, session: AsyncSession) -> None:
         self._users = UserRepository(session)
         self._teams = TeamRepository(session)
-        self._projects = ProjectService(session)
         self._session = session
 
     async def _org_role_de(self, user_id: uuid.UUID) -> str | None:
