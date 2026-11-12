@@ -1,6 +1,8 @@
 // Regras da tela de gestão de times. Só escondem botão que não vai funcionar;
 // quem autoriza é o backend, no clique.
 
+import { nomeConfere } from "./confirmarNome";
+
 /** O que aponta para um time. Vem em lote no GET /current/teams. */
 export type ContagensTime = {
   tarefas: number;
@@ -145,12 +147,9 @@ export function descreveConteudo(c: ContagensTime): string {
     .join(", ");
 }
 
-/** Confirmação por digitação, sempre exigida; tolera espaço nas pontas e caixa. */
+/** Confirmação por digitação, sempre exigida: a mesma regra de excluir quadro e base (maiúscula conta). */
 export function confirmacaoValida(digitado: string, nomeDoTime: string): boolean {
-  const norm = (s: string) => s.trim().toLocaleLowerCase("pt-BR");
-  const alvo = norm(nomeDoTime);
-  if (!alvo) return false;
-  return norm(digitado) === alvo;
+  return nomeConfere(digitado, nomeDoTime);
 }
 
 /**

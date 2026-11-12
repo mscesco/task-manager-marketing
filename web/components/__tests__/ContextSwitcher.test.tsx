@@ -119,8 +119,8 @@ describe("ContextSwitcher", () => {
   it("marca o time em que a pessoa está", () => {
     desenhar({ vinculos: [SEO, TI], pathname: `/times/${MKT}` });
     fireEvent.click(screen.getByRole("button", { name: /trocar de time/i }));
-    const marketing = screen.getByRole("menuitem", { name: /Marketing/ });
-    expect(marketing.className).toContain("text-accent");
+    const atual = screen.getAllByRole("menuitem", { current: true });
+    expect(atual.map((a) => a.textContent)).toEqual(["Marketing"]);
   });
 
   it("⭐⭐ o botão MOSTRA onde a pessoa está, e nunca 'Trocar de time'", () => {

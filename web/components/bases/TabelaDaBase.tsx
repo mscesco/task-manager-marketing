@@ -482,6 +482,7 @@ export default function TabelaDaBase({
         <table
           ref={tabelaRef}
           role="grid"
+          aria-multiselectable="true"
           aria-label={base.name}
           aria-rowcount={linhas.length + 1}
           // `border-separate` com espaçamento zero, e não `border-collapse`:
@@ -646,6 +647,7 @@ export default function TabelaDaBase({
               <tr key={linha.id} className="group hover:bg-surface-2">
                 {colunas.map((coluna, ci) => {
                   const ehAtiva = ativa.linha === li && ativa.coluna === ci;
+                  const naFaixa = dentro(faixa, { linha: li, coluna: ci });
                   return (
                     <td
                       key={coluna.id}
@@ -658,18 +660,19 @@ export default function TabelaDaBase({
                       tabIndex={ehAtiva ? 0 : -1}
                       aria-label={`${coluna.name}, linha ${li + 1}`}
                       aria-readonly={!base.can_update_row}
+                      aria-selected={naFaixa}
                       onClick={(e) => cliqueNaCelula({ linha: li, coluna: ci }, coluna.type, e.shiftKey)}
                       style={ci < congeladas ? { left: esquerdas[ci] } : undefined}
                       className={`h-[38px] overflow-hidden border-b border-r border-border px-2.5 align-middle ${
                         // A coluna presa tem fundo próprio; na faixa, o da faixa.
                         ci < congeladas
-                          ? `sticky z-[1] ${dentro(faixa, { linha: li, coluna: ci }) ? "" : "bg-canvas"}`
+                          ? `sticky z-[1] ${naFaixa ? "" : "bg-canvas"}`
                           : ""
                       } ${ci === 0 ? "font-medium" : ""} ${
                         base.can_update_row ? "cursor-text" : ""
                       } ${
                         // O contorno só aparece com o foco ou editando; a célula ativa continua existindo para o teclado.
-                        dentro(faixa, { linha: li, coluna: ci }) ? "bg-accent-soft" : ""
+                        naFaixa ? "bg-accent-soft" : ""
                       } ${
                         // Anel interno de 2px no accent, e nada no hover (a linha inteira já escurece).
                         ehAtiva && (editando || escolhendo)

@@ -107,3 +107,32 @@ async def test_a_trava_e_so_do_admin_gestor_sai_livre(db) -> None:
         )
 
     assert user.org_role is None
+
+
+async def test_ninguem_desativa_a_propria_conta(db) -> None:
+    ws, raiz, dona = await _mundo(db)
+    segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
+    await _set_org_role(db, segunda, OrgRole.ADMIN)
+
+    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).deactivate_member(user_id=dona)
+
+    assert (await db.get(User, dona)).is_active is True
+
+
+async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
+    """Dois admins desativando um ao outro ao mesmo tempo: o segundo pedido espera
+    o `FOR UPDATE` do primeiro e conta zero. O ator ainda carrega ADMIN no token,
+    mas no banco ja esta desativado; o alvo e o unico admin ativo."""
+    ws, raiz, dona = await _mundo(db)
+    segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
+    await _set_org_role(db, segunda, OrgRole.ADMIN)
+    (await db.get(User, segunda)).is_active = False
+    await db.flush()
+
+    with acting_as(workspace_id=ws, user_id=segunda, org_role="ADMIN"):
+        with pytest.raises(BusinessRuleError):
+            await MemberService(db).deactivate_member(user_id=dona)
+
+    assert (await db.get(User, dona)).is_active is True

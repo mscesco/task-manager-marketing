@@ -139,9 +139,10 @@ describe("confirmacaoValida", () => {
     expect(confirmacaoValida("Copy", "Copy")).toBe(true);
   });
 
-  it("tolera espaco nas pontas e caixa", () => {
-    expect(confirmacaoValida("  copy ", "Copy")).toBe(true);
-    expect(confirmacaoValida("CRM E AUTOMAÇÃO", "CRM e Automação")).toBe(true);
+  it("tolera espaco nas pontas, mas maiuscula conta", () => {
+    expect(confirmacaoValida("  Copy ", "Copy")).toBe(true);
+    expect(confirmacaoValida("copy", "Copy")).toBe(false);
+    expect(confirmacaoValida("CRM E AUTOMAÇÃO", "CRM e Automação")).toBe(false);
   });
 
   it("recusa vazio -- o clique acidental", () => {

@@ -69,7 +69,12 @@ def n8n(monkeypatch):
 
         async def post(self, url, json=None, headers=None):
             enviados.append(
-                {"url": url, "corpo": json, "headers": headers or {}}
+                {
+                    "url": url,
+                    "corpo": json,
+                    "headers": headers or {},
+                    "timeout": self.kwargs.get("timeout"),
+                }
             )
             return _Resposta()
 
@@ -102,6 +107,40 @@ async def _aprovar(db, pedido):
         )
 
 
+class _Log:
+    """Troca o logger do modulo; guarda o que cair nas listas dadas.
+
+    `structlog` com cache por logger: trocar o objeto e mais confiavel que
+    capturar a saida.
+    """
+
+    def __init__(self, *, warning=None, exception=None):
+        self._warning = warning if warning is not None else []
+        self._exception = exception if exception is not None else []
+
+    def warning(self, evento, **kw):
+        self._warning.append((evento, kw))
+
+    def exception(self, evento, **kw):
+        self._exception.append(evento)
+
+    def info(self, *a, **kw):
+        pass
+
+
+# ==========================================================
+# ⚠️ Regra 2: timeout curto
+# ==========================================================
+async def test_a_chamada_sai_com_o_timeout_curto(db, n8n) -> None:
+    """Sem `timeout`, quem clicou "Aprovar" espera o n8n o quanto ele quiser."""
+    ws, pedido, ctx = await _cena(db)
+    with acting_as(**ctx):
+        await _aprovar(db, pedido)
+
+    assert n8n[0]["timeout"] == settings.n8n_webhook_timeout_seconds
+    assert 0 < n8n[0]["timeout"] <= 10
+
+
 # ==========================================================
 # ⚠️ Regra 3: falha não derruba a operação
 # ==========================================================
@@ -126,34 +165,25 @@ async def test_n8n_FORA_DO_AR_nao_impede_a_aprovacao(db, n8n, monkeypatch) -> No
             raise httpx.ConnectError("n8n fora do ar")
 
     monkeypatch.setattr(aviso_de_status.httpx, "AsyncClient", _Explode)
+    falhas: list[str] = []
+    monkeypatch.setattr(aviso_de_status, "logger", _Log(exception=falhas))
 
     ws, pedido, ctx = await _cena(db)
     with acting_as(**ctx):
         aprovada = await _aprovar(db, pedido)
 
-    # ⚠️ A APROVAÇÃO ACONTECEU. É a única asserção que importa aqui.
+    # ⚠️ A APROVAÇÃO ACONTECEU. É a asserção que mais importa aqui.
     assert aprovada.status == "APPROVED"
     assert aprovada.reviewed_at is not None
+    # E a falha fica no log, senão ninguém descobre que os avisos pararam.
+    assert falhas == ["solicitacao.aviso_falhou"]
 
 
 async def test_n8n_RESPONDENDO_ERRO_tambem_nao_derruba(db, n8n, monkeypatch) -> None:
     """Workflow desativado responde 404. Isso não pode virar problema nosso --
     mas tem de aparecer no log, senão ninguém descobre que os avisos pararam."""
     avisos: list[tuple[str, dict]] = []
-
-    class _Log:
-        def warning(self, evento, **kw):
-            avisos.append((evento, kw))
-
-        def info(self, *a, **kw):
-            pass
-
-        def exception(self, *a, **kw):
-            pass
-
-    # `structlog` com cache por logger: trocar o objeto e mais confiavel que
-    # capturar a saida.
-    monkeypatch.setattr(aviso_de_status, "logger", _Log())
+    monkeypatch.setattr(aviso_de_status, "logger", _Log(warning=avisos))
 
     class _Recusa:
         def __init__(self, *a, **kw):

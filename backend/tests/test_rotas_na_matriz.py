@@ -76,9 +76,6 @@ PENDENTE: frozenset[tuple[str, str]] = frozenset({
     ("post", "/api/v1/solicitacoes/{}/criar-tarefa"),
     ("post", "/api/v1/solicitacoes/{}/rejeitar"),
     # Tarefa.
-    ("post", "/api/v1/tasks/{}/move"),
-    ("post", "/api/v1/tasks/{}/duplicate"),
-    ("post", "/api/v1/tasks/{}/unarchive"),
     ("delete", "/api/v1/tasks/{}/assignees/{}"),
     ("post", "/api/v1/tasks/{}/comments"),
     ("put", "/api/v1/tasks/{}/comments/{}/reaction"),

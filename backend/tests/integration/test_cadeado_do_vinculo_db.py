@@ -28,7 +28,7 @@ from app.shared.exceptions.base import (
     BusinessRuleError,
 )
 from tests.integration import factories as f
-from tests.integration.conftest import acting_as, mship, node
+from tests.integration.conftest import acting_as, cliente, mship, node
 
 pytestmark = pytest.mark.integration
 
@@ -231,15 +231,8 @@ async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
     """`/members/{id}/teams` (a gaveta do membro) tem de passar `alvo_ativo`,
     como o `/by-team`: assumindo "ativa", o seletor de cargo seria oferecido e
     o salvar daria 409."""
-    from collections.abc import AsyncIterator
-
-    from httpx import ASGITransport, AsyncClient
-
-    from app.core.deps import get_db_session
-    from app.core.tenant import TenantContext, set_tenant
+    from app.core.tenant import TenantContext
     from app.db.models import User
-    from app.main import create_app
-    from app.modules.auth.api.dependencies import get_tenant_context
     from app.modules.auth.domain.permissions import permissions_for_actor
 
     ws, raiz, seo, admin = await _mundo(db)
@@ -259,18 +252,7 @@ async def test_rota_do_membro_fecha_o_cadeado_de_conta_desativada(db) -> None:
         team_tree=arvore,
         org_role="ADMIN",
     )
-    app = create_app()
-
-    async def _session() -> AsyncIterator:
-        yield db
-
-    async def _ctx() -> TenantContext:
-        set_tenant(ctx)
-        return ctx
-
-    app.dependency_overrides[get_db_session] = _session
-    app.dependency_overrides[get_tenant_context] = _ctx
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+    async with cliente(db, ctx) as c:
         r = await c.get(f"/api/v1/members/{alvo}/teams")
     assert r.status_code == 200, r.text
     assert [v["can_edit_role"] for v in r.json()] == [False]
