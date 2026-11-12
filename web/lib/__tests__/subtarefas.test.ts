@@ -1,13 +1,15 @@
 // Checklist de subtarefas: progresso, linhas e a conta pela coluna.
 import { describe, expect, it } from "vitest";
 
-import { ativas, checklist, paraChecklist, progresso } from "@/lib/subtarefas";
+import { ativas, checklist, ordemDaChecklist, paraChecklist, progresso } from "@/lib/subtarefas";
 import type { Coluna } from "@/lib/coluna";
 
 /** A fixture recebe id de COLUNA, não status: a conta é pela coluna. */
 const f = (coluna: string, is_archived = false) => ({
   column_id: coluna,
   is_archived,
+  due_date: null as string | null,
+  due_time: null as string | null,
 });
 
 /** O mapa de colunas dos testes, só com o que eles usam. */
@@ -159,5 +161,62 @@ describe("progresso pela semântica da coluna", () => {
     // Sumir do denominador inflaria a porcentagem: 1 de 1 em vez de 1 de 2.
     const r = progresso([f("col-de-outro-quadro"), f("col-done")], COLUNAS);
     expect(r).toEqual({ concluidas: 1, total: 2, pct: 50 });
+  });
+});
+
+describe("ordemDaChecklist", () => {
+  const COM_CANCELADA = new Map(COLUNAS).set("col-cancel", {
+    ...COLUNAS.get("col-done")!,
+    id: "col-cancel",
+    semantic: "CANCELLED",
+  });
+  const sub = (id: string, coluna: string, due_date: string | null, due_time: string | null = null) => ({
+    id,
+    column_id: coluna,
+    due_date,
+    due_time,
+  });
+  const ids = (xs: { id: string }[]) => xs.map((x) => x.id);
+
+  it("por prazo, sem prazo depois, concluída e cancelada por último", () => {
+    const filhos = [
+      sub("feita-cedo", "col-done", "2026-01-01"),
+      sub("sem-prazo", "col-backlog", null),
+      sub("dia-20", "col-backlog", "2026-03-20"),
+      sub("cancelada", "col-cancel", "2026-01-02"),
+      sub("dia-10", "col-backlog", "2026-03-10"),
+    ];
+    expect(ids(ordemDaChecklist(filhos, COM_CANCELADA))).toEqual([
+      "dia-10",
+      "dia-20",
+      "sem-prazo",
+      "feita-cedo",
+      "cancelada",
+    ]);
+  });
+
+  it("no mesmo dia, com hora vem antes; sem hora fecha o dia", () => {
+    const filhos = [
+      sub("sem-hora", "col-backlog", "2026-03-10"),
+      sub("18h", "col-backlog", "2026-03-10", "18:00:00"),
+      sub("9h", "col-backlog", "2026-03-10", "09:00:00"),
+    ];
+    expect(ids(ordemDaChecklist(filhos, COLUNAS))).toEqual(["9h", "18h", "sem-hora"]);
+  });
+
+  it("empate mantém a ordem que veio do servidor", () => {
+    const filhos = [sub("b", "col-backlog", null), sub("a", "col-backlog", null)];
+    expect(ids(ordemDaChecklist(filhos, COLUNAS))).toEqual(["b", "a"]);
+  });
+
+  it("checklist entrega as linhas já nessa ordem", () => {
+    const filhos = [
+      { ...f("col-done"), due_date: "2026-01-01" },
+      { ...f("col-backlog"), due_date: null },
+    ];
+    expect(checklist(filhos, false, COLUNAS).linhas.map((x) => x.column_id)).toEqual([
+      "col-backlog",
+      "col-done",
+    ]);
   });
 });

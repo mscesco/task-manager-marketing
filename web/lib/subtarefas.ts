@@ -4,7 +4,7 @@
  * inteira, arquivada ou não). Não troque uma pela outra no aviso de exclusão.
  */
 import type { Task } from "@/lib/api";
-import type { Coluna } from "@/lib/coluna";
+import { terminal, type Coluna } from "@/lib/coluna";
 
 /**
  * O que a checklist desenha. Com `mostrarArquivadas` a arquivada volta
@@ -51,13 +51,42 @@ export function progresso(
  * inclui, e `total` é sempre trabalho vivo. Filhas só arquivadas dão
  * `total: 0`, e a tela não desenha contador nem barra.
  */
-export function checklist<T extends Pick<Task, "column_id" | "is_archived">>(
+export function checklist<
+  T extends Pick<Task, "column_id" | "is_archived" | "due_date" | "due_time">,
+>(
   filhos: T[],
   mostrarArquivadas: boolean,
   colunaPorId: Map<string, Coluna>
 ): { linhas: T[]; concluidas: number; total: number; pct: number } {
   return {
-    linhas: paraChecklist(filhos, mostrarArquivadas),
+    linhas: ordemDaChecklist(paraChecklist(filhos, mostrarArquivadas), colunaPorId),
     ...progresso(filhos, colunaPorId),
   };
+}
+
+/**
+ * Ordem da checklist: por prazo (dia, depois hora; sem hora fecha o dia), sem
+ * prazo depois, e concluída ou cancelada por último. Empate mantém a ordem do servidor.
+ */
+export function ordemDaChecklist<
+  T extends Pick<Task, "column_id" | "due_date" | "due_time">,
+>(filhos: T[], colunaPorId: Map<string, Coluna>): T[] {
+  const chave = (f: T) => {
+    const col = colunaPorId.get(f.column_id);
+    return [
+      col && terminal(col) ? 1 : 0,
+      f.due_date ? 0 : 1,
+      f.due_date ?? "",
+      f.due_time ?? "99",
+    ] as const;
+  };
+  return [...filhos].sort((a, b) => {
+    const ka = chave(a);
+    const kb = chave(b);
+    for (let i = 0; i < ka.length; i++) {
+      if (ka[i] < kb[i]) return -1;
+      if (ka[i] > kb[i]) return 1;
+    }
+    return 0;
+  });
 }
