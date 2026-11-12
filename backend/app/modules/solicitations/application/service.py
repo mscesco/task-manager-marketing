@@ -431,7 +431,7 @@ class SolicitationService:
         `team_id` recorta pelo time do formulario; `None` = sem recorte. Sem
         default de proposito -- ver `SolicitationRepository.count_pending`.
         """
-        validos = set(SolicitationStatus) | {"SEM_TAREFA", "ACTIVE"}
+        validos = set(SolicitationStatus) | {"ACTIVE"}
         if filtro is not None and filtro not in validos:
             raise ValidationError("Filtro invalido.")
 
@@ -481,12 +481,6 @@ class SolicitationService:
         self, team_id: uuid.UUID | None
     ) -> list[tuple[uuid.UUID, str]]:
         return await self.repo.form_options(team_id)
-
-    async def count_pending(self, team_id: uuid.UUID | None) -> int:
-        return await self.repo.count_pending(team_id)
-
-    async def count_approved_without_task(self, team_id: uuid.UUID | None) -> int:
-        return await self.repo.count_approved_without_task(team_id)
 
     async def _assert_tarefa_do_workspace(self, task_id: uuid.UUID) -> Task:
         """A tarefa existe, esta viva e e deste workspace? Senao, 404 com texto.

@@ -8,6 +8,7 @@ que o `add_assignee` aceita -- nem pessoa a mais (422 ao salvar), nem a menos
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import event
 
 from app.modules.tasks.application.collaboration_service import CollaborationService
 from app.modules.users.application.member_service import MemberService
@@ -91,6 +92,32 @@ async def test_tarefa_interna_alcance_exato(db) -> None:
     with acting_as(**mgr_ctx):
         alcancam = await _ids(db, reaches_task_id=task.id)
     assert alcancam == {manager, op_a, sup_a}
+
+
+async def test_consultas_nao_crescem_com_o_numero_de_pessoas(db, connection) -> None:
+    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
+    task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
+
+    async def _sqls() -> int:
+        sqls: list[str] = []
+
+        def _anota(conn, cursor, statement, *args) -> None:
+            sqls.append(statement)
+
+        event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+        try:
+            with acting_as(**mgr_ctx):
+                await _ids(db, reaches_task_id=task.id)
+        finally:
+            event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+        return len(sqls)
+
+    antes = await _sqls()
+    for _ in range(4):
+        uid = await f.make_user(db, workspace_id=ws)
+        await f.add_member(db, workspace_id=ws, user_id=uid, team_id=a, role="OPERATOR")
+    await db.flush()
+    assert await _sqls() == antes
 
 
 # ----------------------------------------------------------

@@ -116,6 +116,22 @@ describe("os eventos da tarefa", () => {
     );
   });
 
+  it("hora do prazo: definir, mudar e tirar, sem os segundos", () => {
+    expect(
+      frase({ field_name: "due_time", new_value: { value: "18:00:00" } }),
+    ).toBe("definiu a hora do prazo para 18:00");
+    expect(
+      frase({
+        field_name: "due_time",
+        old_value: { value: "18:00:00" },
+        new_value: { value: "09:30:00" },
+      }),
+    ).toBe("mudou a hora do prazo de 18:00 para 09:30");
+    expect(frase({ field_name: "due_time", old_value: { value: "18:00:00" } })).toBe(
+      "tirou a hora do prazo",
+    );
+  });
+
   it("responsável e seguidor dizem QUEM", () => {
     expect(
       frase({ event_type: "assigned", event_metadata: { user_id: ANA } }),

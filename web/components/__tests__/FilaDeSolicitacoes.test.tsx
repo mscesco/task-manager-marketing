@@ -107,8 +107,6 @@ function montar(itens: BatchItem[] = [item()]) {
     total: 1,
     page: 1,
     size: 10,
-    pending_total: 1,
-    approved_without_task_total: 0,
   });
   render(<SolicitacoesPage />);
 }
@@ -167,8 +165,6 @@ describe("o formulário de origem", () => {
       total: 1,
       page: 1,
       size: 10,
-      pending_total: 1,
-      approved_without_task_total: 0,
     });
     render(<SolicitacoesPage />);
     expect(await screen.findByText("Solicitação ao Marketing")).toBeTruthy();
@@ -197,8 +193,6 @@ describe("abas, busca e formulário", () => {
       total: 1,
       page: 1,
       size: 20,
-      pending_total: 1,
-      approved_without_task_total: 0,
       tab_totals: { PENDING: 7, ACTIVE: 12, DONE: 48, REJECTED: 3, ALL: 70, WITHOUT_TASK: 4 },
     });
     render(<SolicitacoesPage />);
@@ -233,8 +227,6 @@ describe("a lista não mente quando o servidor demora", () => {
       total: 1,
       page: 1,
       size: 20,
-      pending_total: 1,
-      approved_without_task_total: 0,
     };
   }
 
@@ -460,8 +452,6 @@ describe("um envio SEM telefone, área e polo", () => {
       total: 1,
       page: 1,
       size: 10,
-      pending_total: 1,
-      approved_without_task_total: 0,
     });
     render(<SolicitacoesPage />);
   }
@@ -544,7 +534,7 @@ describe("as duas ações que a fila existe para fazer", () => {
     // O `recarregar` relê A pelo protocolo; ao chegar, não pode devolver o painel para A.
     const a = envio();
     const b = { ...envio(), batch_id: "b2", protocol: "XYZ789", requester_name: "João do Polo" };
-    const lista = { items: [a, b], total: 2, page: 1, size: 10, pending_total: 2, approved_without_task_total: 0 };
+    const lista = { items: [a, b], total: 2, page: 1, size: 10 };
     let soltarA!: (r: typeof lista) => void;
     const buscaDeA = new Promise<typeof lista>((s) => {
       soltarA = s;
@@ -646,8 +636,6 @@ describe("a fila recorta pelo time, e não espera para sempre", () => {
       total: 0,
       page: 1,
       size: 10,
-      pending_total: 0,
-      approved_without_task_total: 0,
     });
     contextoDoTeste = { active, search: "", teamName: null, teams: [] };
     render(<SolicitacoesPage />);

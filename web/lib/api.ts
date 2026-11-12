@@ -32,7 +32,7 @@ export function clearTokens() {
   // Os times, a lista de membros e o usuario logado sao por-sessao; ao
   // trocar de sessao, descarta os caches.
   _teams = undefined;
-  _members = undefined;
+  invalidateMembers();
   _me = undefined;
   _workspace = undefined;
 }
@@ -2283,8 +2283,7 @@ export async function enviarSolicitacaoPublica(payload: {
 
 export type SolicitacaoFiltro =
   | SolicitacaoStatus
-  | "ACTIVE" // aprovada ou em andamento
-  | "SEM_TAREFA"; // aprovadas que ninguém virou tarefa
+  | "ACTIVE"; // aprovada ou em andamento
 
 /** As abas da fila; `WITHOUT_TASK` é o "só sem tarefa". */
 export type FilaAba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL" | "WITHOUT_TASK";
@@ -2335,8 +2334,6 @@ export type BatchListResponse = {
   total: number; // total de ENVIOS, não de demandas
   page: number;
   size: number;
-  pending_total: number;
-  approved_without_task_total: number;
   /** Os números das abas, em demandas, com a mesma busca e formulário. */
   tab_totals?: Partial<Record<FilaAba, number>>;
   /** Os formulários que têm pedido nesta fila -- as opções do filtro. */
@@ -2791,7 +2788,11 @@ async function _rawRequest(path: string, init: RequestInit, isRetry = false): Pr
   } catch {
     throw new ApiError(0, "Não consegui falar com o servidor.");
   }
-  if (res.status === 401 && !isRetry && getToken()) {
+  if (res.status === 401 && !isRetry) {
+    if (!getToken()) {
+      killSession();
+      throw new ApiError(401, "Sessao expirada. Faca login novamente.");
+    }
     await renewOrEndSession();
     return _rawRequest(path, init, true);
   }

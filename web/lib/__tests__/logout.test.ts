@@ -6,7 +6,7 @@
 //   - a ORDEM entre ler o token e limpar o localStorage (ver o ultimo teste).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { clearTokens, logout, setTokens } from "@/lib/api";
+import { clearTokens, listMembers, listMembersDoTime, logout, setTokens } from "@/lib/api";
 
 const ACCESS = "access-de-teste";
 const REFRESH = "refresh-de-teste";
@@ -99,5 +99,23 @@ describe("logout()", () => {
     expect((init?.headers as Record<string, string>).Authorization).toBe(
       `Bearer ${ACCESS}`
     );
+  });
+});
+
+describe("clearTokens()", () => {
+  it("descarta os caches de membros por tarefa e por time", async () => {
+    setTokens(ACCESS, REFRESH);
+    const spy = vi.fn(
+      async (_url: string, _init?: RequestInit) =>
+        new Response(JSON.stringify({ items: [] }), { status: 200 })
+    );
+    vi.stubGlobal("fetch", spy);
+    await listMembers("tarefa-1");
+    await listMembersDoTime("time-1");
+    clearTokens();
+    setTokens(ACCESS, REFRESH);
+    await listMembers("tarefa-1");
+    await listMembersDoTime("time-1");
+    expect(spy).toHaveBeenCalledTimes(4);
   });
 });

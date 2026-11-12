@@ -83,7 +83,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
 
         Dois tempos: os `batch_id` da pagina, depois todas as linhas deles.
         `filtro` vale por lote: o envio entra se qualquer demanda casar
-        (PENDING/APPROVED/REJECTED, ACTIVE, SEM_TAREFA, ou None = todos).
+        (PENDING/APPROVED/REJECTED, ACTIVE, ou None = todos).
         `without_task` soma "e sem tarefa" na mesma demanda.
         """
         recorte = self._recorte_de_time(team_id)
@@ -93,11 +93,7 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             .subquery()
         )
 
-        cond = None
-        if filtro == "SEM_TAREFA":
-            cond = _sem_tarefa(alvo.c)
-        elif filtro is not None:
-            cond = _da_aba(alvo.c, filtro)
+        cond = _da_aba(alvo.c, filtro) if filtro is not None else None
         if without_task:
             sem = _sem_tarefa(alvo.c)
             cond = sem if cond is None else (cond & sem)
@@ -200,19 +196,6 @@ class SolicitationRepository(BaseRepository[Solicitation]):
             .order_by(SolicitationForm.title)
         )
         return [(fid, titulo) for fid, titulo in (await self.session.execute(stmt)).all()]
-
-    async def count_approved_without_task(self, team_id: uuid.UUID | None) -> int:
-        """Aprovadas que ninguem transformou em tarefa (o buraco do fluxo)."""
-        stmt = select(func.count()).select_from(
-            self._base_select()
-            .where(*self._recorte_de_time(team_id))
-            .where(
-                # Mesma regra do filtro: o badge conta o que a lista mostra.
-                _sem_tarefa(Solicitation)
-            )
-            .subquery()
-        )
-        return (await self.session.execute(stmt)).scalar_one()
 
     async def count_pending(
         self,

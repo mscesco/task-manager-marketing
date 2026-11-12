@@ -124,8 +124,8 @@ async def list_solicitations(
         None,
         alias="status",
         description=(
-            "PENDING | APPROVED | IN_PROGRESS | DONE | REJECTED | ACTIVE | "
-            "SEM_TAREFA. Semantica de LOTE: o envio aparece se QUALQUER "
+            "PENDING | APPROVED | IN_PROGRESS | DONE | REJECTED | ACTIVE. "
+            "Semantica de LOTE: o envio aparece se QUALQUER "
             "demanda dele casar."
         ),
     ),
@@ -199,11 +199,6 @@ async def list_solicitations(
         total=total,
         page=page,
         size=size,
-        # Os contadores usam o mesmo `team_id` da lista.
-        pending_total=await service.count_pending(team_id),
-        approved_without_task_total=await service.count_approved_without_task(
-            team_id
-        ),
         # Mesma aba e caixinha da lista, para os numeros baterem com a tela.
         tab_totals=await service.count_by_tab(
             team_id, q, form_id, filtro=filtro, without_task=without_task
