@@ -222,6 +222,33 @@ def test_diff_title_whitespace_only_does_not_match() -> None:
     assert entries == []
 
 
+@pytest.mark.parametrize("campo", ["start_date", "due_date"])
+def test_diff_clearing_a_date_writes_history(campo) -> None:
+    """`None` presente no PATCH limpa a data, e a limpeza entra no historico."""
+    task = _fake_task(**{campo: date(2026, 8, 19)})
+    cmd = UpdateTaskCommand(fields_set=frozenset({campo}))
+    entries = TaskService._diff_for_update(task, cmd)  # type: ignore[arg-type]
+    assert [(e.field_name, e.old_value, e.new_value) for e in entries] == [
+        (campo, {"value": "2026-08-19"}, {"value": None})
+    ]
+
+
+@pytest.mark.parametrize("campo", ["start_date", "due_date"])
+def test_diff_omitted_date_writes_nothing(campo) -> None:
+    task = _fake_task(**{campo: date(2026, 8, 19)})
+    entries = TaskService._diff_for_update(task, UpdateTaskCommand())  # type: ignore[arg-type]
+    assert entries == []
+
+
+def test_diff_team_change() -> None:
+    antigo, novo = uuid.uuid4(), uuid.uuid4()
+    task = _fake_task(team_id=antigo)
+    entries = TaskService._diff_for_update(task, UpdateTaskCommand(team_id=novo))  # type: ignore[arg-type]
+    assert [(e.field_name, e.old_value, e.new_value) for e in entries] == [
+        ("team_id", {"value": str(antigo)}, {"value": str(novo)})
+    ]
+
+
 # --------------------------------------------------------
 # Builders de history
 # --------------------------------------------------------

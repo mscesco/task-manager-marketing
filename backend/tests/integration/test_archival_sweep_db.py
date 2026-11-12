@@ -5,6 +5,7 @@ Cobre, contra Postgres real:
     um, pula workspace sem admin.
   - O endpoint POST /system/tasks/archive-stale: token certo -> 200; token
     errado -> 401 (token ausente: `tests/test_system_auth.py`).
+  - Workspace que falha: volta so o dele, os outros seguem.
 """
 
 from __future__ import annotations
@@ -15,11 +16,13 @@ import pytest
 from sqlalchemy import select
 
 from app.core.config import settings
+from app.core.tenant import require_tenant
 from app.db.models import TaskHistory
 from app.db.models.enums import TaskStatus
 from app.modules.tasks.application.stale_archival_service import (
     StaleArchivalService,
 )
+from app.modules.tasks.application.task_service import TaskService
 from tests.integration import factories as f
 from tests.integration.conftest import cliente
 
@@ -94,6 +97,39 @@ async def test_workspace_sem_admin_e_pulado(db) -> None:
     assert result["by_workspace"][str(ws)] == {"archived": 0, "skipped": "no_admin"}
     await db.refresh(t)
     assert t.is_archived is False
+
+
+async def test_workspace_que_falha_volta_so_o_dele(db, monkeypatch) -> None:
+    """O do meio arquiva e estoura: o rollback desfaz so ele, o commit do
+    anterior sobrevive e o seguinte ainda roda."""
+    ws1, team1, admin1 = await _ws_with_admin(db)
+    ws2, team2, admin2 = await _ws_with_admin(db)
+    ws3, team3, admin3 = await _ws_with_admin(db)
+    t1 = await _stale_completed(db, ws=ws1, team=team1, user=admin1, title="a")
+    t2 = await _stale_completed(db, ws=ws2, team=team2, user=admin2, title="b")
+    t3 = await _stale_completed(db, ws=ws3, team=team3, user=admin3, title="c")
+    # ⚠️ Sem o commit, o rollback do workspace que falha levaria a montagem junto.
+    await db.commit()
+
+    original = TaskService.archive_stale
+
+    async def _estoura_no_ws2(self, **kwargs):
+        count = await original(self, **kwargs)
+        if require_tenant().workspace_id == ws2:
+            raise RuntimeError("falha no meio")
+        return count
+
+    monkeypatch.setattr(TaskService, "archive_stale", _estoura_no_ws2)
+
+    result = await StaleArchivalService(db).run(now=NOW)
+
+    assert result["by_workspace"][str(ws2)] == {"archived": 0, "error": True}
+    assert result["by_workspace"][str(ws1)] == {"archived": 1}
+    assert result["by_workspace"][str(ws3)] == {"archived": 1}
+    assert result["archived_count"] == 2
+    for t, arquivada in ((t1, True), (t2, False), (t3, True)):
+        await db.refresh(t)
+        assert t.is_archived is arquivada
 
 
 # ---- Endpoint HTTP (trava de token) ----

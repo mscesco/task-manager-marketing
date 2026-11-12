@@ -14,6 +14,8 @@ export default defineConfig({
   },
   test: {
     environment: "jsdom",
+    // Fuso negativo fixo: em UTC (o CI) erro de data local x UTC passa verde.
+    env: { TZ: "America/Sao_Paulo" },
     // Espera a destruição agendada do editor (Tiptap) antes de o jsdom sair; ver o arquivo.
     setupFiles: ["./vitest.setup.ts"],
     include: [

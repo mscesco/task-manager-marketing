@@ -31,12 +31,12 @@ import {
   colunasPadraoMinhasTarefas,
   deadlineTonePorColuna,
   rotuloDeColuna,
-  terminal,
   type Coluna,
   type OrigemDaColuna,
 } from "@/lib/coluna";
 import { normalizarBusca } from "@/lib/filtrosQuadro";
 import { soltarConfete } from "@/lib/confete";
+import { applyDrop, planDrop, revertDrop } from "@/lib/taskDrag";
 import {
   listAllMyAssignments,
   quadroGeralComIndice,
@@ -401,81 +401,34 @@ function Minhas() {
     setTimeout(() => (suprimirClique.current = false), 60);
 
     const taskId = String(e.active.id);
-    const destino = e.over ? String(e.over.id) : null;
-    if (!destino) return;
+    // `destino` é um `column_id`. A coluna tem de estar nesta tela: ela junta tarefas de vários
+    // quadros e desenha as do geral. A cascata só alcança as minhas subtarefas carregadas.
+    const plano = planDrop(items ?? [], taskId, e.over ? String(e.over.id) : null, {
+      columns: colunas ?? [],
+      columnOf: (id) => indice?.get(id)?.coluna,
+      // Recusa card de outro quadro (o backend daria 422). O `disabled` do dnd-kit não é testável em jsdom.
+      canMove: (t) => indice?.get(t.column_id)?.nomeDoQuadro === null,
+    });
+    if (!plano) return;
 
-    const atual = (items ?? []).find((t) => t.id === taskId);
-    // `destino` é um `column_id`.
-    if (!atual || atual.column_id === destino) return;
-
-    // Recusa card de outro quadro (o backend daria 422). O `disabled` do dnd-kit não é testável em jsdom.
-    const origemAtual = indice?.get(atual.column_id);
-    if (!origemAtual || origemAtual.nomeDoQuadro !== null) return;
-
-    // A coluna tem de estar nesta tela: ela junta tarefas de vários quadros e desenha as do geral.
-    const colunaDestino = (colunas ?? []).find((c) => c.id === destino);
-    if (!colunaDestino) return;
-
-    const colunaAnterior = atual.column_id;
-
-    // Cascata de conclusão otimista: só alcança as minhas subtarefas carregadas (o backend
-    // conclui a subárvore inteira). Mexe em `column_id` e `status`, que ainda têm leitores.
-    const concluindo = colunaDestino.semantic === "DONE";
     // O confete sai de onde o card foi solto (o mesmo desenho do `Board.tsx`).
     const soltoEm = e.active.rect.current.translated;
     const origemDoConfete =
-      concluindo && indice?.get(colunaAnterior)?.coluna.semantic !== "DONE" && soltoEm
+      plano.celebrate && soltoEm
         ? { x: soltoEm.left + soltoEm.width / 2, y: soltoEm.top + soltoEm.height / 2 }
         : null;
-    const prefixo = atual.path + ".";
-    const anteriores = new Map<string, { coluna: string; status: string }>();
-    if (concluindo) {
-      for (const t of items ?? []) {
-        // Coluna real da subtarefa (pode ser de outro quadro), pelo índice.
-        const colunaDela = indice?.get(t.column_id)?.coluna;
-        if (
-          t.path.startsWith(prefixo) &&
-          colunaDela &&
-          !terminal(colunaDela) &&
-          !t.is_archived
-        ) {
-          anteriores.set(t.id, { coluna: t.column_id, status: t.status });
-        }
-      }
-    }
-
-    // Otimista (pai + cascata).
-    setItems((prev) =>
-      prev
-        ? prev.map((t) => {
-            if (t.id === taskId) return { ...t, column_id: destino };
-            if (anteriores.has(t.id))
-              return { ...t, column_id: destino, status: "COMPLETED" };
-            return t;
-          })
-        : prev
-    );
+    setItems((prev) => (prev ? applyDrop(prev, plano) : prev));
 
     const aindaEhOUltimo = vezDoArraste.nova(taskId);
     try {
       // Só `column_id` (os dois juntos dão 422); o status vem na resposta.
-      const atualizada = await updateTask(taskId, { column_id: destino });
+      const atualizada = await updateTask(taskId, { column_id: plano.to });
       if (!aindaEhOUltimo()) return;
       aoUpsert(atualizada); // re-merge do servidor, preservando relations/assignees
       soltarConfete(origemDoConfete);
     } catch (err) {
       if (!aindaEhOUltimo()) return;
-      setItems((prev) =>
-        prev
-          ? prev.map((t) => {
-              if (t.id === taskId) return { ...t, column_id: colunaAnterior };
-              const ant = anteriores.get(t.id);
-              return ant !== undefined
-                ? { ...t, column_id: ant.coluna, status: ant.status }
-                : t;
-            })
-          : prev
-      );
+      setItems((prev) => (prev ? revertDrop(prev, plano) : prev));
       const e2 = err as ApiError;
       avisar(
         e2.status === 403

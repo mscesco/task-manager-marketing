@@ -5,7 +5,8 @@
 so, porque a coluna nova nao tem id quando a pessoa escolhe o destino.
 
 ⚠️ O QUE O LOTE COMPRA COM ISSO: recusa perde tudo. O desfazer e do UoW do
-router; aqui se prende que o metodo nao comita (`test_aplicar_lote_NAO_comita`).
+router; aqui um savepoint faz o papel dele
+(`test_recusa_no_meio_desfaz_as_etapas_anteriores`).
 
 Escrita de coluna so e alcancada por aqui: a autorizacao dos metodos avulsos
 (`criar_coluna`, `apagar_coluna`, `reordenar_colunas`...) e testada pelo lote.
@@ -277,41 +278,34 @@ async def test_ordem_que_nao_bate_com_o_resultado_e_recusada(db) -> None:
     assert erro.value.code == CODIGO_ORDEM_DIVERGENTE
 
 
-async def test_aplicar_lote_NAO_comita(db, monkeypatch) -> None:
-    """⚠️ A ATOMICIDADE DO LOTE E DO ROUTER, E NAO DESTE METODO.
+async def test_recusa_no_meio_desfaz_as_etapas_anteriores(db) -> None:
+    """A etapa 1 cria "Ideias" e a etapa 5 recusa: "Ideias" nao pode sobrar.
 
-    O `commit` mora num lugar so -- `apply_columns_batch` --, e qualquer recusa
-    no meio sobe e o UoW desfaz as etapas anteriores. Se alguem acrescentar um
-    `commit` aqui dentro "para garantir", a etapa 1 passa a sobreviver a uma
-    recusa na etapa 4: a pessoa ve "deu erro" e uma coluna nova no quadro, e o
-    proximo lote dela, montado da tela antiga, cai em `colunas_divergentes` sem
-    que ninguem entenda por que.
-
-    ⚠️ Por que espiar o commit em vez de conferir o banco depois da recusa: a
-    fixture usa `join_transaction_mode="create_savepoint"`, e um rollback volta
-    ao SAVEPOINT EXTERNO levando workspace, time e quadro junto. Por HTTP cai
-    pelo mesmo mecanismo.
+    ⚠️ O SAVEPOINT FAZ O PAPEL DO UoW DO ROUTER. Sem ele o rollback voltaria ao
+    savepoint da fixture e levaria workspace, time e quadro junto. Um `commit`
+    acrescentado dentro do lote grava a etapa 1 e este teste fica vermelho.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-
-    comitou = False
-    original = db.commit
-
-    async def _espiao(*args, **kwargs):
-        nonlocal comitou
-        comitou = True
-        return await original(*args, **kwargs)
-
-    monkeypatch.setattr(db, "commit", _espiao, raising=False)
+    atuais = await _colunas(db, quadro.id)
+    antes = _nomes(atuais)
 
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        await BoardService(db).aplicar_lote(
-            board_id=quadro.id,
-            criar=[LoteCriar(tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN)],
-        )
+        with pytest.raises(ValidationError) as erro:
+            async with db.begin_nested():
+                await BoardService(db).aplicar_lote(
+                    board_id=quadro.id,
+                    criar=[
+                        LoteCriar(
+                            tmp="t1", name="Ideias", semantic=ColumnSemantic.OPEN
+                        )
+                    ],
+                    ordem=[str(c.id) for c in atuais],
+                )
+    assert erro.value.code == CODIGO_ORDEM_DIVERGENTE
 
-    assert comitou is False
+    db.expunge_all()
+    assert _nomes(await _colunas(db, quadro.id)) == antes
 
 
 async def test_as_travas_de_apagar_valem_dentro_do_lote(db) -> None:

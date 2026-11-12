@@ -17,7 +17,12 @@ import {
   paradaLabel,
   deadlineTone,
 } from "@/lib/status";
-import { diasParadoPorColuna, type Coluna } from "@/lib/coluna";
+import {
+  avisaPrazo,
+  deadlineTonePorColuna,
+  diasParadoPorColuna,
+  type Coluna,
+} from "@/lib/coluna";
 
 const HOJE = "2026-06-25";
 const ONTEM = "2026-06-24";
@@ -213,8 +218,37 @@ describe("diasParadoPorColuna: fronteira do limiar", () => {
       DIAS_PARA_PARADA + 1
     );
   });
+  it("conta pelo dia LOCAL, nao pelo dia UTC", () => {
+    // 22h em São Paulo já é o dia seguinte em UTC: contar pelo dia UTC tira um dia.
+    const noite = new Date(2026, 5, 25 - DIAS_PARA_PARADA, 22, 0, 0).toISOString();
+    expect(diasParadoPorColuna(ANDAMENTO, noite, false)).toBe(DIAS_PARA_PARADA);
+  });
   it("hoje mesmo nao mostra", () => {
     expect(diasParadoPorColuna(ANDAMENTO, H(0), false)).toBeNull();
+  });
+});
+
+// Colunas criadas por gente: a semântica e a flag combinam de jeitos que o quadro padrão não tem.
+describe("avisaPrazo e deadlineTonePorColuna: coluna personalizada", () => {
+  it("OPEN com a flag desligada não cobra prazo; ligada, cobra", () => {
+    expect(avisaPrazo(coluna("OPEN", false))).toBe(false);
+    expect(deadlineTonePorColuna(coluna("OPEN", false), ONTEM, false)).toBeNull();
+    expect(avisaPrazo(coluna("OPEN", true))).toBe(true);
+    expect(deadlineTonePorColuna(coluna("OPEN", true), ONTEM, false)).toBe("overdue");
+  });
+
+  it("terminal com a flag ligada continua sem cobrar", () => {
+    for (const semantic of ["DONE", "CANCELLED"] as const) {
+      expect(avisaPrazo(coluna(semantic, true))).toBe(false);
+      expect(deadlineTonePorColuna(coluna(semantic, true), ONTEM, false)).toBeNull();
+    }
+  });
+
+  it("com hora, vence hoje e já passou da hora: vermelho", () => {
+    // Relógio às 12:00; sem a hora chegar a `estaAtrasada`, sairia "soon".
+    expect(deadlineTonePorColuna(ANDAMENTO, HOJE, false, "11:00:00")).toBe("overdue");
+    expect(deadlineTonePorColuna(ANDAMENTO, HOJE, false, "13:00:00")).toBe("soon");
+    expect(deadlineTonePorColuna(ANDAMENTO, HOJE, false)).toBe("soon");
   });
 });
 
@@ -246,8 +280,8 @@ describe("dataHoraBR", () => {
 
   it("meia-noite não anda um dia para trás", () => {
     // Sem o `T00:00:00`, `new Date` lê a data como UTC e, a oeste de
-    // Greenwich, isto vira 31/12/2025. Só falha numa máquina em fuso negativo
-    // (ex.: BRT): numa máquina em UTC, como o CI, passa verde mesmo quebrado.
+    // Greenwich, isto vira 31/12/2025. Só falha em fuso negativo: por isso o
+    // vitest.config fixa `TZ=America/Sao_Paulo`.
     expect(dataHoraBR("2026-01-01")).toBe("01/01/2026");
   });
 });
