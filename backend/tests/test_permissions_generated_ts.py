@@ -1,13 +1,13 @@
-"""Spec 049, fatia A -- o tipo de permissao do front esta em dia com o mapa?
+"""O tipo de permissao do front esta em dia com o mapa?
 
-⚠️ ESTE TESTE E O GUARDIAO DO ARQUIVO GERADO, e mora no BACKEND de proposito:
+Guardiao do arquivo gerado. Mora no BACKEND de proposito:
 o job `front` do CI nao tem Python, e o job `backend` faz checkout do
 repositorio inteiro -- entao `../web/lib/` existe la.
 
-⚠️ E ELE FALHA, E NAO PULA, quando a pasta nao existe. Um `skip` aqui seria o
-mesmo verde de mentira do `TEST_DATABASE_URL` ausente: na maquina da Camila o
-container `api-dev` so enxerga `web/lib` porque o `docker-compose.yml` monta a
-pasta -- e quem rodar sem a montagem precisa saber, e nao ver "passed".
+Ele FALHA, e nao pula, quando a pasta nao existe. Um `skip` aqui seria o mesmo
+verde de mentira do `TEST_DATABASE_URL` ausente: o container `api-dev` so
+enxerga `web/lib` porque o `docker-compose.yml` monta a pasta, e quem rodar
+sem a montagem precisa saber, e nao ver "passed".
 """
 
 from __future__ import annotations

@@ -61,16 +61,6 @@ async def _dois_times_raiz(db):
     return ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin
 
 
-async def test_criar_outro_time_raiz_pelo_servico(db) -> None:
-    ctx, ws, marketing, *_ = await _dois_times_raiz(db)
-    with acting_as(**ctx):
-        nova = await TeamService(db).create(name="Design", slug="design")
-        roots = await TeamRepository(db).root_team_ids()
-
-    assert nova.parent_team_id is None
-    assert len(roots) == 3
-
-
 async def test_o_time_raiz_NOVO_nasce_COM_quadro_geral(db) -> None:
     """Time raiz nao nasce sem quadro.
 
@@ -84,7 +74,10 @@ async def test_o_time_raiz_NOVO_nasce_COM_quadro_geral(db) -> None:
         quadro, coluna = await BoardRepository(db).default_board_and_column_for_status(
             TaskStatus.BACKLOG, root_team_id=nova.id
         )
+        roots = await TeamRepository(db).root_team_ids()
 
+    assert nova.parent_team_id is None
+    assert len(roots) == 3
     assert quadro is not None
     assert coluna is not None
 
@@ -258,22 +251,6 @@ async def test_a_previa_de_um_TIME_RAIZ_nao_tem_destino(db) -> None:
     assert previa.destino_nome is None
 
 
-async def test_o_quadro_geral_e_o_DO_TIME_RAIZ(db) -> None:
-    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, _admin = await _dois_times_raiz(db)
-    with acting_as(**ctx):
-        repo = BoardRepository(db)
-        b_mkt, _ = await repo.default_board_and_column_for_status(
-            TaskStatus.BACKLOG, root_team_id=marketing
-        )
-        b_ti, _ = await repo.default_board_and_column_for_status(
-            TaskStatus.BACKLOG, root_team_id=ti
-        )
-
-    assert b_mkt == q_mkt
-    assert b_ti == q_ti
-    assert b_mkt != b_ti
-
-
 async def test_tarefa_de_subtime_do_TI_nasce_no_quadro_do_TI(db) -> None:
     """Tarefa de subtime vive no quadro geral da raiz dela; nada acusaria o erro."""
     ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _dois_times_raiz(db)
@@ -311,7 +288,8 @@ async def test_sem_time_e_sem_quadro_com_DOIS_times_raiz_e_recusado(db) -> None:
 
 # Gerente so administra gente da propria arvore.
 async def test_gerente_NAO_administra_gente_de_outro_time_raiz(db) -> None:
-    """Cadeado do painel e PATCH recusam juntos.
+    """Cadeado do painel e PATCH recusam juntos (o cadeado entre arvores nao
+    esta na matriz HTTP).
 
     So enxerga a diferenca porque passa `team_tree`: sem ela, `has_permission_in`
     cai fail-open na pergunta ampla (ver `conftest`).
@@ -347,33 +325,3 @@ async def test_gerente_NAO_administra_gente_de_outro_time_raiz(db) -> None:
                 new_role=UserTeamRole.SUPERVISOR,
             )
 
-
-async def test_gerente_CONTINUA_administrando_a_propria_arvore(db) -> None:
-    """A outra metade: a recusa acima nao pode virar bloqueio geral."""
-    ctx, ws, marketing, seo, ti, infra, q_mkt, q_ti, admin = await _dois_times_raiz(db)
-
-    gerente = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=gerente, team_id=marketing, role="MANAGER"
-    )
-    dele = await f.make_user(db, workspace_id=ws, email="seo@t.dev")
-    await f.add_member(
-        db, workspace_id=ws, user_id=dele, team_id=seo, role="OPERATOR"
-    )
-    await db.flush()
-
-    como_gerente = dict(ctx)
-    como_gerente["user_id"] = gerente
-    como_gerente["memberships"] = (mship(marketing, "MANAGER"),)
-    como_gerente["org_role"] = None  # ver o teste acima
-
-    with acting_as(**como_gerente):
-        svc = MemberService(db)
-        assert svc.pode_trocar_papel_do_vinculo(
-            user_id=dele, team_id=seo, papel_atual=UserTeamRole.OPERATOR
-        )
-        # O subtime conta como propria arvore.
-        vinculo = await svc.change_member_role(
-            user_id=dele, team_id=seo, new_role=UserTeamRole.SUPERVISOR
-        )
-    assert vinculo.role is UserTeamRole.SUPERVISOR

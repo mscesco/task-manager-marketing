@@ -1,14 +1,12 @@
 """Os dois jobs diarios (o n8n chama) pulam a linha que outro ja travou.
 
-`FOR UPDATE SKIP LOCKED` (auditoria de 16/10) impede que um POST repetido --
-o n8n tenta de novo quando a resposta demora -- avise o prazo duas vezes ou
-grave o arquivamento em dobro. A auditoria de 11/11 (item 16) achou a trava
-sem teste: apagar a linha deixava a suite verde.
+`FOR UPDATE SKIP LOCKED` impede que um POST repetido -- o n8n tenta de novo
+quando a resposta demora -- avise o prazo duas vezes ou grave o arquivamento
+em dobro.
 
 A corrida em si precisa de duas conexoes com dados confirmados, o que este
-arquivo nao monta; o que ele prende e que a leitura de cada job sai travada.
-SABOTAGEM: tirar o `with_for_update(skip_locked=True...)` de
-`deadline_notify_service._run_kind` ou de `task_repository.list_stale_terminal`.
+arquivo nao monta; o que ele prende e que a leitura de cada job sai travada
+(em `deadline_notify_service._run_kind` e `task_repository.list_stale_terminal`).
 """
 
 from __future__ import annotations

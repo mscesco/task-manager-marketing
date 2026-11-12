@@ -1,22 +1,8 @@
 """Factories minimas para os testes de integracao.
 
-Criam apenas o necessario dentro da transacao revertida do teste. Sem
-dependencia do seed de producao. Inserem via add()/flush() (sem commit --
-o teste controla a transacao) e devolvem o id.
-
-make_task computa path/depth do mesmo jeito do dominio (label = 't'+hex),
-para os testes que so precisam de "uma task existente". Os testes de
-hierarquia usam TaskService.create de proposito, pra exercitar a logica.
-
-⚠️ DESDE 06/08 (fatia "arreio de quadro") ESTE ARQUIVO SABE QUE EXISTE MAIS DE
-UM QUADRO. Ate aqui `make_task` cravava o quadro do time RAIZ -- exatamente o
-SQL que a F2 acabou de tirar do `BoardRepository`. Enquanto so existia um
-quadro isso dava a resposta certa; no dia do segundo, a factory montaria a
-tarefa no quadro geral com a coluna do quadro geral. Par internamente
-consistente, **a FK composta ACEITA**, e o resultado e uma arvore partida
-entre dois quadros sem erro e sem tela (a assimetria esta no cabecalho do
-`board_repository`). O produto foi corrigido pela F2; o ARREIO nao tinha sido,
-e e o arreio que escreve os testes da F3 e da F5.
+Inserem via add()/flush() dentro da transacao do teste (sem commit) e
+devolvem o id. `make_task` calcula path/depth como o dominio; os testes de
+hierarquia usam `TaskService.create` para exercitar a logica.
 """
 
 from __future__ import annotations
@@ -67,9 +53,7 @@ async def make_user(
     is_active: bool = True,
     org_role: str | None = None,
 ) -> uuid.UUID:
-    """⚠️ `is_active=False` existe para o filtro de destinatario de aviso de
-    prazo (12/08). O PADRAO continua `True` -- nenhuma chamada existente muda
-    de comportamento."""
+    """`is_active=False` serve ao filtro de destinatario de aviso de prazo."""
     uid = uuid.uuid4()
     db.add(
         User(
@@ -105,31 +89,9 @@ async def make_team(
     )
     await db.flush()
 
-    # ⚠️ TIME RAIZ NASCE COM QUADRO, igual ao produto (Spec 035 fatia 3a).
-    #
-    # ⚠️⚠️ E "IGUAL AO PRODUTO" ERA MENTIRA ATE 10/09, o que vale ficar escrito
-    # porque foi essa frase que esconderu o defeito: `create_default_board` so
-    # era chamado do PROVISIONAMENTO, entao o segundo time raiz em diante
-    # nascia sem quadro na producao -- e aqui, na bancada, todo time sem pai
-    # ganhava um. A factory cumpria a invariante que o produto violava. Hoje o
-    # `TeamService.create` a cumpre, e a frase voltou a ser verdadeira.
-    #
-    # ⚠️ AS OITO (`COLUNAS_PADRAO`), e explicitas: esta factory monta o mundo
-    # do PROVISIONAMENTO, que e onde as oito vivem. Um time raiz criado pela
-    # tela nasce com QUATRO (`COLUNAS_BASE`) desde 10/09 -- quem quiser testar
-    # AQUELE caminho chama `TeamService.create`, e nao esta factory.
-    # Desde a fatia 3b, `TaskService.create` resolve a coluna a partir do
-    # status e FALHA se o workspace nao tiver quadro -- sem isto aqui, os 53
-    # arquivos de teste que montam mundo pela factory parariam de conseguir
-    # criar tarefa.
-    #
-    # ⚠️ SO na raiz. Subtime nao ganha quadro por existir (ADR 0032), e criar
-    # um aqui violaria o `board_um_padrao_por_time` no primeiro subtime -- alem
-    # de fazer a factory mentir sobre o produto.
-    #
-    # ⚠️ Quem precisa de um quadro NAO-padrao ou de colunas fora do padrao usa
-    # `make_board` (abaixo). O que a factory entrega por padrao e o mundo
-    # comum, nao todos os mundos.
+    # Time raiz nasce com o quadro de oito colunas (`COLUNAS_PADRAO`, o do
+    # provisionamento); sem quadro, `TaskService.create` falha. Subtime nao
+    # ganha quadro. Quadro fora do padrao: `make_board`.
     if parent_team_id is None:
         await BoardService(db).create_default_board(
             workspace_id=workspace_id, team_id=tid,
@@ -148,46 +110,19 @@ async def make_board(
     com_legacy_status: bool = True,
     colunas: tuple[ColunaPadrao, ...] = COLUNAS_PADRAO,
 ) -> Board:
-    """Um SEGUNDO quadro, para o teste que precisa de mais de um.
+    """Um quadro extra para o time.
 
-    Existe porque ate 06/08 montar o segundo quadro era trabalho manual dentro
-    do teste (`test_board_scoping_db._mundo`), e por isso quase nenhum teste
-    montava -- que e a razao de o SQL cravado no quadro da raiz ter passado
-    despercebido desde a 035.
+    `is_default=False` por padrao: o padrao ja nasce com o time raiz, e um
+    segundo padrao falha no indice `board_um_padrao_por_time`. Nao usa o
+    `BoardService` porque ele grava `is_default=True` e da flush antes de
+    qualquer ajuste; `test_make_board_gera_o_mesmo_quadro_que_o_servico`
+    garante que os dois montam o mesmo quadro.
 
-    ⚠️ `is_default=False` POR PADRAO, ao contrario do `BoardService`. O quadro
-    interno da D1 e nao-padrao; o padrao ja nasce com o time raiz. Pedir
-    `is_default=True` para um time que ja tem quadro padrao FALHA no flush, no
-    indice parcial `board_um_padrao_por_time` -- e falhar ali e o certo.
-
-    ⚠️ POR QUE NAO CHAMAR `BoardService.create_default_board` E AJUSTAR DEPOIS.
-    O servico grava `is_default=True` e da flush ANTES de qualquer ajuste. Para
-    o time raiz, esse estado intermediario ja viola o indice parcial -- o erro
-    viria do estado transitorio, nao do que o teste pediu. As colunas vem do
-    MESMO `COLUNAS_PADRAO` do servico; o que esta duplicado aqui e so o
-    mapeamento NamedTuple -> BoardColumn, e existe
-    `test_make_board_gera_o_mesmo_quadro_que_o_servico` comparando os dois
-    campo a campo, pelo mesmo remedio que a 035 usou para a lista da migration
-    versus a do servico.
-
-    ⚠️ `colunas=COLUNAS_BASE` monta o quadro de QUATRO colunas da fatia 5b --
-    o que uma pessoa cria. E o fixture da ADR 0042: quatro dos oito status nao
-    tem coluna nele, entao `coluna_para_status` cai no degrau da semantica em
-    vez de responder pela ponte.
-
-    ⚠️ NAO USE `com_legacy_status=False` PARA TESTAR A ADR 0042. Aquele fixture
-    monta OITO colunas sem ponte, e nele varias colunas dividem a mesma
-    semantica -- a regra certa (o alvo) e a errada (a primeira que achar) podem
-    dar a mesma resposta. Fixture que nao discrimina foi o que deixou tres
-    sabotagens passarem verde na 4c.
-
-    ⚠️ `com_legacy_status=False` monta o quadro do dia da D4: oito colunas com
-    `legacy_status` NULL, que e como nasce coluna criada por GENTE. Um quadro
-    assim NAO responde POR PONTE -- todas as colunas tem `legacy_status` NULL.
-    ⚠️ DESDE A ADR 0042 ELE DEIXOU DE LEVANTAR: `coluna_para_status` cai no
-    degrau do `is_default_target`, e as quatro colunas marcadas continuam
-    marcadas neste fixture. Teste que esperava `ValidationError` aqui esta
-    afirmando o comportamento de antes de 11/08.
+    `colunas=COLUNAS_BASE` monta o quadro de quatro colunas: quatro status nao
+    tem coluna, entao `coluna_para_status` cai na semantica em vez da ponte.
+    `com_legacy_status=False` monta oito colunas sem ponte (como coluna criada
+    por gente); varias dividem a mesma semantica, entao nao discrimina o
+    fallback.
     """
     quadro = Board(
         id=uuid.uuid4(),
@@ -270,13 +205,9 @@ async def make_base(
     name: str = "Calendario",
     deleted: bool = False,
 ) -> dict[str, uuid.UUID | str]:
-    """Uma base como o produto a cria (Spec 056, D2) -- coluna de titulo e visao
-    padrao --, mais o que a matriz precisa: uma coluna de selecao com uma
-    opcao, uma linha e uma segunda visao.
-
-    ⚠️ Sem passar pelo `BaseService` de proposito: a factory monta o MUNDO, e o
-    servico e o que se testa. Devolve os ids pelo nome.
-    """
+    """Uma base como o produto a cria (coluna de titulo e visao padrao), mais
+    uma coluna de selecao com uma opcao, uma linha e uma segunda visao. Nao usa
+    o `BaseService`. Devolve os ids pelo nome."""
     base_id = uuid.uuid4()
     titulo_id = uuid.uuid4()
     coluna_id = uuid.uuid4()
@@ -342,13 +273,11 @@ async def make_base(
 async def _coluna_do_status_no_quadro(
     db: AsyncSession, *, workspace_id: uuid.UUID, board_id: uuid.UUID, status: TaskStatus
 ) -> uuid.UUID | None:
-    """`column_id` daquele status DENTRO daquele quadro, SO PELA PONTE.
+    """`column_id` daquele status no quadro, so pela ponte (`legacy_status`).
 
-    ⚠️ ESPELHA O DEGRAU 1 DE `BoardRepository.coluna_para_status`, E SO ELE.
-    O arreio nao reproduz o degrau da semantica de proposito: um fixture que
-    cai no mesmo fallback do produto nao consegue provar que o produto caiu no
-    fallback. Para montar tarefa num quadro de quatro colunas, passe um status
-    que ELE conhece (`BACKLOG`, `IN_PROGRESS`, `COMPLETED`, `CANCELLED`)."""
+    Nao reproduz o fallback por semantica do `coluna_para_status`, de proposito.
+    Num quadro de quatro colunas, use `BACKLOG`, `IN_PROGRESS`, `COMPLETED` ou
+    `CANCELLED`."""
     linha = (
         await db.execute(
             text(
@@ -369,7 +298,7 @@ async def _coluna_do_status_no_quadro(
 async def _quadro_geral_e_coluna(
     db: AsyncSession, *, workspace_id: uuid.UUID, status: TaskStatus
 ) -> tuple[uuid.UUID, uuid.UUID] | None:
-    """Quadro do time RAIZ e a coluna do status. Espelha o
+    """Quadro padrao do time raiz e a coluna do status. Espelha
     `BoardRepository.default_board_and_column_for_status`."""
     linha = (
         await db.execute(
@@ -408,33 +337,11 @@ async def make_task(
 ) -> Task:
     """Uma tarefa pronta, sem passar pelo TaskService.
 
-    ⚠️ QUADRO E COLUNA, senao a `0011` recusa a linha: os dois viraram NOT
-    NULL. A factory monta a linha DIRETO, sem passar pelo TaskService -- e o
-    service e quem resolve a coluna no produto.
+    Quadro: `board_id=` explicito; senao o do `parent=` (subtarefa herda o
+    quadro do pai); senao o quadro padrao do time raiz. `board_id=` diferente do
+    quadro do pai e recusado: a FK composta aceitaria a arvore partida.
 
-    ⚠️ COMO O QUADRO E ESCOLHIDO, em ordem de precedencia -- e a mesma regra do
-    produto depois da F2:
-
-      1. `board_id=` explicito -> aquele quadro.
-      2. `parent=` -> o quadro DO PAI. Subtarefa herda o quadro do pai, sempre
-         (F2). Ate 06/08 a factory ignorava isso e mandava a filha para o
-         quadro da raiz: par `(board geral, coluna geral)` internamente
-         consistente, FK ACEITA, arvore partida em silencio.
-      3. nada -> o quadro geral, do time RAIZ (`parent_team_id IS NULL` +
-         `is_default`), que e o comportamento de sempre e o que os 108 usos
-         existentes esperam.
-
-    ⚠️ `board_id=` JUNTO COM `parent=` de outro quadro e RECUSADO. Nao existe
-    caso legitimo: seria montar a mao exatamente o defeito silencioso que a F2
-    fechou. Se algum teste um dia precisar desse estado partido para provar que
-    o produto o rejeita, ele monta a mao e escreve por que.
-
-    ⚠️ LIMITE CONHECIDO, herdado: quem mexe em `task.status` DEPOIS de chamar a
-    factory (varios testes fazem, com `t.status = ...`) fica com a coluna do
-    status ANTIGO. O banco aceita -- a FK composta so garante que a coluna e do
-    mesmo quadro, nao que e a do status certo. Para esses testes tanto faz;
-    quem testa a coluna usa o service, que e o caminho real. Se um dia isso
-    incomodar, passe `status=` aqui em vez de atribuir depois.
+    Mudar `task.status` depois deixa a coluna do status antigo; passe `status=`.
     """
     tid = uuid.uuid4()
     if parent is None:
@@ -447,8 +354,7 @@ async def make_task(
         parent_task_id = parent.id
 
     if parent is not None and board_id is not None and parent.board_id != board_id:
-        # ⚠️ `if/raise` e nao `assert`: e uma trava de coerencia do arreio, e
-        # tem de valer inclusive se alguem rodar pytest com -O um dia.
+        # `if/raise` e nao `assert`: tem de valer mesmo com pytest -O.
         raise AssertionError(
             "make_task recebeu `board_id` diferente do quadro do pai "
             f"(pai={parent.board_id}, pedido={board_id}). Isso monta a mao a "
@@ -457,11 +363,9 @@ async def make_task(
             "nenhum. Passe so `parent=`, ou monte a linha a mao e explique."
         )
 
-    # ⚠️ OS DOIS VALORES SAO RESOLVIDOS ANTES DE QUALQUER ATRIBUICAO, e isso
-    # nao e estilo. `board_id` e `column_id` tem FK composta: uma consulta
-    # feita ENTRE a atribuicao de um e a do outro dispara autoflush, grava o
-    # par inconsistente e recebe ForeignKeyViolationError. Aqui os dois entram
-    # no construtor, numa gravacao so.
+    # Quadro e coluna resolvidos antes de montar a Task: `board_id`/`column_id`
+    # tem FK composta, e uma consulta entre as duas atribuicoes dispararia
+    # autoflush do par inconsistente.
     alvo = board_id if board_id is not None else (
         parent.board_id if parent is not None else None
     )
@@ -472,8 +376,8 @@ async def make_task(
         )
         assert quadro is not None, (
             f"workspace {workspace_id} nao tem quadro geral com coluna para "
-            f"{status.value}. O time RAIZ foi criado por `make_team`? Desde a "
-            "fatia 3a e ele quem cria o quadro."
+            f"{status.value}. O time RAIZ foi criado por `make_team`? "
+            "E ele quem cria o quadro."
         )
         board_alvo, coluna_alvo = quadro
     else:
@@ -517,9 +421,8 @@ async def make_assignment(
     user_id: uuid.UUID,
     assigned_by: uuid.UUID,
 ) -> None:
-    """Insere assignment DIRETO (sem as travas do service) -- e assim que
-    cenarios de designacao fora da lente nascem (admin designou, ou pessoa
-    movida depois)."""
+    """Insere assignment direto, sem as travas do service: e assim que nasce
+    designacao fora da lente."""
     from app.db.models import TaskAssignment
 
     db.add(

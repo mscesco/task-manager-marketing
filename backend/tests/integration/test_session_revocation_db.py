@@ -1,23 +1,13 @@
-"""Spec 030 Fatia 2 -- revogacao de sessao, contra Postgres real, PELA ROTA.
+"""Revogacao de sessao, contra Postgres real, pela rota.
 
-POR QUE PELA ROTA, E NAO PELO SERVICE:
-    A licao da Spec 028 foi que 12 testes de service ficaram verdes com o gate
-    da rota revertido. Aqui e pior: a revogacao vive em TRES pontos
-    independentes (ver abaixo), e nenhum deles esta no service que a suite de
-    service exercitaria.
-
-POR QUE ESTE ARQUIVO NAO USA O `_client` DE test_http_status_db.py:
-    Aquele harness sobrescreve `get_tenant_context` por um contexto fixo --
-    exatamente a dependency que precisa ser exercida aqui. Este arquivo
-    sobrescreve SO a sessao e a UoW, e manda `Authorization: Bearer <token>`
-    de verdade, para o token atravessar o caminho real.
-
-OS TRES PONTOS DE CHECAGEM (e por que sao tres, nao dois):
-    1. `get_tenant_context`      -- toda rota de negocio
+A revogacao vive em tres pontos independentes, nenhum deles no service:
+    1. `get_tenant_context`        -- toda rota de negocio
     2. `get_user_allowing_pending` -- /auth/me, /auth/change-password, /auth/logout
-    3. `AuthService.refresh`     -- nao passa por dependency nenhuma
-    Um teste que passe com qualquer um dos tres removido nao esta provando o
-    que parece. Ha uma sabotagem para cada.
+    3. `AuthService.refresh`       -- nao passa por dependency nenhuma
+Cada um tem um teste que fica vermelho sem ele.
+
+O `_client` daqui sobrescreve so a sessao e a UoW (nao `get_tenant_context`)
+e manda `Authorization: Bearer <token>` de verdade.
 """
 
 from __future__ import annotations
@@ -101,7 +91,7 @@ async def _login(c: AsyncClient, ws: Workspace, user: User) -> dict:
 # 1-2. Troca de senha derruba as outras sessoes
 # ------------------------------------------------------------------
 async def test_troca_de_senha_derruba_outra_sessao(db) -> None:
-    """Criterio 1: dois browsers, troca num, o outro cai no proximo clique."""
+    """Dois browsers: troca a senha num, o outro cai no proximo clique."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -120,19 +110,14 @@ async def test_troca_de_senha_derruba_outra_sessao(db) -> None:
         )
         assert troca.status_code == 200, troca.text
 
-        # A sessao B morreu -- e a mensagem diz POR QUE (licao da Spec 029:
-        # conferir a mensagem, nao so o status; 401 tambem e "usuario inativo").
+        # Confere a mensagem: 401 tambem e "usuario inativo".
         depois = await c.get("/api/v1/auth/me", headers=_auth(sessao_b["access_token"]))
         assert depois.status_code == 401
         assert "revogada" in depois.text.lower()
 
 
 async def test_troca_de_senha_invalida_refresh_antigo(db) -> None:
-    """Criterio 2: o refresh guardado antes da troca para de renovar.
-
-    Este e o buraco central da Spec 030: sem a checagem em AuthService.refresh,
-    o refresh sobrevive a troca de senha e renova a sessao para sempre.
-    """
+    """O refresh guardado antes da troca de senha para de renovar."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -159,10 +144,7 @@ async def test_troca_de_senha_invalida_refresh_antigo(db) -> None:
 
 
 async def test_par_emitido_no_change_password_ja_vale(db) -> None:
-    """Criterio 9: quem troca a senha nao se desloga por acidente.
-
-    Loga de novo com a senha nova e o par novo tem de funcionar de primeira.
-    """
+    """Depois da troca, o login com a senha nova funciona de primeira."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -191,7 +173,7 @@ async def test_par_emitido_no_change_password_ja_vale(db) -> None:
 # 3-4. Reset pelo gestor
 # ------------------------------------------------------------------
 async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
-    """Criterio 3: e a acao de resposta a 'a conta de fulano vazou'."""
+    """O reset de senha pelo gestor derruba a sessao do alvo."""
     from app.core.tenant import TeamNode
     from app.modules.users.application.member_service import MemberService
     from tests.integration.conftest import acting_as
@@ -223,13 +205,9 @@ async def test_reset_pelo_gestor_derruba_sessao_do_alvo(db) -> None:
 
 
 async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
-    """Criterio 3 (a outra metade): o incremento e por pessoa, nao global.
+    """O reset revoga so o alvo: a sessao de quem clicou sobrevive.
 
-    ⚠️ QUEM RESETA E UM GESTOR DE ORGANIZACAO desde a revisao de permissoes de
-    16/09. Ate ali era um MANAGER resetando outro MANAGER (o alvo de `_pessoa`)
-    -- justamente a tomada de conta que a revisao fechou: MANAGER so reseta
-    senha de SUPERVISOR e OPERATOR. O que este teste prova (a sessao de QUEM
-    CLICOU sobrevive) nao depende do papel do ator.
+    O ator e GESTOR porque MANAGER nao reseta a senha de outro MANAGER.
     """
     from app.core.tenant import Membership, TeamNode
     from app.db.models.enums import OrgRole
@@ -269,7 +247,7 @@ async def test_reset_pelo_gestor_nao_derruba_terceiros(db) -> None:
 # 5-6. Logout
 # ------------------------------------------------------------------
 async def test_logout_invalida_refresh(db) -> None:
-    """Criterio 4: hoje 'Sair' e so clearTokens() no browser -- nao mais."""
+    """Logout invalida o refresh e o access da propria sessao."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -292,12 +270,7 @@ async def test_logout_invalida_refresh(db) -> None:
 
 
 async def test_logout_derruba_todos_os_aparelhos(db) -> None:
-    """D4: sair no notebook mata a sessao esquecida na maquina compartilhada.
-
-    E o comportamento escolhido, nao um efeito colateral -- se algum dia
-    alguem trocar isto por denylist de `jti`, este teste fica vermelho e
-    obriga a reabrir a D4.
-    """
+    """Logout derruba todas as sessoes da pessoa, de proposito (nao e por `jti`)."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
     async with _client(db) as c:
@@ -313,7 +286,7 @@ async def test_logout_derruba_todos_os_aparelhos(db) -> None:
 
 
 async def test_logout_de_um_nao_afeta_outro_usuario(db) -> None:
-    """Criterio 5."""
+    """Logout de uma pessoa nao afeta a sessao de outra."""
     ws, team, user = await _pessoa(db)
     outro_id = await f.make_user(db, workspace_id=ws.id)
     outro = await db.get(User, outro_id)
@@ -334,7 +307,7 @@ async def test_logout_de_um_nao_afeta_outro_usuario(db) -> None:
 
 
 async def test_logout_funciona_com_troca_de_senha_pendente(db) -> None:
-    """Criterio 8: quem esta preso no gate precisa conseguir sair.
+    """Quem esta preso na troca obrigatoria de senha consegue sair.
 
     Se o logout usasse a dependency estrita, a pessoa com senha provisoria
     pendente levaria 409 e ficaria sem saida.
@@ -356,18 +329,10 @@ async def test_logout_funciona_com_troca_de_senha_pendente(db) -> None:
 
 
 # ------------------------------------------------------------------
-# 7. O teste que protege o dia do deploy
+# Claim `tv`
 # ------------------------------------------------------------------
-async def test_token_sem_claim_tv_continua_valido(db) -> None:
-    """Criterio 6 -- O TESTE MAIS IMPORTANTE DESTE ARQUIVO.
-
-    Todo token emitido ANTES do deploy da Spec 030 nao tem o claim `tv`. As
-    24 contas ativas estao logadas neste momento (medido em 30/07). Se o
-    claim ausente for tratado como invalido em vez de 0, o `alembic upgrade`
-    desloga o workspace inteiro de uma vez.
-
-    Forja um token no formato ANTIGO -- sem `tv` -- e exige 200.
-    """
+async def test_token_sem_claim_tv_e_recusado(db) -> None:
+    """Token assinado mas sem o claim `tv` e invalido."""
     from datetime import UTC, datetime, timedelta
 
     import jwt
@@ -386,7 +351,7 @@ async def test_token_sem_claim_tv_continua_valido(db) -> None:
             "iat": agora,
             "exp": agora + timedelta(minutes=15),
             "jti": str(uuid.uuid4()),
-            # SEM "tv" -- de proposito.
+            # sem "tv"
         },
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
@@ -394,18 +359,12 @@ async def test_token_sem_claim_tv_continua_valido(db) -> None:
 
     async with _client(db) as c:
         r = await c.get("/api/v1/auth/me", headers=_auth(token_antigo))
-        assert r.status_code == 200, (
-            "Token no formato antigo (sem claim `tv`) foi recusado. "
-            "Isto deslogaria as 24 contas no instante do deploy."
-        )
+        assert r.status_code == 401
+        assert "invalido" in r.text.lower()
 
 
 async def test_token_com_tv_defasado_e_recusado(db) -> None:
-    """A outra ponta do criterio 6: `tv` presente e ANTIGO tem de morrer.
-
-    Sem este teste, um `token_version_of` que devolvesse 0 sempre passaria no
-    teste acima e deixaria a revogacao inteira sem efeito.
-    """
+    """Token com `tv` menor que o da conta e recusado."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
 
@@ -423,13 +382,10 @@ async def test_token_com_tv_defasado_e_recusado(db) -> None:
 
 
 async def test_rota_de_negocio_recusa_token_revogado(db) -> None:
-    """Fecha o ponto 1 (`get_tenant_context`) de forma isolada.
+    """Ponto 1 (`get_tenant_context`): rota de negocio recusa token revogado.
 
-    ⚠️ ESTE TESTE EXISTE POR CAUSA DE UMA SABOTAGEM. Todos os outros deste
-    arquivo batem em `/auth/me`, que usa a dependency LENIENTE
-    (`get_user_allowing_pending`). Sabotar `get_tenant_context` deixava a
-    suite inteira verde -- ou seja, o caminho por onde passa TODA rota de
-    negocio estava sem cobertura. Este bate numa rota de negocio de verdade.
+    Os outros testes batem em `/auth/me`, que usa a dependency leniente; sem
+    este, tirar a checagem de `get_tenant_context` ficaria verde.
     """
     ws, _team, user = await _pessoa(db)
     await db.commit()
@@ -446,11 +402,8 @@ async def test_rota_de_negocio_recusa_token_revogado(db) -> None:
 
 
 async def test_refresh_com_tv_defasado_e_recusado(db) -> None:
-    """Fecha o ponto 3 (AuthService.refresh) de forma isolada.
-
-    Existe separado do teste de troca de senha porque, la, a checagem da
-    dependency poderia mascarar a ausencia desta.
-    """
+    """Ponto 3 (`AuthService.refresh`), isolado: no teste de troca de senha a
+    checagem da dependency poderia mascarar a falta desta."""
     ws, _team, user = await _pessoa(db)
     await db.commit()
 

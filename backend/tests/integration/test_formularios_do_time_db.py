@@ -1,32 +1,19 @@
-"""Spec 048, fatia E -- a listagem de formularios e do time que a tela mostra.
+"""`listar_formularios(team_id)`: os formularios do time que a tela mostra.
 
-⚠️⚠️ ESTA LISTAGEM NAO TINHA TESTE DE FILTRO NENHUM -- nem da LENTE, que existe
-nela desde a Spec 043. O unico teste que a tocava
-(`test_listar_formularios_NAO_cai_na_rota_de_solicitacao`) prova a ORDEM de
-registro dos routers e afirma `[] == []` num mundo sem formulario.
+Dois recortes combinados com AND:
 
-Ou seja: a regra "quem nao alcanca o time nao ve o formulario dele" estava
-escrita no codigo, comentada, e nunca verificada. Se alguem tivesse apagado o
-`if visiveis is not None`, a suite inteira seguiria verde.
+    a lente / o verbo  responde "posso ver?" -- `None` para papel de organizacao
+    o `team_id`        responde "estou olhando qual time?" -- vale para todos
 
-⚠️ E A §3.6 DA MINHA SPEC dizia que esta listagem "tambem" nao filtrava por
-time. Terceira afirmacao errada da spec sobre o proprio codigo -- as outras
-foram o `list_page` de projetos e a §3.5 (a fila). As tres tem a mesma origem:
-escrevi a partir das notas da spec anterior em vez de abrir o arquivo.
-
-O que faltava mesmo era o segundo recorte:
-
-    a LENTE      responde "posso ver?"   -- `None` para papel de organizacao
-    o `team_id`  responde "estou olhando qual time?" -- vale para todos
-
-O MUNDO: DUAS raizes, e um formulario em cada -- mais um no SUBTIME do
-Marketing, que e o que faz o teste dos descendentes valer algo.
+O mundo: duas raizes, e um formulario no SUBTIME do Marketing, que e o que faz
+o teste dos descendentes valer algo.
 
     Marketing (raiz)  -> "geral"
       SEO (subtime)   -> "arte"
     Comercial (raiz)  -> "metas"
 
-SABOTAGENS (executadas, resultado colado em cada teste).
+O que a lente esconde de quem nao e da organizacao esta na matriz HTTP
+(`test_fila_e_formularios_pelo_verbo_e_nao_pela_lente`).
 """
 
 from __future__ import annotations
@@ -93,13 +80,7 @@ def _como_admin(m):
 
 
 def _como_gerente_do_marketing(m):
-    """Quem LE formulario sem ser da organizacao.
-
-    ⚠️ Ate a Spec 051 (fatia B) era o SUPERVISOR do SEO, que nao tem
-    `form.read` -- o recorte era a lente, e o teste chama o servico direto. O
-    recorte virou o verbo; o leitor de verdade abaixo da organizacao e o
-    MANAGER.
-    """
+    """Quem le formulario sem ser da organizacao: o MANAGER (`form.read`)."""
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
@@ -116,25 +97,9 @@ async def _slugs(db, *, team_id):
 # ------------------------------------------------- 1. o recorte da tela
 
 
-async def test_recorte_tira_a_outra_raiz_ate_para_o_admin(db) -> None:
-    """Quem administra ALCANCA o Comercial -- a lente nao tem o que negar.
-
-    SABOTAGEM: apagar o `if team_id is not None` -> este teste cai ("metas"
-    volta a aparecer na tela do Marketing).
-    """
-    m = await _mundo(db)
-    with _como_admin(m):
-        slugs = await _slugs(db, team_id=m["marketing"])
-
-    assert "metas" not in slugs
-
-
 async def test_recorte_pela_raiz_traz_o_formulario_do_SUBTIME(db) -> None:
-    """Raiz + descendentes, e nao igualdade.
-
-    SABOTAGEM: trocar `{team_id} | descendants(...)` por `{team_id}` -> este
-    teste cai, e "arte" (do SEO) desaparece da tela do Marketing.
-    """
+    """Raiz + descendentes, e nao igualdade; e a outra raiz fica de fora
+    mesmo para o admin, que a alcanca."""
     m = await _mundo(db)
     with _como_admin(m):
         slugs = await _slugs(db, team_id=m["marketing"])
@@ -151,27 +116,7 @@ async def test_sem_recorte_a_lista_e_da_organizacao(db) -> None:
     assert slugs == {"geral", "arte", "metas"}
 
 
-# ------------------------------------------------- 2. a lente, finalmente testada
-
-
-async def test_a_LENTE_esconde_o_formulario_de_outra_raiz(db) -> None:
-    """⚠️⚠️ A REGRA DA SPEC 043 QUE NUNCA TEVE TESTE.
-
-    O gerente do Marketing le {Marketing, SEO}. O Comercial e outra raiz: o
-    formulario dele nao e dele para ver, nem pelo titulo -- e o editor daquele
-    formulario abre a partir desta lista.
-
-    SABOTAGEM: apagar o `if leitura is not None` -> este teste cai. Antes de
-    hoje, a mesma sabotagem passaria com a suite inteira verde.
-    """
-    m = await _mundo(db)
-    with _como_gerente_do_marketing(m):
-        slugs = await _slugs(db, team_id=None)
-
-    assert "metas" not in slugs
-    # E o que ele DEVE ver continua aparecendo -- sem esta metade, um filtro
-    # que devolve lista vazia passaria o teste.
-    assert slugs == {"geral", "arte"}
+# ------------------------------------------------- 2. a lente
 
 
 async def test_team_id_nao_alarga_a_lente(db) -> None:

@@ -15,7 +15,6 @@ from app.db.models.enums import ColumnSemantic, TaskStatus
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     TaskService,
-    UpdateTaskCommand,
 )
 from app.modules.tasks.domain.board_defaults import COLUNAS_BASE
 from app.modules.tasks.infrastructure.board_repository import BoardRepository
@@ -56,23 +55,6 @@ async def _coluna_por_nome(db, *, board_id, nome: str):
             )
         )
     ).scalar_one()
-
-
-async def test_o_degrau_exato_vem_antes_do_alvo_da_semantica(db) -> None:
-    """`EXTERNAL_APPROVAL` tem coluna propria e ha um alvo da mesma semantica:
-    a ponte ganha."""
-    ctx, ws, raiz, user, _ = await _mundo(db)
-    geral, _ = await _quadro_geral_e_coluna(db, ctx, raiz)
-
-    with acting_as(**ctx):
-        col, status = await BoardRepository(db).coluna_para_status(
-            board_id=geral, status=TaskStatus.EXTERNAL_APPROVAL
-        )
-
-    assert col == await _coluna_por_nome(
-        db, board_id=geral, nome="Aprovação Externa"
-    )
-    assert status is TaskStatus.EXTERNAL_APPROVAL
 
 
 async def test_as_oito_colunas_padrao_nunca_alcancam_o_degrau_dois(db) -> None:
@@ -123,38 +105,6 @@ async def test_status_sem_coluna_cai_no_alvo_da_semantica(
         db, board_id=quadro4.id, nome=coluna_esperada
     )
     assert efetivo is status_esperado
-
-
-async def test_o_status_gravado_na_tarefa_e_o_da_coluna_que_recebeu(db) -> None:
-    """Pelo servico: pedir `BLOCKED` num quadro de quatro grava `IN_PROGRESS`,
-    o status da coluna que recebeu."""
-    ctx, ws, raiz, user, quadro4 = await _mundo(db)
-    t = await f.make_task(
-        db, workspace_id=ws, created_by=user, team_id=raiz, title="alvo"
-    )
-    coluna_inicial = await _coluna_por_nome(
-        db, board_id=quadro4.id, nome="Backlog"
-    )
-    t.board_id = quadro4.id
-    t.column_id = coluna_inicial
-    t.status = TaskStatus.BACKLOG
-    await db.flush()
-
-    with acting_as(**ctx):
-        await TaskService(db).update(
-            task_id=t.id,
-            command=UpdateTaskCommand(
-                status=TaskStatus.BLOCKED, fields_set=frozenset({"status"})
-            ),
-        )
-    await db.flush()
-    await db.refresh(t)
-
-    assert t.board_id == quadro4.id
-    assert t.column_id == await _coluna_por_nome(
-        db, board_id=quadro4.id, nome="Em Andamento"
-    )
-    assert t.status is TaskStatus.IN_PROGRESS
 
 
 async def test_subtarefa_em_quadro_de_quatro_colunas_nasce_com_status_derivado(

@@ -1,12 +1,10 @@
-"""Arquivar/desarquivar CASCATEADO (05/08/2026).
+"""Arquivar/desarquivar CASCATEADO.
 
-O QUE ESTA CASCATA CONSERTA. Ate 05/08 arquivar nao cascateava: a filha ficava
-ATIVA debaixo de um pai arquivado. O quadro so desenha `depth === 0`
-(Board.tsx:580) e a checklist onde ela mora e a de uma tarefa arquivada, que
-ninguem abre -- a tarefa existia e nenhuma tela a mostrava. E a MESMA familia
-do defeito da duplicacao (`test_pai_arquivado_promove_a_topo`) e do
-desarquivar (`test_unarchive_parent_db.py`): "subtarefa ativa sob pai
-arquivado" tem mais de uma porta, e esta era a terceira.
+Sem cascata, a filha ficaria ATIVA debaixo de um pai arquivado: o quadro so
+desenha `depth === 0` e a checklist onde ela mora e a de uma tarefa arquivada,
+que ninguem abre. "Subtarefa ativa sob pai arquivado" tem mais de uma porta
+(ver tambem `test_pai_arquivado_promove_a_topo` e
+`test_unarchive_parent_db.py`).
 
 ⚠️ ARMADILHA CENTRAL DESTE ARQUIVO: a cascata e UPDATE em massa por ltree, e
 UPDATE cru NAO avisa o ORM. O objeto ja carregado continua na identity map com
@@ -122,12 +120,9 @@ async def test_a_cascata_nao_vaza_para_fora_da_subarvore(db) -> None:
 async def test_arquivar_de_novo_nao_conta_nem_escreve_history(db) -> None:
     """Idempotencia: a 2a chamada muda 0 linhas (`is_archived <> :alvo`).
 
-    ⚠️ A PRIMEIRA chamada e afirmada de proposito. Sem isso o teste passava
+    ⚠️ A PRIMEIRA chamada e afirmada de proposito. Sem isso o teste passaria
     com a cascata QUEBRADA -- 0 na segunda chamada e trivialmente verdade
-    quando o UPDATE nunca muda nada, e a "idempotencia" seria medida sem
-    depender de a cascata ter funcionado. Descoberto por sabotagem em
-    05/08 (`"alvo": archived` -> `not archived`): dos 8 testes deste
-    arquivo, este foi o unico que sobreviveu pelo motivo errado.
+    quando o UPDATE nunca muda nada.
     """
     ws, team, user, proj, ctx = await _mundo(db)
     pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
@@ -154,7 +149,7 @@ async def test_arquivar_de_novo_nao_conta_nem_escreve_history(db) -> None:
 
 
 async def test_history_so_na_RAIZ_com_a_contagem_no_metadata(db) -> None:
-    """Mesma forma do soft-delete (ADR 0005): a filha cascateada NAO ganha
+    """Mesma forma do soft-delete: a filha cascateada NAO ganha
     linha propria -- arquivar 40 subtarefas viraria 40 linhas que ninguem le.
     """
     ws, team, user, proj, ctx = await _mundo(db)
@@ -193,8 +188,8 @@ async def test_history_so_na_RAIZ_com_a_contagem_no_metadata(db) -> None:
 
 
 async def test_arquivar_folha_nao_muda_o_metadata_antigo(db) -> None:
-    """Sem cascata, `event_metadata` continua None -- a auditoria antiga nao
-    passa a ter um campo novo com 0 em toda linha."""
+    """Sem cascata, `event_metadata` continua None -- o historico nao ganha um
+    campo com 0 em toda linha."""
     ws, team, user, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         folha = await TaskService(db).create(
@@ -219,8 +214,8 @@ async def test_arquivar_folha_nao_muda_o_metadata_antigo(db) -> None:
 
 
 async def test_desarquivar_o_pai_traz_a_subarvore_inteira(db) -> None:
-    """A promessa que a mensagem de erro do desarquivar ja fazia desde 04/08
-    ("a subtarefa volta junto") e que ate 05/08 era MENTIRA."""
+    """A promessa da mensagem de erro do desarquivar: "a subtarefa volta
+    junto"."""
     ws, team, user, proj, ctx = await _mundo(db)
     pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
 
@@ -237,12 +232,12 @@ async def test_desarquivar_o_pai_traz_a_subarvore_inteira(db) -> None:
 
 
 async def test_desarquivar_TAMBEM_traz_quem_foi_arquivado_antes(db) -> None:
-    """⚠️ CUSTO ACEITO da opcao 2 (decisao de 05/08), travado por teste.
+    """⚠️ CUSTO ACEITO, travado por teste.
 
     A subtarefa foi arquivada de PROPOSITO antes do pai, e volta junto assim
     mesmo -- o banco nao guarda quem foi arquivado pela cascata. Se este teste
-    incomodar algum dia, a mudanca e a opcao 3 (coluna nova marcando a origem
-    do arquivamento), e ai ela e consciente em vez de acidental.
+    incomodar algum dia, a mudanca e uma coluna nova marcando a origem do
+    arquivamento, e ai ela e consciente em vez de acidental.
     """
     ws, team, user, proj, ctx = await _mundo(db)
     pai, sub, neto = await _tres_niveis(db, ctx, proj, team, user)
@@ -261,8 +256,8 @@ async def test_arquivar_recolhe_a_filha_orfa_do_comportamento_antigo(
 ) -> None:
     """O caminho de CONSERTO do legado.
 
-    Antes de 05/08 dava pra ter pai arquivado com filha ATIVA -- e essas linhas
-    seguem no banco. Arquivar de novo o pai (que ja esta arquivado) passa a
+    Arquivar sem cascata deixou pai arquivado com filha ATIVA -- e essas linhas
+    podem seguir no banco. Arquivar de novo o pai (que ja esta arquivado) passa a
     recolher a filha, em vez de ser no-op. Sem isto, so SQL na mao consertaria.
     """
     ws, team, user, proj, ctx = await _mundo(db)

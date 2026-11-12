@@ -1,8 +1,7 @@
 """Testes PUROS do rate limit: extracao do IP e chave da conta.
 
-O limitador em si conta no banco desde 11/11 (auditoria, item 10): os testes
-dele, do 429 pela rota e do coletor de erros moraram para
-`tests/integration/test_rate_limit_db.py`.
+O limitador em si conta no banco: os testes dele, do 429 pela rota e do
+coletor de erros estao em `tests/integration/test_rate_limit_db.py`.
 """
 
 from __future__ import annotations

@@ -1,28 +1,19 @@
-"""Spec 037, fatia 3 -- os gatilhos que barram (E4 + E8), pela ROTA.
+"""Mudanca de vinculo que deixaria tarefa orfa e recusada, pela ROTA.
 
 A REGRA: mudanca de vinculo que deixaria uma tarefa NAO-TERMINAL sem ninguem
 que a alcance e recusada. As portas usam o MESMO predicado:
-`remove_member_from_team`, `change_member_role`.
+`remove_member_from_team`, `change_member_role`, `change_organization_role`.
 
-⚠️ ERAM TRES: `move_member_subteam` saiu com a rota `POST /move-subteam` em
-17/09/2026. Os testes dele que provavam algo que NAO era do mover (o corpo do
-422 da E8, e "sem tarefa, passa") foram portados para `remover do time`; o
-"mover barra" era duplicata de `test_remover_do_time_barra` e saiu.
-
-⚠️ `deactivate_member` NAO esta aqui, e a ausencia e decisao (E7): desligar
+⚠️ `deactivate_member` NAO esta aqui, e a ausencia e de proposito: desligar
 alguem nao pode ser barrado por trabalho pendente -- a pessoa ja foi embora.
-A E7 resolve por outro caminho, na F5. `test_desligamento_NAO_e_barrado`
-existe para travar essa ausencia: se um dia alguem "padronizar" os quatro
-gatilhos, ele cai.
+`test_desligamento_NAO_e_barrado` trava essa ausencia.
 
-POR QUE PELA ROTA: a licao da Spec 028 (12 testes de service verdes com o gate
-da rota revertido) e, aqui, a propria E8 -- o que a spec promete e a FORMA do
-corpo do erro, e forma de corpo so existe em HTTP.
+POR QUE PELA ROTA: o que se promete e a FORMA do corpo do erro (a lista de
+tarefas), e forma de corpo so existe em HTTP.
 
 ⚠️ O CODIGO E 422, E ELE DIVERGE DO ARQUIVO. Toda outra recusa de regra em
-`member_service` e `BusinessRuleError` = **409** (ultimo vinculo, anti-lockout
-C3). O 422 esta escrito na E8 e na spec, entao e o que sobe -- mas o front vai
-tratar DOIS codigos no mesmo botao.
+`member_service` e `BusinessRuleError` = **409** (ultimo vinculo,
+anti-lockout). O front trata DOIS codigos no mesmo botao.
 `test_ultimo_vinculo_continua_409_e_nao_422` fixa a divergencia por escrito:
 se alguem unificar os dois, esse teste avisa qual mudou.
 
@@ -30,14 +21,6 @@ O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
     `gi` : OPERATOR do Design, unica responsavel por UMA tarefa BACKLOG do
            Design. Lente hoje = {Design, raiz}.
     `ator`: ADMIN de organizacao, quem executa as operacoes.
-
-SABOTAGEM DESTA FATIA (executada, resultado no handoff):
-    Remover a chamada INTEIRA a `_assert_nao_deixa_orfa` do
-    `change_member_role` (as linhas do `await`, mais o `list_team_memberships`
-    que so existe para ela). Cai
-    `test_rebaixamento_de_manager_para_operator_barra`, com `DID NOT RAISE`.
-    ⚠️ Nao basta trocar o `raise` por outro, nem afrouxar o predicado: a
-    chamada sai inteira, senao a sabotagem prova menos do que promete.
 """
 
 from __future__ import annotations
@@ -83,7 +66,7 @@ def _client(db, ctx: TenantContext) -> AsyncClient:
 
 
 async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
-    ws = await f.make_workspace(db, name="WS F3")
+    ws = await f.make_workspace(db, name="WS Orfas")
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
     design = await f.make_team(
@@ -94,8 +77,7 @@ async def _mundo(db, *, papel_da_gi: str = "OPERATOR", com_tarefa: bool = True):
         db, workspace_id=ws, email="ator@t.dev", org_role="ADMIN"
     )
 
-    # ⚠️ MANAGER mora na RAIZ (invariante da Spec 024): MANAGER so existe no
-    # time raiz. O cenario de rebaixamento e MANAGER da raiz ->
+    # ⚠️ MANAGER so existe no time raiz. O cenario de rebaixamento e MANAGER da raiz ->
     # OPERATOR da raiz, que troca "raiz + descendentes" por "raiz" e derruba
     # os subtimes de uma vez.
     time_da_gi = raiz if papel_da_gi == "MANAGER" else design
@@ -169,11 +151,7 @@ async def test_remover_do_time_barra(db) -> None:
 
 
 async def test_remover_do_time_passa_quando_nao_ha_tarefa(db) -> None:
-    """A trava nao pode virar parede: sem tarefa pendurada, a remocao vai.
-
-    ⚠️ PORTADO DE `test_mover_de_subtime_passa_quando_nao_ha_tarefa` em
-    17/09/2026, quando a rota de mover saiu.
-    """
+    """A trava nao pode virar parede: sem tarefa pendurada, a remocao vai."""
     m = await _mundo(db, com_tarefa=False)
     await f.add_member(
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
@@ -211,15 +189,11 @@ async def test_ultimo_vinculo_continua_409_e_nao_422(db) -> None:
 
 
 async def test_rebaixamento_de_manager_para_operator_barra(db) -> None:
-    """⚠️ O CASO DA SABOTAGEM. Rebaixar tira os subtimes DE UMA VEZ.
+    """Rebaixar tira os subtimes DE UMA VEZ.
 
     MANAGER da raiz enxerga raiz + descendentes; OPERATOR da raiz enxerga so a
-    raiz. A tarefa esta no Design, entao ela some do alcance dela.
-
-    ⚠️ Medido em 06/08: HOJE ninguem seria barrado por este gatilho -- os
-    gestores estao na raiz e tarefa de raiz ninguem perde. O cenario existe
-    aqui montado a mao, e passa a existir em producao no dia do quadro interno
-    (fatia 5 da Spec 036).
+    raiz. A tarefa esta no Design, entao ela some do alcance dela. Sem a
+    chamada a `_assert_nao_deixa_orfa` em `change_member_role`, cai aqui.
     """
     m = await _mundo(db, papel_da_gi="MANAGER")
     async with _client(db, m["ctx"]) as cli:
@@ -276,7 +250,7 @@ async def _gestor_com_tarefa_no_design(db, *, responsavel: bool):
 
 
 async def test_tirar_o_papel_de_organizacao_barra(db) -> None:
-    """Auditoria de 21/10 (item 5): a quarta porta que encolhe a lente."""
+    """Tirar o papel de organizacao tambem encolhe a lente, e tambem barra."""
     m, ana = await _gestor_com_tarefa_no_design(db, responsavel=True)
     async with _client(db, m["ctx"]) as cli:
         r = await cli.patch(
@@ -303,21 +277,16 @@ async def test_tirar_o_papel_de_organizacao_apaga_o_seguidor(db) -> None:
     assert segue == 0
 
 
-# ------------------------------------------------------------ 4. o corpo (E8)
+# ------------------------------------------------------------ 4. o corpo do 422
 
 
 async def test_o_corpo_do_422_traz_a_lista_e_nao_a_contagem(db) -> None:
-    """⚠️ O TESTE QUE IMPEDE A E8 DE VIRAR UMA FRASE.
-
-    Afirma os CAMPOS de cada tarefa, nao o tamanho da lista. Medido em 06/08:
-    duas pessoas carregam 30 das 33 tarefas que travariam. Uma mensagem de
-    texto serve para quem tem 1 e e uma parede para quem tem 18 -- e a
-    reatribuicao em lote (fora do escopo da 037, por decisao) precisa consumir
-    esta lista pronta, nao recalcular tudo.
+    """Afirma os CAMPOS de cada tarefa, nao uma frase nem uma contagem: quem
+    carrega muitas tarefas precisa da lista para reatribuir.
     """
     m = await _mundo(db)
-    # ⚠️ Pela REMOCAO desde 17/09/2026 (a rota de mover saiu). O segundo
-    # vinculo e para a trava do ultimo vinculo (409) nao responder primeiro.
+    # O segundo vinculo e para a trava do ultimo vinculo (409) nao responder
+    # primeiro.
     await f.add_member(
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["raiz"],
         role="OPERATOR",
@@ -338,19 +307,15 @@ async def test_o_corpo_do_422_traz_a_lista_e_nao_a_contagem(db) -> None:
     assert uuid.UUID(t["team_id"]) == m["design"]
 
 
-# --------------------------------------------------- 5. a ausencia do quarto
+# --------------------------------------------------- 5. o desligamento nao barra
 
 
 async def test_desligamento_NAO_e_barrado(db) -> None:
-    """⚠️ TRAVA DE AUSENCIA (E7). `deactivate_member` e o quarto gatilho e NAO
-    chama o predicado.
+    """⚠️ TRAVA DE AUSENCIA. `deactivate_member` NAO chama o predicado.
 
     Desligar alguem nao pode ser barrado por trabalho pendente: a pessoa ja foi
     embora, e travar o desligamento deixaria a conta ativa -- pior que a tarefa
-    orfa. A E7 resolve por outro caminho, na F5.
-
-    Se alguem "padronizar" os quatro gatilhos, este teste cai, e cair aqui e a
-    mensagem.
+    orfa. Se alguem "padronizar" as portas, este teste cai.
     """
     m = await _mundo(db)
     async with _client(db, m["ctx"]) as cli:

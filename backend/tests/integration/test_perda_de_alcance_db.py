@@ -1,30 +1,14 @@
-"""Spec 037, fatia 1 (parte 2) -- o predicado `bloqueios_por_perda_de_alcance`.
-
-A pergunta que ele responde, e so ela:
+"""O predicado `bloqueios_por_perda_de_alcance`.
 
     "Dado o conjunto de times que a pessoa teria DEPOIS da mudanca, de quais
     tarefas NAO-TERMINAIS ela e a UNICA responsavel e deixaria de alcancar?"
 
-⚠️ LEITURA PURA. Esta parte nao esta ligada a gatilho nenhum -- e codigo morto
-ate a F3 chama-la nos tres pontos que barram. Isso e de proposito: a F3 e a
-primeira mudanca que uma pessoa percebe, e ela sobe sozinha.
-
-⚠️ TERMINAL VEM DA SEMANTICA DA COLUNA. `TERMINAL_SEMANTICS` = {DONE,
-CANCELLED}. Nao ha lista de status escrita a mao aqui, e esse e o ponto: no dia
-da coluna criada por gente (fatia 5 da Spec 036), coluna nao tem
-`legacy_status` e nao responde por status -- so a semantica sobra.
-
-SABOTAGEM DESTA PARTE (executada, resultado no handoff):
-    Trocar `TERMINAL_SEMANTICS` pelo conjunto VAZIO em `board_semantics.py` --
-    reverte a regra inteira da E4, nao a mutila.
-    Deve cair `test_2_mesma_tarefa_em_coluna_terminal_nao_bloqueia`, que passa
-    a receber a tarefa `Concluido` na lista.
-    ⚠️ Nao basta tirar um dos dois valores do frozenset: com DONE fora e
-    CANCELLED dentro (ou o contrario) a sabotagem vira "mutilar", e mutilacao
-    pode passar verde por sorte -- os testes usam `Concluido`.
+⚠️ Terminal vem da SEMANTICA da coluna (`TERMINAL_SEMANTICS` = {DONE,
+CANCELLED}), nao de uma lista de status: coluna criada por gente nao tem
+`legacy_status`.
 
 O MUNDO (`_mundo`): raiz Marketing + subtimes SEO e Design.
-    `gi` e OPERATOR do Design. A lente dela HOJE e {Design, raiz}; o cenario e
+    `gi` e OPERATOR do Design. A lente dela e {Design, raiz}; o cenario e
     "ela sai do Design", entao `times_depois = {raiz}`.
 """
 
@@ -121,8 +105,7 @@ async def test_1_unica_responsavel_em_subtime_que_ela_perde_bloqueia(db) -> None
     bloqueios = await _bloqueios(db, m)
 
     assert [b.task_id for b in bloqueios] == [t.id]
-    # ⚠️ Afirma os CAMPOS, nao o tamanho. E o teste que impede a E8 de virar
-    # `{"tarefas": 1}` na primeira pressa da F3.
+    # Afirma os CAMPOS, nao so o tamanho.
     b = bloqueios[0]
     assert b.titulo == "Arte do lancamento"
     assert b.team_id == m["design"]
@@ -131,10 +114,9 @@ async def test_1_unica_responsavel_em_subtime_que_ela_perde_bloqueia(db) -> None
 
 
 async def test_2_mesma_tarefa_em_coluna_terminal_nao_bloqueia(db) -> None:
-    """⚠️ O caso da sabotagem. Terminal nao barra ninguem (E4).
+    """Terminal nao barra ninguem: ninguem vai retomar trabalho em `Concluido`.
 
-    Trabalho em coluna `Concluido` e trabalho que ninguem vai retomar; travar a
-    movimentacao por causa dele seria burocracia sem dono.
+    Cai se `TERMINAL_SEMANTICS` ficar vazio.
     """
     m = await _mundo(db)
     t = await f.make_task(
@@ -168,11 +150,7 @@ async def test_3_dois_responsaveis_nao_bloqueia(db) -> None:
 
 
 async def test_4_tarefa_na_raiz_nao_bloqueia(db) -> None:
-    """Ninguem perde a raiz de vista.
-
-    ⚠️ E por isso que as 333 tarefas da raiz medidas em 06/08 nao entram na
-    conta -- so as 33 de subtime podem barrar alguma coisa.
-    """
+    """Ninguem perde a raiz de vista: so tarefa de subtime pode barrar."""
     m = await _mundo(db)
     t = await f.make_task(
         db,
@@ -262,20 +240,7 @@ async def test_7_admin_nao_bloqueia_nada(db) -> None:
     assert await _bloqueios(db, m, depois=None) == []
 
 
-# ⚠️ NAO EXISTE UM `test_8` DE TENANT, E A AUSENCIA E DECISAO.
-#
-# A consulta filtra `Task.workspace_id` fora de qualquer `if` -- a armadilha da
-# lente `None` da fatia 2 da Spec 036 esta na cabeca de quem escreveu. Mas AQUI
-# esse filtro **nao e o que segura o vazamento**, e um teste que sugerisse o
-# contrario mentiria.
-#
-# Medido em 06/08, tentando escrever o teste: as FKs COMPOSTAS tornam o cenario
-# inconstruivel. `task.created_by` e `(created_by, workspace_id) -> users`, e
-# `task_assignment` tem `(user_id, workspace_id) -> users`. Uma pessoa em dois
-# workspaces tem DOIS `user_id` diferentes (o e-mail e unico POR workspace),
-# entao filtrar por `user_id` ja escopa o tenant por construcao do schema. A
-# tentativa de montar a linha morre em `ForeignKeyViolationError`.
-#
-# O filtro de workspace fica na consulta como defesa barata contra uma mudanca
-# futura de schema -- mas ele NAO tem teste, porque um teste que nao pode
-# falhar nao afirma nada.
+# Sem teste de tenant de proposito: as FKs compostas `(user_id, workspace_id)`
+# tornam o cenario inconstruivel (uma pessoa em dois workspaces tem dois
+# `user_id`), entao filtrar por `user_id` ja escopa o tenant. O filtro de
+# workspace da consulta e defesa barata, sem teste que possa falhar.

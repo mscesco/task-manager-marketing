@@ -1,8 +1,7 @@
-"""F1b -- a varredura de auto-arquivamento cascateia a subarvore.
+"""A varredura de auto-arquivamento cascateia a subarvore.
 
-Contra Postgres real. Fecha a pendencia aberta em 04/08: ate aqui as duas
-portas de arquivamento faziam coisas DIFERENTES -- o `archive` manual levava as
-filhas junto (desde 05/08) e a varredura da madrugada nao levava.
+Contra Postgres real. As duas portas de arquivamento fazem a mesma coisa: o
+`archive` manual e a varredura da madrugada levam as filhas junto.
 
 Os tres casos sao os tres que a cascata pode errar:
   1. leva a filha ATIVA junto, e sem perder o status dela;
@@ -28,10 +27,8 @@ from app.modules.tasks.application.task_service import TaskService
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as, node
 
-# ⚠️ Importado do arquivo vizinho DE PROPOSITO, em vez de copiado. Ele carimba
-# `terminal_since` com a mesma formula do backfill das migrations 0008/0009; a
-# copia divergiria no dia em que a formula mudasse, e os dois arquivos passariam
-# a testar regras diferentes com o mesmo nome.
+# ⚠️ Importado do arquivo vizinho DE PROPOSITO, em vez de copiado: a copia da
+# formula do `terminal_since` divergiria no dia em que ela mudasse.
 from tests.integration.test_archival_db import _set_terminal
 
 pytestmark = pytest.mark.integration
@@ -75,7 +72,7 @@ async def _history(db, task_id):
 
 
 # 1 -- pai terminal velho arrasta a filha ATIVA, e a filha mantem o status.
-#      E a decisao de 06/08. O status intacto e o que torna o desarquivar do
+#      O status intacto e o que torna o desarquivar do
 #      pai um retorno sem perda: `set_archived_subtree` nao toca em `status`.
 async def test_cascata_leva_a_filha_ativa_e_preserva_o_status(db) -> None:
     ctx, ws, team, user = await _ws_admin(db)
@@ -99,7 +96,7 @@ async def test_cascata_leva_a_filha_ativa_e_preserva_o_status(db) -> None:
     assert filha.status == TaskStatus.IN_PROGRESS
 
     # History: UMA linha, no pai, com a contagem. A filha nao ganha linha
-    # propria -- mesma forma do `archive` manual e do soft-delete (ADR 0005).
+    # propria -- mesma forma do `archive` manual e do soft-delete.
     linhas_pai = await _history(db, pai.id)
     assert len(linhas_pai) == 1
     assert linhas_pai[0].event_metadata == {
@@ -174,7 +171,7 @@ async def test_filha_elegivel_sob_pai_vivo_nao_arrasta_o_pai(db) -> None:
     assert pai.is_archived is False
     assert filha.is_archived is True
 
-    # Folha: sem cascata, o metadata fica IDENTICO ao de antes desta fatia.
+    # Folha: sem cascata, o metadata nao ganha `cascade_count`.
     linhas = await _history(db, filha.id)
     assert len(linhas) == 1
     assert linhas[0].event_metadata == {
@@ -182,10 +179,9 @@ async def test_filha_elegivel_sob_pai_vivo_nao_arrasta_o_pai(db) -> None:
         "reason": "stale_terminal",
     }
 
-# Auditoria de 16/10 -- desarquivar recomeca o relogio. Com o `terminal_since`
-# velho, a mae concluida desarquivada (e as filhas, que voltam junto) eram
-# elegiveis de novo, e a varredura seguinte as arquivava: "desarquivar" se
-# desfazia sozinho em ate um dia, e o checklist voltava zerado.
+# Desarquivar recomeca o relogio. Com o `terminal_since` velho, a mae concluida
+# desarquivada (e as filhas, que voltam junto) seriam elegiveis de novo, e a
+# varredura seguinte as arquivaria: "desarquivar" se desfaria sozinho.
 async def test_desarquivar_tira_a_subarvore_da_proxima_varredura(db) -> None:
     ctx, ws, team, user = await _ws_admin(db)
     pai = await _mk(db, ws, user, team, "pai concluido")

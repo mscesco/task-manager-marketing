@@ -1,19 +1,7 @@
-"""Selo "Subtarefa de X" em /me/assignments (pedido da equipe, 2026-07-27).
+"""`parent_title` em /me/assignments: o selo "Subtarefa de X".
 
-POR QUE ESTA TELA E SO ELA:
-    "Minhas tarefas" e a UNICA que mostra subtarefa como card SOLTO. O quadro
-    geral lista so raizes (ADR 0004) e a subtarefa aparece DENTRO do card da
-    mae, onde o contexto e obvio. Solta, ela so dizia "Subtarefa" -- sem
-    dizer de que.
-
-O QUE MAIS IMPORTA AQUI:
-    `test_parent_title_quando_a_mae_NAO_esta_na_minha_lista`. Resolver o
-    titulo no front, procurando a mae entre os itens carregados, funcionaria
-    so quando a pessoa ja esta designada na mae -- ou seja, quando ela ja
-    sabe o contexto. Falharia justamente no caso em que o selo e util: estar
-    designada SO na filha. Por isso o titulo vem do backend, em lote.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+"Minhas tarefas" mostra subtarefa como card solto, e a mae muitas vezes nao
+esta na lista. Por isso o titulo vem do backend, em lote.
 """
 
 from __future__ import annotations
@@ -103,12 +91,8 @@ def _por_id(corpo, task):
 
 
 async def test_parent_title_quando_a_mae_NAO_esta_na_minha_lista(db) -> None:
-    """O CASO QUE JUSTIFICA A SPEC: designada so na filha.
-
-    A mae nao entra em /me/assignments (nao tenho relacao com ela), entao
-    resolver o titulo no front pela lista carregada devolveria nada. O selo
-    tem de vir do backend.
-    """
+    """Designada so na filha: a mae nao esta na lista, e o titulo vem mesmo
+    assim."""
     c = await _setup(db)
     await _designar(db, c, c["filha"])
     await db.commit()
@@ -147,7 +131,7 @@ async def test_task_raiz_tem_parent_title_none(db) -> None:
 
 
 async def test_neto_traz_a_mae_DIRETA_nao_a_raiz(db) -> None:
-    """Decisao da Camila: so a mae direta. A cadeia fica no detalhe."""
+    """So a mae direta. A cadeia fica no detalhe."""
     c = await _setup(db)
     neta = await f.make_task(
         db, workspace_id=c["ws"], project_id=c["proj"], created_by=c["dono"],
@@ -160,31 +144,50 @@ async def test_neto_traz_a_mae_DIRETA_nao_a_raiz(db) -> None:
     assert _por_id(r.json(), neta)["parent_title"] == "Peca para Instagram"
 
 
-async def test_lote_nao_faz_n_mais_1(db) -> None:
-    """Varias subtarefas de maes DIFERENTES numa pagina so.
+async def test_lote_nao_faz_n_mais_1(db, connection) -> None:
+    """Os titulos das maes saem em lote: a pagina faz o mesmo numero de
+    consultas com 1 ou com 4 subtarefas de maes diferentes, e cada filha traz
+    o titulo certo."""
+    from sqlalchemy import event
 
-    Nao mede query (a suite nao instrumenta), mas trava o contrato: todas as
-    maes resolvem numa chamada. Se alguem trocar o lote por um get por card,
-    este teste segue verde -- por isso o docstring do repo e do router
-    registram o porque do lote. O que ele garante e a CORRETUDE do lote:
-    varias maes distintas, cada filha com o titulo certo.
-    """
     c = await _setup(db)
-    esperado = {}
-    for i in range(4):
-        mae = await f.make_task(
-            db, workspace_id=c["ws"], project_id=c["proj"], created_by=c["dono"],
-            team_id=c["raiz"], title=f"Mae {i}",
-        )
-        filha = await f.make_task(
-            db, workspace_id=c["ws"], project_id=c["proj"], created_by=c["dono"],
-            team_id=c["raiz"], title=f"Filha {i}", parent=mae,
-        )
-        await _designar(db, c, filha)
-        esperado[filha] = f"Mae {i}"
-    await db.commit()
-    async with _client(db, c["ctx"]) as cli:
-        r = await cli.get("/api/v1/me/assignments?size=50")
-    corpo = r.json()
+
+    async def _filhas(n: int, desde: int) -> dict:
+        esperado = {}
+        for i in range(desde, desde + n):
+            mae = await f.make_task(
+                db, workspace_id=c["ws"], project_id=c["proj"], created_by=c["dono"],
+                team_id=c["raiz"], title=f"Mae {i}",
+            )
+            filha = await f.make_task(
+                db, workspace_id=c["ws"], project_id=c["proj"], created_by=c["dono"],
+                team_id=c["raiz"], title=f"Filha {i}", parent=mae,
+            )
+            await _designar(db, c, filha)
+            esperado[filha] = f"Mae {i}"
+        await db.commit()
+        return esperado
+
+    async def _get() -> tuple[int, dict]:
+        sqls: list[str] = []
+
+        def _anota(conn, cursor, statement, *args) -> None:
+            sqls.append(statement)
+
+        event.listen(connection.sync_connection, "before_cursor_execute", _anota)
+        try:
+            async with _client(db, c["ctx"]) as cli:
+                r = await cli.get("/api/v1/me/assignments?size=50")
+        finally:
+            event.remove(connection.sync_connection, "before_cursor_execute", _anota)
+        assert r.status_code == 200, r.text
+        return len(sqls), r.json()
+
+    await _filhas(1, 0)
+    com_uma, _ = await _get()
+    esperado = await _filhas(4, 1)
+    com_cinco, corpo = await _get()
+
+    assert com_cinco == com_uma
     for filha, titulo in esperado.items():
         assert _por_id(corpo, filha)["parent_title"] == titulo

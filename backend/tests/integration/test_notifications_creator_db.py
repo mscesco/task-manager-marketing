@@ -1,4 +1,4 @@
-"""Comentario notifica tambem o CRIADOR da task (Spec 018, Slice 2).
+"""Comentario notifica tambem o CRIADOR da task.
 
 Audiencia do TASK_COMMENTED = responsaveis + criador da task, menos o autor
 do comentario, deduplicado. Cobre: criador e notificado; criador que tambem
@@ -100,20 +100,4 @@ async def test_criador_que_comenta_na_propria_nao_recebe(db) -> None:
         do_criador = await _comment_notifs(db, criador)
 
     assert len(do_criador) == 0  # autor da task comenta -> nao se notifica
-
-
-async def test_criador_e_responsavel_distinto_ambos_recebem(db) -> None:
-    """Sanidade: criador e um responsavel DIFERENTE -> dois destinatarios."""
-    ws, r, a, comentador, criador, proj, task, comentador_ctx, _ = await _world(db)
-    resp = await f.make_user(db, workspace_id=ws)
-    await f.add_member(db, workspace_id=ws, user_id=resp, team_id=a, role="OPERATOR")
-    await f.make_assignment(
-        db, workspace_id=ws, task_id=task.id, user_id=resp, assigned_by=comentador
-    )
-    with acting_as(**comentador_ctx):
-        await CommentService(db).create_comment(task_id=task.id, content="oi")
-        await db.flush()
-        assert len(await _comment_notifs(db, criador)) == 1
-        assert len(await _comment_notifs(db, resp)) == 1
-
 

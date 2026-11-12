@@ -1,12 +1,11 @@
-"""Spec 022 -- move aceita tirar task de projeto (avulsa).
+"""`move` aceita tirar task de projeto (avulsa).
 
-Cobre os 7 criterios de aceite: mover entre projetos (regressao), detach de
-topo (task + subtree -> project_id NULL), detach idempotente em avulsa, e os
-tres 422 (subtarefa, detach+projeto, detach+pai).
+Cobre: mover entre projetos, detach de topo (task + subtree -> project_id
+NULL), detach idempotente em avulsa, e os tres 422 (subtarefa, detach+projeto,
+detach+pai).
 
 Le o project_id final direto do banco: o move reescreve via UPDATE LTREE em
-massa e o ORM na mesma sessao pode ficar stale (mesmo padrao do
-test_hierarchy_db).
+massa e o ORM na mesma sessao pode ficar stale.
 """
 
 from __future__ import annotations

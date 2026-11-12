@@ -1,10 +1,6 @@
 """`under_team_id` nas rotas de leitura de tarefa: recorta pela arvore e pelo
 time efetivo (o do projeto, quando houver).
 
-O `team_id` antigo de `GET /tasks` e igualdade crua no time da tarefa: esconde
-a tarefa interna de subtime e ignora o time do projeto. Os testes
-`test_o_team_id_ANTIGO_...` registram essa diferenca.
-
     Marketing (raiz)
       SEO (subtime)
     Comercial (raiz)
@@ -146,29 +142,6 @@ async def test_sem_recorte_vem_tudo(db) -> None:
         "Do projeto",
         "Do Comercial",
     }
-
-
-# ------------------------------- o parametro antigo `team_id`
-
-
-async def test_o_team_id_ANTIGO_esconde_a_tarefa_interna(db) -> None:
-    """`team_id=<Marketing>` devolve so a avulsa da raiz. Afirma o comportamento
-    antigo de proposito, para a diferenca ficar legivel.
-    """
-    m = await _mundo(db)
-    with _como_admin(m):
-        titulos = await _titulos(db, team_id=m["marketing"])
-
-    assert titulos == {"Da raiz"}
-
-
-async def test_o_team_id_ANTIGO_pega_a_do_projeto_pelo_time_errado(db) -> None:
-    """`team_id=<SEO>` traz a do projeto do Marketing, pelo time da tarefa."""
-    m = await _mundo(db)
-    with _como_admin(m):
-        titulos = await _titulos(db, team_id=m["seo"])
-
-    assert titulos == {"Interna do SEO", "Do projeto"}
 
 
 # ------------------------------------------- /me/assignments

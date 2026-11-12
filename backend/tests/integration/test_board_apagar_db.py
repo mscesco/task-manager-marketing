@@ -1,10 +1,9 @@
-"""Apagar quadro (Spec 036, fatia 7 -- ADR 0034 item 4).
+"""Apagar quadro.
 
 ⚠️⚠️ **E A OPERACAO MAIS DESTRUTIVA DO PRODUTO, e a UNICA que nao pergunta o
 destino das tarefas.** Apagar COLUNA sempre oferece para onde elas vao; aqui
-elas somem com o quadro. A tela ensinou o contrario -- por isso a confirmacao
-exige digitar o nome, e por isso o resgate
-(`backend/scripts/restaurar_quadro.sql`) foi escrito no MESMO commit.
+elas somem com o quadro. Por isso a confirmacao exige digitar o nome, e por
+isso existe o resgate (`backend/scripts/restaurar_quadro.sql`).
 
 ⚠️ O TESTE QUE MAIS IMPORTA AQUI NAO E O DA EXCLUSAO, E O DO RESGATE
 (`test_o_deleted_at_do_quadro_e_das_tarefas_e_IGUAL`). `NOW()` no Postgres e o
@@ -75,7 +74,7 @@ async def _tarefa(db, ws, user, arvore, time, titulo, board_id):
 
 
 async def test_apagar_quadro_apaga_as_tarefas_dentro(db) -> None:
-    """ADR 0034: apagar quadro apaga as tarefas junto. Devolve quantas."""
+    """Apagar quadro apaga as tarefas junto. Devolve quantas."""
     ws, _raiz, sub_a, user, arvore = await _mundo(db)
     quadro = await _quadro(db, ws, user, arvore, sub_a)
     t1 = await _tarefa(db, ws, user, arvore, sub_a, "Uma", quadro.id)
@@ -141,10 +140,8 @@ async def test_tarefa_apagada_ANTES_nao_muda_de_carimbo(db) -> None:
     antiga = await _tarefa(db, ws, user, arvore, sub_a, "Antiga", quadro.id)
     await _tarefa(db, ws, user, arvore, sub_a, "Viva", quadro.id)
 
-    # ⚠️ A PREPARACAO E DE UM MANAGER, e ate a Spec 051 era do supervisor. O
-    # supervisor nao tem `task.delete` -- quem barrava era so a ROTA, e este
-    # teste chama o servico. Desde a fatia A o servico confere o verbo no time
-    # da tarefa, e o atalho deixou de existir.
+    # ⚠️ A PREPARACAO E DE UM MANAGER: o supervisor nao tem `task.delete`, e o
+    # servico confere o verbo no time da tarefa.
     with acting_as(**_ctx(ws, user, arvore, mship(raiz, "MANAGER"))):
         await TaskService(db).soft_delete(task_id=antiga.id)
     await db.flush()
@@ -201,13 +198,7 @@ async def test_operador_nao_apaga(db) -> None:
 
 
 async def test_o_quadro_apagado_some_da_listagem(db) -> None:
-    """`list_visible` filtra `deleted_at IS NULL` -- conferido pela ponta.
-
-    ⚠️ E o teste que liga esta fatia a `0012`. Aquela migration criou a coluna
-    ANTES de existir quem a escrevesse, justamente para o `GET /boards` ja
-    nascer com o filtro. Este e o primeiro caso em que o filtro tem o que
-    filtrar.
-    """
+    """`list_visible` filtra `deleted_at IS NULL` -- conferido pela ponta."""
     ws, _raiz, sub_a, user, arvore = await _mundo(db)
     quadro = await _quadro(db, ws, user, arvore, sub_a)
 
@@ -258,10 +249,8 @@ async def test_os_comentarios_vao_junto(db) -> None:
     quadro = await _quadro(db, ws, user, arvore, sub_a)
     tarefa = await _tarefa(db, ws, user, arvore, sub_a, "Com comentario", quadro.id)
 
-    # ⚠️ PELO MODELO, e nao por `INSERT` cru. A primeira versao deste teste
-    # escrevia `author_id` -- a coluna se chama `user_id`, e o erro so
-    # apareceria ao rodar. Adivinhar nome de coluna em teste e o mesmo defeito
-    # que este projeto ja catalogou em fixture.
+    # ⚠️ PELO MODELO, e nao por `INSERT` cru: nome de coluna adivinhado em SQL
+    # cru (`author_id` em vez de `user_id`) so falha ao rodar.
     db.add(
         Comment(
             workspace_id=ws, task_id=tarefa.id, user_id=user, content="oi"

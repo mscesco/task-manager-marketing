@@ -1,7 +1,7 @@
-"""Spec 058 -- as datas da tela inicial (`tasks/domain/dashboard.py`), puras.
+"""As datas da tela inicial (`tasks/domain/dashboard.py`), puras.
 
-⚠️ `is_overdue` e a regra de `web/lib/prazo.ts::estaAtrasada` em Python. Os
-casos de borda daqui sao os mesmos do teste do front, e a versao SQL
+`is_overdue` e a regra de `web/lib/prazo.ts::estaAtrasada` em Python. Os casos
+de borda daqui sao os mesmos do teste do front, e a versao SQL
 (`_DashboardPredicates.overdue`) e conferida contra eles no teste de banco.
 """
 
@@ -17,7 +17,7 @@ def _em(*args: int) -> datetime:
 def test_a_semana_comeca_na_segunda() -> None:
     quarta = workspace_now(_em(2026, 10, 14, 10, 0))
     assert (quarta.week_start, quarta.week_end) == (date(2026, 10, 12), date(2026, 10, 18))
-    # ⚠️ domingo ainda e da semana que comecou na segunda anterior
+    # domingo ainda e da semana que comecou na segunda anterior
     domingo = workspace_now(_em(2026, 10, 18, 23, 59))
     assert domingo.week_start == date(2026, 10, 12)
     segunda = workspace_now(_em(2026, 10, 19, 0, 0))
@@ -55,28 +55,3 @@ def test_colunas_do_grafico_por_dia_ate_14_e_por_semana_acima() -> None:
     # quinta a domingo, a semana inteira, e segunda a quinta
     assert unidade == "week"
     assert [(c.start.day, c.end.day) for c in colunas] == [(15, 18), (19, 25), (26, 29)]
-
-
-def test_numero_no_formato_brasileiro() -> None:
-    from app.modules.bases.domain.spreadsheet import to_number
-
-    assert to_number("1.200") == 1200  # milhar, e nao 1,2
-    assert to_number("1.234,5") == 1234.5
-    assert to_number("300,5") == 300.5
-    assert to_number("1234.5") == 1234.5
-    assert to_number("R$ 10,00") == 10
-    # en-US (Sheets em ingles): o ultimo separador e o decimal (21/10).
-    assert to_number("1,234.56") == 1234.56
-    assert to_number("12,345,678.9") == 12345678.9
-
-
-def test_caixa_vazia_do_csv_e_None_e_nao_Nao() -> None:
-    """⚠️ No CSV a celula em branco chega como "" -- e "" esta no conjunto de
-    'nao'. Importar de volta uma exportacao enchia a coluna de "Nao" (21/10)."""
-    from app.modules.bases.domain.spreadsheet import to_checkbox
-
-    assert to_checkbox("") is None
-    assert to_checkbox("   ") is None
-    assert to_checkbox(None) is None
-    assert to_checkbox("nao") is False
-    assert to_checkbox("sim") is True

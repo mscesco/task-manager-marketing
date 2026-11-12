@@ -1,16 +1,16 @@
-"""Spec 053, fatia E -- o backend da tela de notificacoes.
+"""O backend da tela de notificacoes.
 
 O QUE ESTE ARQUIVO PRENDE:
-  - filtros por tipo (repetido), tarefa e projeto (D22);
+  - filtros por tipo (repetido), tarefa e projeto;
   - "marcar estas como lidas" marca SO as do filtro, e o contador de nao
-    lidas cai exatamente o que a lista mostrava (D25);
+    lidas cai exatamente o que a lista mostrava;
   - `task_access` e a trava do titulo: excluida ou fora do alcance -> "gone" e
-    SEM `task_title` -- menos o proprio aviso de exclusao (D27, §9.2);
+    SEM `task_title` -- menos o proprio aviso de exclusao;
   - sugestoes do "Tarefa ou projeto": so o que tem aviso, sem acento e sem
-    caixa, e nunca o que a pessoa nao alcanca mais (D23).
+    caixa, e nunca o que a pessoa nao alcanca mais.
 
 Os avisos entram DIRETO no banco: o que se testa aqui e a leitura, e a
-emissao ja tem os proprios arquivos (053a, 053b, 053c).
+emissao tem os proprios arquivos.
 
 SABOTAGENS (medidas):
   A. Em `NotificationRepository.mark_all_read`, ignorar os filtros (chamar

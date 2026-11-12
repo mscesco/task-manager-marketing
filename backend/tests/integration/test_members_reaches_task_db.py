@@ -1,14 +1,8 @@
-"""GET /members?reaches_task -- Spec 034, Fatia 3.
+"""`list_members(reaches_task_id=...)` e `(reaches_team_id=...)`.
 
-Prova que a lista devolvida pro seletor e EXATAMENTE o conjunto que o
-`POST` de designacao aceita. Ate 03/08 o front reconstruia uma aproximacao
-dessa regra com metade dos dados (`GET /members` devolve `team_id` e nao
-devolve papel), e o sintoma era gestor/admin sumindo do seletor de tarefa
-interna de subtime.
-
-O teste que carrega a spec e `test_todo_mundo_da_lista_pode_ser_designado`:
-ele percorre a lista e designa cada pessoa, esperando zero 422. Sem ele, a
-entrega devolve uma lista PARECIDA com a certa -- que e o estado de hoje.
+Prova que a lista devolvida pro seletor de responsaveis e EXATAMENTE o conjunto
+que o `add_assignee` aceita -- nem pessoa a mais (422 ao salvar), nem a menos
+(gestor sumindo do seletor de tarefa interna de subtime).
 """
 
 from __future__ import annotations
@@ -66,7 +60,7 @@ async def _ids(db, *, reaches_task_id=None, reaches_team_id=None):
 
 
 # ----------------------------------------------------------
-# Criterio 1 -- o caminho sem parametro NAO muda
+# Sem parametro
 # ----------------------------------------------------------
 async def test_sem_parametro_lista_igual_a_hoje(db) -> None:
     """Seis telas consomem esta rota sem parametro. Se o padrao mudar,
@@ -78,7 +72,7 @@ async def test_sem_parametro_lista_igual_a_hoje(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterios 2-4 -- o filtro
+# O filtro por tarefa
 # ----------------------------------------------------------
 async def test_tarefa_da_raiz_todo_mundo(db) -> None:
     ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
@@ -89,38 +83,18 @@ async def test_tarefa_da_raiz_todo_mundo(db) -> None:
     assert {manager, op_a, sup_a, op_b} <= alcancam
 
 
-async def test_tarefa_interna_inclui_manager(db) -> None:
-    """O PEDIDO de 03/08. Gestor da raiz alcanca tarefa interna de subtime
-    (MANAGER de T enxerga T + descendentes) e some do seletor hoje."""
+async def test_tarefa_interna_alcance_exato(db) -> None:
+    """Tarefa interna de A: o MANAGER da raiz (enxerga descendentes) e quem e
+    de A. Fora: o OPERATOR do subtime irmao e quem nao tem time."""
     ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
     with acting_as(**mgr_ctx):
         alcancam = await _ids(db, reaches_task_id=task.id)
-    assert manager in alcancam
-    assert op_a in alcancam
-    assert sup_a in alcancam
-
-
-async def test_tarefa_interna_exclui_operator_de_outro_subtime(db) -> None:
-    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
-    with acting_as(**mgr_ctx):
-        alcancam = await _ids(db, reaches_task_id=task.id)
-    assert op_b not in alcancam
-
-
-async def test_membro_sem_time_nao_aparece_em_tarefa_interna(db) -> None:
-    """Borda do `team_id` nulo. O front trata "sem subtime" como "nao e do
-    subtime"; aqui a mesma conclusao tem que vir da regra, nao da coincidencia."""
-    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
-    with acting_as(**mgr_ctx):
-        alcancam = await _ids(db, reaches_task_id=task.id)
-    assert solto not in alcancam
+    assert alcancam == {manager, op_a, sup_a}
 
 
 # ----------------------------------------------------------
-# Criterio 5 -- inativo
+# Inativo
 # ----------------------------------------------------------
 async def test_inativo_nao_alcanca(db) -> None:
     from sqlalchemy import text
@@ -137,7 +111,7 @@ async def test_inativo_nao_alcanca(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 6 -- task inexistente / invisivel
+# Task inexistente / invisivel
 # ----------------------------------------------------------
 async def test_task_inexistente_404(db) -> None:
     import uuid as _uuid
@@ -163,16 +137,11 @@ async def test_task_invisivel_para_quem_pergunta_404(db) -> None:
 
 
 # ----------------------------------------------------------
-# Criterio 7 -- O TESTE QUE CARREGA A SPEC
+# A lista e o salvar usam a mesma regra
 # ----------------------------------------------------------
 async def test_todo_mundo_da_lista_pode_ser_designado(db) -> None:
-    """Seletor e salvar usam a MESMA regra (D2).
-
-    Sem este teste, a entrega devolve uma lista parecida com a certa -- que
-    e exatamente o estado de hoje. Percorre a lista e designa cada pessoa:
-    qualquer 422 aqui significa que o seletor esta oferecendo alguem que o
-    salvar recusa.
-    """
+    """Percorre a lista e designa cada pessoa: qualquer 422 aqui significa
+    que o seletor oferece alguem que o salvar recusa."""
     ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
     task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
     with acting_as(**mgr_ctx):
@@ -187,16 +156,11 @@ async def test_todo_mundo_da_lista_pode_ser_designado(db) -> None:
 
 
 async def test_quem_ficou_de_fora_realmente_nao_pode_ser_designado(db) -> None:
-    """O outro lado do criterio 7: a lista nao pode ser CONSERVADORA demais.
+    """O outro lado: a lista nao pode ser CONSERVADORA demais.
 
-    ⚠️ Corrigido em 03/08 depois da sabotagem A. A primeira versao montava
-    `fora` a partir de uma dupla fixa ({op_b, solto}) em vez de derivar de
-    quem sobrou. Com a regra errada do front (`subteam_id == task.team_id`)
-    o MANAGER sumia da lista -- e como ele nao estava na dupla fixa, o teste
-    ficava VERDE com o defeito de 03/08 inteiro de pe.
-
-    Derivar `fora` da lista completa e o que fecha esse buraco: qualquer
-    pessoa escondida do seletor que o `add_assignee` aceite quebra aqui.
+    ⚠️ `fora` e derivado de quem sobrou, e nao de uma lista fixa: assim
+    qualquer pessoa escondida do seletor que o `add_assignee` aceite quebra
+    aqui, inclusive o MANAGER.
     """
     from app.shared.exceptions.base import ValidationError
 
@@ -215,53 +179,20 @@ async def test_quem_ficou_de_fora_realmente_nao_pode_ser_designado(db) -> None:
 
 
 # ==========================================================
-# Fatia 5 -- ?reaches_team, para o modal de CRIAR
+# ?reaches_team, para o modal de CRIAR (a tarefa ainda nao existe)
 # ==========================================================
-# Reportado com captura em 03/08: criando tarefa no quadro do subtime "CRM e
-# Automacao", a GESTORA nao aparecia no seletor de responsaveis. A Fatia 4
-# consertou a tarefa que JA EXISTE; o modal de criar continuou aproximando por
-# `team_id` no front, que nunca enxergou papel.
-
-
-async def test_reaches_team_inclui_manager(db) -> None:
-    """O PEDIDO de 03/08 (segunda metade)."""
-    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    with acting_as(**mgr_ctx):
-        alcancam = await _ids(db, reaches_team_id=a)
-    assert manager in alcancam
-    assert op_a in alcancam
-    assert sup_a in alcancam
-
-
-async def test_reaches_team_exclui_outro_subtime(db) -> None:
-    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    with acting_as(**mgr_ctx):
-        alcancam = await _ids(db, reaches_team_id=a)
-    assert op_b not in alcancam
-    assert solto not in alcancam
-
-
-async def test_reaches_team_na_raiz_todo_mundo(db) -> None:
-    """SUPERVISOR/OPERATOR de X enxergam X + a raiz -- nao filtra ninguem."""
-    ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    with acting_as(**mgr_ctx):
-        alcancam = await _ids(db, reaches_team_id=r)
-    assert {manager, op_a, sup_a, op_b} <= alcancam
 
 
 async def test_reaches_team_bate_com_reaches_task(db) -> None:
-    """A lista do modal de CRIAR tem que ser a MESMA da tarefa depois de criada.
-
-    Se divergirem, a pessoa designa alguem no modal e ao reabrir a tarefa a
-    lista muda -- exatamente o tipo de incoerencia que a Spec 034 existe pra
-    acabar.
-    """
+    """A lista do modal de CRIAR e a MESMA da tarefa depois de criada, no
+    subtime e na raiz. Se divergirem, a lista muda ao reabrir a tarefa."""
     ws, r, a, b, manager, op_a, sup_a, op_b, solto, forest, mgr_ctx = await _world(db)
-    task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=a)
-    with acting_as(**mgr_ctx):
-        por_time = await _ids(db, reaches_team_id=a)
-        por_task = await _ids(db, reaches_task_id=task.id)
-    assert por_time == por_task
+    for time in (a, r):
+        task = await f.make_task(db, workspace_id=ws, created_by=manager, team_id=time)
+        with acting_as(**mgr_ctx):
+            por_time = await _ids(db, reaches_team_id=time)
+            por_task = await _ids(db, reaches_task_id=task.id)
+        assert por_time == por_task, time
 
 
 async def test_os_dois_parametros_juntos_422(db) -> None:

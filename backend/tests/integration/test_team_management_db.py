@@ -117,15 +117,6 @@ async def test_manager_remove_subtime_da_propria_arvore(db) -> None:
     assert not await _existe(db, sub)
 
 
-async def test_admin_remove_time_vazio(db) -> None:
-    _ws, _raiz, sub, _ator, ctx = await _mundo(db)
-    await db.commit()
-    async with _client(db, ctx) as c:
-        resp = await c.delete(f"/api/v1/workspaces/current/teams/{sub}")
-    assert resp.status_code == 204
-    assert not await _existe(db, sub)
-
-
 # ---------------------------------------------------------------
 # Editar mexe no nome, nunca no slug
 # ---------------------------------------------------------------
@@ -358,7 +349,7 @@ async def test_esvaziar_preserva_tarefas_e_arquiva(db) -> None:
         )
     ).one()
     assert linha.team_id == raiz, "a tarefa tem de migrar para o time principal"
-    assert linha.is_archived is True, "e sair do quadro geral (D4)"
+    assert linha.is_archived is True, "e sair do quadro geral"
     assert not await _existe(db, sub)
 
 

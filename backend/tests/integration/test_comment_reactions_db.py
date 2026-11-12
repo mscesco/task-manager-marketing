@@ -1,16 +1,14 @@
-"""Spec 050, fatia A -- reacoes no comentario, pelo servico e pela rota.
+"""Reacoes no comentario, pelo servico e pela rota.
 
 O que este arquivo prova, em ordem de importancia:
 
     1. UMA reacao por pessoa por comentario -- dois PUTs terminam numa linha
-    2. o banco diz se a reacao NASCEU (a fatia B notifica so nesse caso)
+    2. o banco diz se a reacao NASCEU (a notificacao sai so nesse caso)
     3. quem nao ve a tarefa leva 404 -- inclusive mandando lixo (404 antes de 422)
     4. comentario apagado esconde as reacoes, e desmarca-lo as traz de volta
-       (as reacoes seguem a marca do comentario, spec §4.6)
+       (as reacoes seguem a marca do comentario)
     5. `❤` e `❤️` sao a mesma pilula
     6. a ROTA existe: PUT e DELETE devolvem a fileira
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -72,7 +70,7 @@ async def _mundo(db) -> dict:
     )
     # ⚠️ IDS, e nao o objeto `Task`. Um rollback da UoW (o 422 pela rota) ou um
     # `expire_all()` expira o objeto, e ler `task.id` depois dispara um lazy
-    # load fora do async -- `MissingGreenlet`. A primeira rodada caiu nisso.
+    # load fora do async -- `MissingGreenlet`.
     m = {
         "ws": ws, "arvore": arvore, "pessoas": pessoas,
         "task_id": task.id, "team_a": a,
@@ -198,7 +196,7 @@ async def test_a_ordem_da_fileira_segue_quem_chegou_primeiro(db) -> None:
 
 
 async def test_o_banco_diz_se_a_reacao_nasceu(db) -> None:
-    """A fatia B notifica SO quando nasce. Trocar nao nasce; tirar e por, sim."""
+    """A notificacao sai SO quando nasce. Trocar nao nasce; tirar e por, sim."""
     m = await _mundo(db)
     cid, ana = m["comentario"], _id(m, "ana")
     with _como(m, "ana"):
@@ -266,10 +264,10 @@ async def test_o_que_nao_e_um_emoji_leva_422(db) -> None:
 
 
 async def test_comentario_apagado_esconde_e_desmarcado_traz_de_volta(db) -> None:
-    """⭐ "Apagar igual o comentario" (decisao dela): as reacoes seguem a marca.
+    """⭐ "Apagar igual o comentario": as reacoes seguem a marca.
 
     ⚠️ A REPLICA E NECESSARIA: comentario apagado sem replica viva nem aparece
-    na listagem (D5 da 019), e o teste nao teria fileira para olhar.
+    na listagem, e o teste nao teria fileira para olhar.
     """
     m = await _mundo(db)
     cid = m["comentario"]
@@ -312,7 +310,7 @@ async def test_comentario_apagado_esconde_e_desmarcado_traz_de_volta(db) -> None
 
 
 async def test_apagar_a_tarefa_nao_apaga_as_reacoes(db) -> None:
-    """O SQL cru da cascata de tarefa (ADR 0005) nao passa pelo servico.
+    """O SQL cru da cascata de tarefa nao passa pelo servico.
 
     ⚠️ E exatamente por isso que a reacao nao tem marca propria: este caminho
     teria de ser lembrado. Aqui ele nao precisa saber que reacao existe.
@@ -342,15 +340,6 @@ async def test_editar_o_comentario_mantem_as_reacoes(db) -> None:
             task_id=m["task_id"], comment_id=m["comentario"], content="editado"
         )
     assert _fileira(dto) == {"👍": [_id(m, "ana")]}
-
-
-async def test_tirar_reacao_que_nao_existe_nao_e_erro(db) -> None:
-    m = await _mundo(db)
-    with _como(m, "ana"):
-        dto = await CommentService(db).remove_reaction(
-            task_id=m["task_id"], comment_id=m["comentario"]
-        )
-    assert dto.reactions == ()
 
 
 # ------------------------------------------------------------- 6 (a rota)

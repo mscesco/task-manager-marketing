@@ -1,4 +1,4 @@
-"""Spec 056, fatia G -- o ao vivo: LISTEN/NOTIFY de verdade, entre conexoes.
+"""O ao vivo da Base: LISTEN/NOTIFY de verdade, entre conexoes.
 
 ⚠️⚠️ ESTE ARQUIVO NAO USA A SESSAO DE TESTE (`db`) para o aviso, e e de
 proposito: a sessao de teste vive numa transacao que VOLTA no fim, e o
@@ -7,12 +7,10 @@ conexoes asyncpg proprias, uma escutando (o `LiveHub`) e outra avisando,
 exatamente como dois workers da API.
 
 O que fica provado:
-    - o aviso atravessa conexoes (o motivo de usar o Postgres, spec §10.2);
+    - o aviso atravessa conexoes (o motivo de usar o Postgres);
     - so sai no COMMIT; transacao que volta nao avisa ninguem;
     - cada base recebe so os seus; sair da fila para de receber;
     - toda acao do diario chama `publicar` (um lugar so).
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -68,6 +66,15 @@ async def _proximo(fila: asyncio.Queue, segundos: float = 3.0):
     return await asyncio.wait_for(fila.get(), timeout=segundos)
 
 
+async def _ate(condicao, segundos: float = 3.0) -> None:
+    """Espera a condicao (o callback de queda roda depois do `close`)."""
+    for _ in range(int(segundos / 0.01)):
+        if condicao():
+            return
+        await asyncio.sleep(0.01)
+    raise AssertionError("condicao nao chegou no prazo")
+
+
 async def test_o_aviso_atravessa_conexoes() -> None:
     hub = await _hub()
     base = uuid.uuid4()
@@ -104,7 +111,10 @@ async def test_cada_base_recebe_so_os_seus_e_sair_para_de_receber() -> None:
 
         hub.unsubscribe(b, fila_b)
         await _avisar(b)
-        await asyncio.sleep(0.3)
+        # O aviso de `a` sai DEPOIS do de `b`, pela mesma escuta: quando ele
+        # chega, o de `b` ja teria chegado.
+        await _avisar(a)
+        assert (await _proximo(fila_a))["base_id"] == str(a)
         assert fila_b.empty()
     finally:
         await hub.close()
@@ -118,7 +128,7 @@ async def test_a_escuta_reabre_depois_de_cair() -> None:
     try:
         await hub.subscribe(base)
         await hub._pg.close()  # simula a queda
-        await asyncio.sleep(0.1)
+        await _ate(lambda: hub._pg is None)
         fila = await hub.subscribe(base)
         await _avisar(base)
         assert (await _proximo(fila))["base_id"] == str(base)
@@ -127,8 +137,8 @@ async def test_a_escuta_reabre_depois_de_cair() -> None:
 
 
 async def test_a_conexao_caida_e_DEVOLVIDA_e_nao_so_esquecida() -> None:
-    """Auditoria de 21/10: a queda devolve a vaga do pool na hora, em vez de
-    deixar a conexao morta presa ate o coletor de lixo passar."""
+    """A queda devolve a vaga do pool na hora, em vez de deixar a conexao
+    morta presa ate o coletor de lixo passar."""
     devolvidas: list[object] = []
 
     async def conectar():
@@ -144,8 +154,7 @@ async def test_a_conexao_caida_e_DEVOLVIDA_e_nao_so_esquecida() -> None:
     try:
         await hub.subscribe(uuid.uuid4())
         await hub._pg.close()  # simula a queda
-        await asyncio.sleep(0.1)
-        assert len(devolvidas) == 1
+        await _ate(lambda: len(devolvidas) == 1)
         assert hub._pg is None
     finally:
         await hub.close()

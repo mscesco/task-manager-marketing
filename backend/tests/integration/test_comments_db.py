@@ -1,12 +1,9 @@
-"""Comentarios em tasks (Entrega 14) -- testes de integracao contra Postgres.
+"""Comentarios em tasks -- testes de integracao contra Postgres.
 
 Cobre: criar+listar em ordem; threading (replica ok, replica-de-replica e
 pai-de-outra-task -> 422); edicao so do autor; delecao por autor/moderador/
-terceiro; tombstone; visibilidade (D6: 404 fora da lente); "ve por created_by
-comenta mas nao edita" (D1); cascata no soft-delete da task (D11); isolamento
-entre workspaces.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+terceiro; tombstone; visibilidade (404 fora da lente, inclusive para o
+criador); cascata no soft-delete da task; isolamento entre workspaces.
 """
 
 from __future__ import annotations
@@ -136,7 +133,7 @@ async def test_edicao_so_autor(db) -> None:
         assert editado.content == "v2"
         assert editado.edited_at is not None
 
-    # admin NAO edita comentario alheio (D2) -> 403
+    # admin NAO edita comentario alheio -> 403
     with acting_as(workspace_id=ws, user_id=admin,
                    team_tree=_forest(r, a, b), org_role="ADMIN"):
         with pytest.raises(AuthorizationError):
@@ -209,42 +206,16 @@ async def test_tombstone_pai_apagado_com_replica(db) -> None:
     assert solto.id not in por_id
 
 
-async def test_visibilidade_fora_da_lente_404(db) -> None:
-    ws, r, a, b = await _tree(db)
-    dono = await f.make_user(db, workspace_id=ws, email="dono@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=dono, team_id=a, role="OPERATOR")
-    # task no subtime A
-    task = await f.make_task(db, workspace_id=ws, created_by=dono, team_id=a)
-
-    forasteiro = await f.make_user(db, workspace_id=ws, email="b@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=forasteiro, team_id=b, role="OPERATOR")
-
-    # forasteiro (subtime B) nao enxerga task de A -> comentar e listar dao 404
-    with acting_as(workspace_id=ws, user_id=forasteiro,
-                   memberships=(mship(b, "OPERATOR"),), team_tree=_forest(r, a, b)):
-        svc = CommentService(db)
-        with pytest.raises(EntityNotFoundError):
-            await svc.create_comment(task_id=task.id, content="intruso")
-        with pytest.raises(EntityNotFoundError):
-            await svc.list_comments(task_id=task.id, params=PAGE)
-
-
 async def test_created_by_NAO_comenta_em_task_fora_da_lente(db) -> None:
-    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
+    """Ser o criador NAO da visibilidade: fora da lente de time, nem o
+    criador enxerga, e comentar cai em 404, nao em 403.
 
-    Ate a 037 ele se chamava `test_ve_por_created_by_comenta_mas_nao_edita_a
-    _task` e afirmava a D1 em cima do furo da ADR 0013: enxergar por
-    `created_by` bastava para comentar. Com o ramo fora, o criador nao
-    enxerga -- e comentar cai em 404, nao em 403.
-
-    ⚠️ A D1 CONTINUA VALENDO E NAO FOI REVOGADA: enxergar basta para comentar,
-    e comentar nao exige editar. O que mudou foi a FONTE do enxergar, que
-    agora e so a lente de time. Este teste passa a afirmar o 404; quem afirma
-    a D1 e o teste do time na lente, logo acima.
+    Enxergar basta para comentar, e comentar nao exige editar -- isso e o
+    teste do time na lente, logo acima.
     """
     ws, r, a, b = await _tree(db)
     # operador do subtime B cria uma task pinada no subtime A (fora da lente
-    # dele) -> depois da E1 ele NAO ve, entao nem comenta.
+    # dele) -> ele NAO ve, entao nem comenta.
     op_b = await f.make_user(db, workspace_id=ws)
     await f.add_member(db, workspace_id=ws, user_id=op_b, team_id=b, role="OPERATOR")
     task = await f.make_task(db, workspace_id=ws, created_by=op_b, team_id=a)
@@ -274,7 +245,7 @@ async def test_cascata_soft_delete_apaga_comentarios(db) -> None:
         # deleta a task raiz (cascata: filha + comentarios das duas)
         await TaskService(db).soft_delete(task_id=pai.id)
 
-    # comentarios das tasks da subtree ficaram com deleted_at setado (D11)
+    # comentarios das tasks da subtree ficaram com deleted_at setado
     row_pai = await db.get(Comment, c_pai.id)
     row_filha = await db.get(Comment, c_filha.id)
     assert row_pai.deleted_at is not None

@@ -1,8 +1,9 @@
-"""@menções fiadas no create_comment (Spec 019, B2).
+"""@menções no create_comment.
 
 Cobre: mencao notifica (TASK_MENTIONED) e SUPRIME o TASK_COMMENTED pra mesma
-pessoa (D3); auto-mencao nao emite; id invalido e descartado sem quebrar o
-comentario; mencionado nao-responsavel recebe so a mencao.
+pessoa; mencao repetida gera um aviso so; auto-mencao nao emite; id invalido e
+descartado sem quebrar o comentario; mencionado nao-responsavel recebe so a
+mencao; quem nao ve a task nao e avisado.
 """
 
 from __future__ import annotations
@@ -85,6 +86,20 @@ async def test_mencao_notifica_e_suprime_comentario(db) -> None:
         assert len(await _by_type(db, outro, "TASK_COMMENTED")) == 1
 
 
+async def test_mencao_repetida_gera_um_aviso(db) -> None:
+    ws, r, comentador, task, ctx = await _world(db)
+    u = await f.make_user(db, workspace_id=ws)
+    await f.add_member(db, workspace_id=ws, user_id=u, team_id=r, role="OPERATOR")
+    with acting_as(**ctx):
+        await CommentService(db).create_comment(
+            task_id=task.id, content=f"@[U]({u}) e de novo @[U]({u})"
+        )
+        await db.flush()
+        (aviso,) = await _by_type(db, u, "TASK_MENTIONED")
+    assert aviso.actor_id == comentador
+    assert aviso.payload["task_title"] == "Brief"
+
+
 async def test_self_mencao_nao_emite(db) -> None:
     ws, r, comentador, task, ctx = await _world(db)
     with acting_as(**ctx):
@@ -142,10 +157,8 @@ async def test_mencionado_nao_responsavel_recebe_so_mencao(db) -> None:
 async def test_mencao_fora_de_escopo_nao_notifica(db) -> None:
     """Mencionar alguem que NAO enxerga a task nao gera TASK_MENTIONED.
 
-    Sem o filtro de visibilidade, o mencionado fora de escopo recebia uma
-    notificacao com deep-link morto (404) e o titulo da task vazava no payload
-    pra fora do escopo. (achado da auditoria pre-lancamento.) Aqui: quem ve a
-    task recebe a mencao; quem nao ve NAO recebe.
+    Sem o filtro de visibilidade, o aviso teria deep-link morto (404) e o
+    titulo da task vazaria no payload para fora do escopo.
     """
     ws = await f.make_workspace(db)
     r = await f.make_team(db, workspace_id=ws)

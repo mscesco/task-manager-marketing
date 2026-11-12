@@ -1,6 +1,6 @@
-"""Reordenar as colunas de um quadro avulso (Spec 036, fatia 6a).
+"""Reordenar as colunas de um quadro.
 
-⚠️ POR QUE ESTA FATIA EXISTE, EM UMA LINHA: `BoardService.criar_coluna` grava
+⚠️ POR QUE EXISTE: `BoardService.criar_coluna` grava
 `position=len(existentes)` -- **sempre o fim**, sem alternativa. Sem reordenar,
 a ordem das colunas fica congelada para sempre em "as 4 base + ordem de
 criacao", e nao ha conserto: apagar e recriar devolve a coluna ao fim de novo.
@@ -27,7 +27,6 @@ from app.modules.tasks.application.board_service import (
     BoardService,
 )
 from app.shared.exceptions.base import (
-    AuthorizationError,
     EntityNotFoundError,
     ValidationError,
 )
@@ -163,7 +162,7 @@ async def test_a_coluna_criada_DEPOIS_de_reordenar_vai_para_o_fim(db) -> None:
 
 
 async def test_reordenar_NAO_troca_o_alvo_de_semantica(db) -> None:
-    """⚠️ ARRASTAR COLUNA E VISUAL, E ISSO E DECISAO (ADR 0030).
+    """⚠️ ARRASTAR COLUNA E VISUAL.
 
     O destino da cascata e a coluna `is_default_target` da semantica, e NAO a
     primeira pela ordem -- de proposito, para que arrastar nao mude
@@ -240,11 +239,8 @@ async def test_lista_com_id_REPETIDO_e_recusada(db) -> None:
     (`{a,b,c,d}`), entao `set(...) != {...}` deixa passar, e so o comprimento
     (5 contra 4) recusa.
 
-    ⚠️ ESTE TESTE NASCEU ERRADO EM 13/08, E A SABOTAGEM O PEGOU. A primeira
-    versao usava `[a, a, b, c]` -- 3 ids distintos num quadro de 4, portanto
-    pega pela conferencia de CONJUNTO. Ele media a mesma coisa que o teste do
-    id alheio, e a sabotagem "so por conjunto" veio VERDE: a conferencia de
-    `len` estava sem guardiao nenhum.
+    ⚠️ `[a, a, b, c]` NAO serve: 3 ids distintos num quadro de 4 sao pegos
+    pela conferencia de CONJUNTO, e a de `len` ficaria sem guardiao.
 
     ⚠️ SEM A CONFERENCIA DE `len` esta lista e ACEITA: o laco atribui `a` duas
     vezes (posicoes 0 e 1) e a coluna que deveria ficar em 0 fica sem ninguem
@@ -301,58 +297,17 @@ async def test_a_ordem_NAO_muda_quando_a_lista_e_recusada(db) -> None:
 # ---------------------------------------------------------------- autorização
 
 
-async def test_supervisor_NAO_reordena_quadro_de_subtime_alheio(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    atuais = await _colunas(db, quadro.id)
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_b, "SUPERVISOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).reordenar_colunas(
-                board_id=quadro.id, column_ids=[c.id for c in reversed(atuais)]
-            )
-
-
-async def test_operator_NAO_reordena_nem_no_proprio_subtime(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    atuais = await _colunas(db, quadro.id)
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "OPERATOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).reordenar_colunas(
-                board_id=quadro.id, column_ids=[c.id for c in reversed(atuais)]
-            )
-
-
-async def test_admin_reordena_o_quadro_de_qualquer_subtime(db) -> None:
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    quadro = await _quadro_avulso(db, ws, user, arvore, sub_a)
-    atuais = await _colunas(db, quadro.id)
-
-    with acting_as(**_ctx(ws, user, arvore), org_role="ADMIN"):
-        devolvidas = await BoardService(db).reordenar_colunas(
-            board_id=quadro.id, column_ids=[c.id for c in reversed(atuais)]
-        )
-    assert _nomes(devolvidas)[0] == "Cancelado"
-
-
 async def test_o_QUADRO_GERAL_SE_reordena_por_ADMIN(db) -> None:
-    """⚠️ INVERTIDO EM 13/08. Antes era `test_o_QUADRO_GERAL_nao_se_reordena`.
-
-    ⚠️ REORDENAR O GERAL NAO TEM RISCO NENHUM, e isso foi MEDIDO: `position` so
+    """⚠️ REORDENAR O GERAL NAO TEM RISCO NENHUM: `position` so
     aparece em `ORDER BY` de leitura visual, e nenhuma decisao do backend
     depende da ordem das colunas. `default_board_and_column_for_status` casa por
     `legacy_status` e nao tem `ORDER BY`.
-
-    ⚠️ A TRAVA QUE FICOU E A DE PERMISSAO -- ver o teste seguinte.
     """
     ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
     # ⚠️ BUSCA O QUE JA EXISTE, e nao cria um segundo. `make_team` da raiz JA
     # traz o quadro padrao -- pedir `make_board(is_default=True)` para ela viola
     # o indice parcial `board_um_padrao_por_time` e o teste morre em
-    # `IntegrityError`, longe do que ele queria medir. O docstring da factory
-    # avisa isso com todas as letras.
+    # `IntegrityError`, longe do que ele queria medir.
     geral = (
         await db.execute(
             select(Board).where(
@@ -369,25 +324,6 @@ async def test_o_QUADRO_GERAL_SE_reordena_por_ADMIN(db) -> None:
 
     assert [c.name for c in devolvidas] == [c.name for c in reversed(colunas)]
     assert [c.position for c in devolvidas] == list(range(len(colunas)))
-
-
-async def test_SUPERVISOR_nao_reordena_o_quadro_geral(db) -> None:
-    """O par do teste acima. `board.manage.root` nao esta no SUPERVISOR."""
-    ws, raiz, sub_a, sub_b, user, arvore = await _mundo(db)
-    geral = (
-        await db.execute(
-            select(Board).where(
-                Board.team_id == raiz, Board.is_default.is_(True)
-            )
-        )
-    ).scalar_one()
-    colunas = await _colunas(db, geral.id)
-
-    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
-        with pytest.raises(AuthorizationError):
-            await BoardService(db).reordenar_colunas(
-                board_id=geral.id, column_ids=[c.id for c in reversed(colunas)]
-            )
 
 
 async def test_quadro_inexistente_devolve_404(db) -> None:

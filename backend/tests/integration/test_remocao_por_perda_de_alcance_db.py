@@ -1,41 +1,15 @@
-"""Spec 037, fatia 4 -- a remocao (E3) e a notificacao (E9), pela ROTA.
+"""Remocao de relacoes por perda de alcance, e a notificacao, pela rota.
 
-A REGRA: quando a mudanca de vinculo e PERMITIDA, a pessoa e removida como
-responsavel e como observadora das tarefas que ela deixou de alcancar, e
-recebe **uma** notificacao com a contagem e o(s) subtime(s).
+Quando a mudanca de vinculo e permitida, a pessoa sai como responsavel e como
+observadora das tarefas que deixou de alcancar, e recebe uma notificacao com a
+contagem e os subtimes.
 
-⚠️ ESTA E A PRIMEIRA ESCRITA EM DADO DE TAREFA DISPARADA POR MUDANCA DE
-VINCULO. Errar aqui nao da 500 -- da tarefa sem dono, em silencio.
+Os testes da remocao conferem o banco, nao a resposta: a notificacao pode
+anunciar a contagem certa com as designacoes ainda la.
 
-⚠️ POR ISSO TODO TESTE AQUI CONFERE O BANCO, NAO A RESPOSTA. Precedente
-literal: a sabotagem da cascata de 05/08, em que `cascade_count` respondia `2`
-enquanto o produto arquivava ao contrario. **Contagem certa com estado errado.**
-
-⚠️ O CONJUNTO DA REMOCAO E MAIOR QUE O DO BLOQUEIO, e e a fatia inteira:
-    - bloqueio (E4, fatia 3): so tarefa NAO-TERMINAL de responsavel UNICA;
-    - remocao (E3, esta): tarefa terminal tambem, tarefa com colega tambem, e
-      OBSERVADOR tambem.
-`test_terminal_e_observador_tambem_saem` e quem prova a diferenca.
-
-SABOTAGENS DESTA FATIA (executadas em 06/08, resultado no handoff):
-
-  S7 -- reverter a REMOCAO (o bloco `apagar_relacoes` inteiro em
-        `_remover_relacoes_perdidas`), MANTENDO a notificacao.
-        ⚠️ Previ 1 teste caindo; cairam **2**:
-        `test_movimentacao_permitida_remove_a_designacao` e
-        `test_terminal_e_observador_tambem_saem`. Os dois conferem o banco --
-        e prever qual cai e facil, prever quantos exige contar quem olha o
-        estado em vez da resposta.
-        ⚠️ O QUE ELA PROVA: `test_a_contagem_da_notificacao_bate` e
-        `test_uma_notificacao_e_nao_N` ficaram **VERDES** com o dado errado. A
-        notificacao anuncia "voce deixou de ser responsavel por 3 tarefas" e as
-        3 continuam designadas. Contagem certa, estado errado -- exatamente o
-        defeito de 05/08 do `cascade_count`.
-
-  S8 -- o espelho: reverter a NOTIFICACAO, mantendo a remocao.
-        Caem os dois testes de notificacao e **nao** caem os de banco.
-        Junto com a S7, prova que as duas metades sao independentes: nenhuma
-        das quatro afirmacoes esta se apoiando na outra.
+O conjunto da remocao e maior que o do bloqueio: o bloqueio olha so tarefa
+nao terminal de responsavel unico; a remocao leva tambem terminal, tarefa com
+colega e observador (`test_terminal_e_observador_tambem_saem`).
 """
 
 from __future__ import annotations
@@ -45,7 +19,7 @@ from collections.abc import AsyncIterator
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import func, select, text
+from sqlalchemy import select, text
 
 from app.core.deps import get_db_session, get_uow
 from app.core.tenant import TenantContext, set_tenant
@@ -136,15 +110,7 @@ async def _tarefa(db, m, *, time, titulo, status=TaskStatus.BACKLOG,
 
 
 async def _mover(db, m):
-    """Tira a `gi` do Design, deixando-a no SEO -- a mesma lente de antes.
-
-    ⚠️ ERA `POST /members/{id}/move-subteam` (Design -> SEO), rota removida em
-    17/09/2026. A remocao (E3) e a notificacao (E9) moram em
-    `_remover_relacoes_perdidas`, que continua sendo chamada por
-    `remove_member_from_team` e `change_member_role` -- entao a cobertura foi
-    portada para a REMOCAO, que chega ao mesmo estado final: vinculo no SEO,
-    sem vinculo no Design. O vinculo no SEO entra pela factory, antes.
-    """
+    """Tira a `gi` do Design pela rota, deixando-a no SEO (vinculo da factory)."""
     await f.add_member(
         db, workspace_id=m["ws"], user_id=m["gi"], team_id=m["seo"],
         role="OPERATOR",
@@ -194,11 +160,8 @@ async def _notificacoes(db, user_id) -> list[Notification]:
 
 
 async def test_movimentacao_permitida_remove_a_designacao(db) -> None:
-    """⚠️ O TESTE DA SABOTAGEM. Confere o BANCO.
-
-    A `gi` divide a tarefa com a `colega`, entao a E4 nao barra (nao ficaria
-    orfa). A E3 remove a `gi` e deixa a `colega`.
-    """
+    """A `gi` divide a tarefa com a `colega`, entao o bloqueio nao age (a
+    tarefa nao ficaria orfa); a remocao tira a `gi` e deixa a `colega`."""
     m = await _mundo(db)
     t = await _tarefa(
         db, m, time=m["design"], titulo="Arte a quatro maos",
@@ -212,14 +175,9 @@ async def test_movimentacao_permitida_remove_a_designacao(db) -> None:
 
 
 async def test_terminal_e_observador_tambem_saem(db) -> None:
-    """⚠️ A DIFERENCA ENTRE E3 E E4, no mesmo teste.
-
-    Duas tarefas que a E4 NUNCA barraria:
-      - uma TERMINAL de que a `gi` e a unica responsavel;
-      - uma em que ela e so OBSERVADORA.
-    A E3 leva as duas. Se a remocao reusar o predicado do bloqueio em vez da
-    consulta propria, este teste cai e os outros nao.
-    """
+    """Duas tarefas que o bloqueio nunca barraria (terminal de responsavel
+    unico; so observadora): a remocao leva as duas. Cai se a remocao reusar o
+    predicado do bloqueio."""
     m = await _mundo(db)
     terminal = await _tarefa(
         db, m, time=m["design"], titulo="Ja entregue",
@@ -233,14 +191,12 @@ async def test_terminal_e_observador_tambem_saem(db) -> None:
     r = await _mover(db, m)
     assert r.status_code == 204, r.text
 
-    # ⚠️ Terminal PODE ficar sem responsavel: trabalho encerrado nao precisa de
-    # dono, e e por isso que a E4 nao a barrou. A ADR 0031 fala da CRIACAO.
+    # Terminal pode ficar sem responsavel; a obrigatoriedade vale na criacao.
     assert await _responsaveis(db, terminal.id) == set()
     assert await _observadores(db, observada.id) == set()
     assert await _responsaveis(db, observada.id) == {m["colega"]}
 
-    # Spec 053, fatia B (D13): sair como seguidor entra no historico, inclusive
-    # quando e a mudanca de vinculo que tira.
+    # Sair como seguidor entra no historico, tambem quando quem tira e o vinculo.
     linhas = (
         await db.execute(
             text(
@@ -272,15 +228,14 @@ async def test_raiz_e_subtime_mantido_nao_mudam(db) -> None:
     assert await _responsaveis(db, no_destino.id) == {m["gi"]}
 
 
-# ------------------------------------------------------ 2. a notificacao (E9)
+# ------------------------------------------------------ 2. a notificacao
 
 
 async def test_a_contagem_da_notificacao_bate(db) -> None:
-    """Tres tarefas perdidas, `quantidade == 3`, e o nome do subtime junto.
+    """Tres tarefas perdidas: uma notificacao so, `quantidade == 3` e o subtime.
 
-    ⚠️ Este teste NAO cai na sabotagem da remocao, e isso e de proposito: ele
-    afirma a contagem, e a contagem continua certa com o estado errado. E o par
-    dele (`test_movimentacao_permitida_remove_a_designacao`) que olha o banco.
+    Afirma a contagem, nao a remocao; quem olha o banco e
+    `test_movimentacao_permitida_remove_a_designacao`.
     """
     m = await _mundo(db)
     for i in range(3):
@@ -296,39 +251,8 @@ async def test_a_contagem_da_notificacao_bate(db) -> None:
     assert len(notifs) == 1
     assert notifs[0].payload["quantidade"] == 3
     assert notifs[0].payload["subtimes"] == ["design"]
-    # ⚠️ Sem `task_id`: a notificacao fala de um CONJUNTO, e a pessoa acabou de
-    # perder o alcance -- um link levaria a um 404.
+    # Sem `task_id`: fala de um conjunto, e um link levaria a um 404.
     assert notifs[0].task_id is None
-
-
-async def test_uma_notificacao_e_nao_N(db) -> None:
-    """⚠️ E9 literal: UMA por movimentacao, nunca uma por tarefa.
-
-    Medido em 06/08: duas pessoas carregam 30 das 33 tarefas que travariam.
-    Fan-out por tarefa entregaria 18 avisos no mesmo segundo -- isso nao e
-    aviso, e ruido que ensina a ignorar o sino.
-    """
-    m = await _mundo(db)
-    for i in range(5):
-        await _tarefa(
-            db, m, time=m["design"], titulo=f"Tarefa {i}",
-            responsaveis=(m["gi"], m["colega"]),
-        )
-
-    r = await _mover(db, m)
-    assert r.status_code == 204, r.text
-
-    total = (
-        await db.execute(
-            select(func.count())
-            .select_from(Notification)
-            .where(
-                Notification.recipient_id == m["gi"],
-                Notification.type == "ACCESS_LOST",
-            )
-        )
-    ).scalar_one()
-    assert total == 1
 
 
 async def test_sem_perda_nao_notifica(db) -> None:

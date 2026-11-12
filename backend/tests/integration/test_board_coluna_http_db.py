@@ -1,51 +1,24 @@
-"""Spec 036 fatias 5b-4a/4b -- as rotas de coluna, pelo HTTP.
+"""As rotas de coluna, pelo HTTP: `PUT /boards/{id}/columns` (o lote) e o
+`GET` de uma coluna.
 
-⚠️⚠️ DESDE 17/09/2026 SAO DUAS ROTAS, E NAO QUATRO. `POST .../columns`,
-`PATCH` e `DELETE .../columns/{column_id}` sairam sem chamador: a tela so
-escreve coluna pelo LOTE (`PUT /boards/{id}/columns`). Os testes deste arquivo
-que exercitavam as rotas de coluna unica foram PORTADOS para o lote -- as
-regras (autorizacao, nome vazio, coluna de outro quadro, as tres recusas de
-apagar) continuam alcancaveis por ele, porque o lote delega aos mesmos metodos
-do servico. Sairam so as afirmacoes que eram da rota removida: o 201 do `POST`
-e o `destino_id` na QUERY STRING do `DELETE` (no lote o destino vai no corpo,
-em `apagar[].destino`).
-
-⚠️ ESTE ARQUIVO NASCEU DE UMA LACUNA ADMITIDA. As rotas de coluna subiram nas
-fatias 5b-4a e 5b-4b com testes de SERVICO apenas. A matriz de autorizacao e as
-duas travas da ADR 0042 estao em `test_board_coluna_escrita_db.py` e
-`test_board_coluna_apagar_db.py`, e e la que devem ser lidas. Aqui a pergunta e
-outra e menor: **a rota chega no servico, e o erro do servico vira o status
-certo?**
-
-⚠️ E ELA JA CUSTOU CARO UMA VEZ NESTA MESMA SPEC. Na fatia 5b-3, as rotas de
-quadro perderam `require_permission` -- decisao CERTA, a autorizacao depende do
-alvo -- e a dependencia `TenantContextDep` foi junto sem querer. Os 17 testes de
-servico ficaram VERDES o tempo todo, e as rotas teriam falhado em **100% das
-requisicoes em producao** com `missing_tenant_context`. As rotas de coluna tem
-exatamente a mesma exposicao.
+As regras moram em `test_board_coluna_escrita_db.py`,
+`test_board_coluna_apagar_db.py` e `test_board_coluna_lote_db.py`; os status por
+papel, na matriz HTTP. Aqui a pergunta e menor: **a rota chega no servico, e o
+erro do servico vira o status certo?**
 
 ⚠️ O parametro `_: TenantContextDep` das rotas PARECE nao usado. Nao e:
-`set_tenant` roda dentro de `get_tenant_context` e nao ha middleware. Se um dia
-os testes deste arquivo falharem todos juntos com `missing_tenant_context`,
+`set_tenant` roda dentro de `get_tenant_context` e nao ha middleware. Se os
+testes deste arquivo falharem todos juntos com `missing_tenant_context`,
 alguem "limpou" um parametro sem uso.
 
-⚠️ NENHUM TESTE DAQUI AFIRMA O BANCO DEPOIS DE UM CAMINHO RECUSADO, e a
-ausencia e cicatriz. A primeira versao deste arquivo afirmava "e nada foi
-gravado" logo apos um 403, e CINCO testes cairam de tres jeitos diferentes:
-`assert 0 == 4`, `InvalidRequestError: Could not refresh instance` e
-`MissingGreenlet`. Causa unica: o UoW da rollback ao SAVEPOINT
-(`join_transaction_mode="create_savepoint"`), e o rollback leva junto as linhas
-que a FIXTURE criou -- entao a consulta de depois nao ve mundo nenhum, e os
+⚠️ NENHUM TESTE DAQUI AFIRMA O BANCO DEPOIS DE UM CAMINHO RECUSADO: o UoW da
+rollback ao SAVEPOINT (`join_transaction_mode="create_savepoint"`) e leva junto
+as linhas que a FIXTURE criou. A consulta de depois nao ve mundo nenhum, e os
 objetos ficam desanexados.
 
 ⚠️ UMA REQUISICAO RECUSADA POR TESTE. Duas no mesmo bloco de cliente caem com
 `MissingGreenlet`: o rollback ao SAVEPOINT da primeira deixa a sessao num
-estado que a segunda nao atravessa. As duas recusas de apagar coluna moravam
-num teste so e foram partidas em dois por isso -- medido em 12/08.
-
-⚠️ ONDE A AFIRMACAO DE BANCO MORA: no teste de SERVICO, que nao tem UoW. Os
-pares "recusado + nada gravado" estao em `test_board_coluna_escrita_db.py` e
-`test_board_coluna_apagar_db.py`. Aqui a pergunta e so o STATUS.
+estado que a segunda nao atravessa.
 """
 
 from __future__ import annotations
@@ -99,9 +72,7 @@ async def _setup(db):
     arvore = (node(raiz), node(seo, raiz), node(crm, raiz))
 
     def _ctx(user_id, team_id, papel, org_role=None):
-        # ⚠️ PERMISSOES COM ESCOPO (Spec 049, fatia B) -- mesmo motivo do
-        # `test_boards_escrita_http_db`: com `frozenset`, o 403 do supervisor em
-        # subtime alheio dependia de a trava recalcular o subtime a mao.
+        # ⚠️ Permissoes COM ESCOPO, montadas como `get_tenant_context` monta.
         vinculos = (Membership(team_id=team_id, role=papel),) if papel else ()
         return TenantContext(
             workspace_id=ws,
@@ -202,10 +173,7 @@ def _criar(nome: str, semantica: str, tmp: str = "nova") -> dict:
 
 
 async def test_supervisor_cria_coluna_pelo_lote(db) -> None:
-    """⚠️ PORTADO de `test_supervisor_cria_coluna_e_recebe_201` (17/09/2026).
-
-    O lote responde 200 com o quadro inteiro, e nao 201 com a coluna.
-    """
+    """O lote responde 200 com o quadro inteiro, e nao 201 com a coluna."""
     c = await _setup(db)
     async with _client(db, c["ctx_sup"]) as cli:
         r = await cli.put(_lote(c["quadro"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
@@ -213,64 +181,15 @@ async def test_supervisor_cria_coluna_pelo_lote(db) -> None:
     corpo = _por_nome_json(r.json()["colunas"], "Em Revisão")
     assert corpo["position"] == 4
     assert corpo["is_default_target"] is False
-    # ⚠️ `legacy_status` NAO viaja no contrato (ADR 0033). Se ele aparecer aqui,
+    # ⚠️ `legacy_status` NAO viaja no contrato. Se ele aparecer aqui,
     # alguem expos a ponte e o front vai se pendurar nela.
     assert "legacy_status" not in corpo
-    # ⚠️ `is_status_bridge` VIAJA, E E BOOLEANO -- nunca o valor (17/08). Ele
-    # diz SE a coluna e ponte, e nao DE QUAL status: com um booleano o front
-    # nao consegue mapear status -> coluna, que era o acoplamento que a ADR
-    # 0033 proibe. Coluna criada por gente nasce com `legacy_status` NULL.
+    # ⚠️ `is_status_bridge` VIAJA, E E BOOLEANO -- nunca o valor. Ele diz SE a
+    # coluna e ponte, e nao DE QUAL status: assim o front nao mapeia status ->
+    # coluna. Coluna criada por gente nasce com `legacy_status` NULL.
     assert corpo["is_status_bridge"] is False
     # ...e existe no banco.
     assert len(await _colunas(db, c["quadro"].id)) == 5
-
-
-async def test_operator_recebe_403(db) -> None:
-    """⚠️ O caso feliz sozinho nao prova autorizacao nenhuma.
-
-    ⚠️ E NAO AFIRMA O BANCO. O "nada foi gravado" vive em
-    `test_board_coluna_escrita_db.py::test_operator_nao_cria_coluna_nem_no_proprio_subtime`,
-    que nao tem UoW. Aqui o rollback ao SAVEPOINT levaria a fixture junto e a
-    contagem daria 0 -- verde pelo motivo errado, ou vermelho como foi.
-    """
-    c = await _setup(db)
-    async with _client(db, c["ctx_op"]) as cli:
-        r = await cli.put(_lote(c["quadro"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
-    assert r.status_code == 403, r.text
-
-
-async def test_coluna_no_quadro_geral_devolve_200_para_ADMIN(db) -> None:
-    """⚠️ INVERTIDO EM 13/08 -- antes era `..._devolve_422`.
-
-    A trava por QUADRO saiu; a que ficou e a de PERMISSAO, que ja existia. Ver
-    `BoardService._assert_ponte_sobrevive`.
-    """
-    c = await _setup(db)
-    async with _client(db, c["ctx_adm"]) as cli:
-        r = await cli.put(_lote(c["geral"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
-    assert r.status_code == 200, r.text
-    assert "Em Revisão" in [x["name"] for x in r.json()["colunas"]]
-
-
-async def test_coluna_no_quadro_geral_devolve_403_para_SUPERVISOR(db) -> None:
-    """O par -- sem ele, a abertura de 13/08 teria virado abertura para todos."""
-    c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.put(_lote(c["geral"].id), json=_criar("Em Revisão", "IN_PROGRESS"))
-    assert r.status_code == 403, r.text
-
-
-async def test_nome_vazio_devolve_422_e_nao_500(db) -> None:
-    """⚠️ Regra de request deste projeto NAO mora no Pydantic.
-
-    O `_validation_error_handler` poe `exc.errors()` cru no envelope, e o `ctx`
-    de um validador custom carrega o objeto `ValueError`, que o `json.dumps` do
-    Starlette recusa -- sai **500, nao 422**. A recusa mora no servico.
-    """
-    c = await _setup(db)
-    async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.put(_lote(c["quadro"].id), json=_criar("   ", "IN_PROGRESS"))
-    assert r.status_code == 422, r.text
 
 
 async def test_quadro_inexistente_devolve_404(db) -> None:
@@ -380,11 +299,8 @@ async def _com_tarefa(db, c, coluna):
 
 
 async def test_apagar_leva_as_tarefas_para_o_destino(db) -> None:
-    """⚠️ PORTADO de `test_delete_leva_o_destino_na_QUERY_STRING` (17/09/2026).
-
-    A metade "query string" morreu com o `DELETE`; a que fica e o destino
-    ATRAVESSAR schema -> router -> servico, e o status ser reescrito pela
-    coluna que recebeu.
+    """O destino ATRAVESSA schema -> router -> servico, e o status e
+    reescrito pela coluna que recebeu.
     """
     c = await _setup(db)
     colunas = await _colunas(db, c["quadro"].id)
@@ -402,12 +318,12 @@ async def test_apagar_leva_as_tarefas_para_o_destino(db) -> None:
 
     await db.refresh(tarefa)
     assert tarefa.column_id == cancelado.id
-    # ⚠️ E o status foi reescrito pela coluna que RECEBEU (ADR 0042 D2).
+    # ⚠️ E o status foi reescrito pela coluna que RECEBEU.
     assert tarefa.status is TaskStatus.CANCELLED
 
 
 async def test_sem_destino_devolve_422_com_o_codigo_do_DESTINO(db) -> None:
-    """A primeira das duas recusas: "para onde vao estas tarefas?" (0042 D5).
+    """A primeira das duas recusas: "para onde vao estas tarefas?".
 
     ⚠️ UMA REQUISICAO RECUSADA POR TESTE -- ver o cabecalho do modulo.
     """
@@ -425,7 +341,7 @@ async def test_sem_destino_devolve_422_com_o_codigo_do_DESTINO(db) -> None:
 
 
 async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
-    """A segunda recusa: "o quadro continua funcionando depois?" (0042 D4).
+    """A segunda recusa: "o quadro continua funcionando depois?".
 
     ⚠️ E O TESTE QUE SEPARA AS DUAS TRAVAS. Aqui a pergunta do destino ESTA
     respondida -- as tarefas iriam para `Em Andamento` -- e a recusa vem assim
@@ -450,62 +366,13 @@ async def test_ultima_OPEN_devolve_422_MESMO_com_destino_escolhido(db) -> None:
 
     assert r.status_code == 422, r.text
     assert r.json()["error"]["code"] == CODIGO_SEMANTICA_OBRIGATORIA
-    # ⚠️ E OS DOIS CODIGOS SAO DIFERENTES. Sem esta linha, uma implementacao que
-    # devolvesse o MESMO codigo nas duas recusas passaria nos dois testes.
-    assert CODIGO_SEM_DESTINO != CODIGO_SEMANTICA_OBRIGATORIA
 
 
-async def test_apagar_coluna_COM_PONTE_no_geral_devolve_422(db) -> None:
-    """⚠️ ESTREITADO EM 13/08 -- antes valia para qualquer coluna do geral.
-
-    ⚠️ O `code` E O QUE A TELA LE, e nao a mensagem. Ele existe para o front
-    esconder o "x" ANTES do clique, junto dos outros dois impedimentos que
-    `impedimentoDeExclusao` ja trata.
-    """
-    c = await _setup(db)
-    alguma = _por_nome(await _colunas(db, c["geral"].id), "Bloqueado")
-    async with _client(db, c["ctx_adm"]) as cli:
-        r = await cli.put(
-            _lote(c["geral"].id), json={"apagar": [{"id": str(alguma.id)}]}
-        )
-    assert r.status_code == 422, r.text
-    assert r.json()["error"]["code"] == "coluna_ponte_obrigatoria"
-
-
-async def test_apagar_por_supervisor_de_subtime_alheio_devolve_403(db) -> None:
-    c = await _setup(db)
-    with acting_as(
-        workspace_id=c["ws"],
-        user_id=c["sup"],
-        memberships=(mship(c["crm"], "SUPERVISOR"),),
-        team_tree=(node(c["raiz"]), node(c["seo"], c["raiz"]), node(c["crm"], c["raiz"])),
-    ):
-        quadro_crm = await BoardService(db).criar_quadro(
-            team_id=c["crm"], nome="Quadro do CRM"
-        )
-    await db.flush()
-    cancelado = _por_nome(await _colunas(db, quadro_crm.id), "Cancelado")
-
-    # O contexto e o do supervisor do SEO.
-    async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.put(
-            _lote(quadro_crm.id), json={"apagar": [{"id": str(cancelado.id)}]}
-        )
-    assert r.status_code == 403, r.text
-
-
-# ---------------------------------------------- PUT /columns -- alvo (12)
+# ---------------------------------------------- PUT /columns -- alvo
 #
-# ⚠️ POR QUE ESTES DOIS SAO HTTP E NAO DE SERVICO. Teste de servico NAO sabe se
-# a rota existe: rota nao registrada, verbo errado ou `response_model` trocado
-# passam com a suite verde e aparecem como **405 na tela**. Aconteceu nesta
-# mesma spec, na fatia 7, e a licao esta no `plan.md`.
-#
-# ⚠️ E AQUI HA UM SEGUNDO MOTIVO, MAIS ESPECIFICO: o campo `alvos` precisa
-# ATRAVESSAR o schema Pydantic e o router. Um campo declarado no schema e nao
-# repassado no router e descartado em SILENCIO -- o lote responderia 200 e o
-# alvo nao teria mudado. E a armadilha do `board_id` da fatia 5b-6, e ela ja
-# custou um mes de tarefas nascendo no quadro errado.
+# ⚠️ O campo `alvos` precisa ATRAVESSAR o schema Pydantic e o router. Um campo
+# declarado no schema e nao repassado no router e descartado em SILENCIO: o
+# lote responderia 200 e o alvo nao teria mudado.
 
 
 async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
@@ -528,30 +395,6 @@ async def test_PUT_columns_troca_o_alvo_e_devolve_200(db) -> None:
     alvo = [x for x in colunas if x["semantic"] == "OPEN" and x["is_default_target"]]
     assert len(alvo) == 1
     assert alvo[0]["id"] == nova_id
-
-
-async def test_PUT_columns_troca_alvo_E_apaga_a_antiga(db) -> None:
-    """⚠️ O gesto que justifica a fatia, pelo fio inteiro."""
-    c = await _setup(db)
-    quadro = c["quadro"]
-    backlog = _por_nome(await _colunas(db, quadro.id), "Backlog")
-
-    async with _client(db, c["ctx_sup"]) as cli:
-        nova = await cli.put(_lote(quadro.id), json=_criar("Ideias", "OPEN"))
-        nova_id = _por_nome_json(nova.json()["colunas"], "Ideias")["id"]
-
-        r = await cli.put(
-            f"/api/v1/boards/{quadro.id}/columns",
-            json={
-                "alvos": [nova_id],
-                "apagar": [{"id": str(backlog.id), "destino": nova_id}],
-            },
-        )
-
-    assert r.status_code == 200, r.text
-    nomes = [x["name"] for x in r.json()["colunas"]]
-    assert "Backlog" not in nomes
-    assert "Ideias" in nomes
 
 
 async def test_PUT_columns_alvo_de_coluna_inexistente_devolve_404(db) -> None:

@@ -1,8 +1,8 @@
-"""Entrega 10 -- a listagem (GET /tasks) traz assignee_ids em lote.
+"""`assignee_ids_for_tasks`: os responsaveis de uma pagina em lote.
 
-Garante que o selo do quadro tem de onde sair: cada item da pagina vem com
-seus responsaveis, sem precisar de 1 chamada por card. Cobre task com 0, 1 e
-N responsaveis na mesma pagina, e que o agrupamento nao vaza entre tasks.
+E de onde GET /tasks e /me/assignments tiram o `assignee_ids` de cada item,
+sem 1 chamada por card. Cobre task com 0, 1 e N responsaveis na mesma pagina,
+e que o agrupamento nao vaza entre tasks. (A rota em si nao e testada aqui.)
 
 Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
@@ -54,9 +54,8 @@ async def test_lote_assignees_por_task(db) -> None:
         svc = TaskService(db)
         collab = CollaborationService(db)
 
-        # ⚠️ t0 tem de terminar com ZERO responsaveis, e desde 05/08 nao da
-        # pra CRIAR assim (ADR 0031). O estado continua existindo -- sao as
-        # 37 tarefas legadas medidas em producao --, entao ele e montado como
+        # ⚠️ t0 tem de terminar com ZERO responsaveis, e nao da para CRIAR
+        # assim. O estado existe em tarefas legadas, entao ele e montado como
         # elas: por SQL, por fora dos guards. Trocar isto por "t0 com
         # responsavel" mataria o objeto do teste, que e justamente a task
         # aparecer no mapa MESMO sem ninguem.

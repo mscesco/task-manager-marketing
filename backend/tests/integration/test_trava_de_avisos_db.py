@@ -1,26 +1,17 @@
-"""Spec 053, fatia A -- a TRAVA DOS AVISOS.
+"""A trava dos avisos: nenhum aviso de tarefa vai para quem nao a alcanca no
+momento do envio.
 
-Nenhum aviso de tarefa vai para quem nao a alcanca no momento do envio (D19).
 A trava mora no `NotificationEmitter`, e nao em cada service, para que um tipo
 novo nao dependa de alguem lembrar.
 
-O QUE ESTE ARQUIVO PRENDE:
-  1. `user_ids_that_can_view_task` (lote) responde IGUAL a `user_can_view_task`
-     (um por um) -- a regra nao pode existir duas vezes.
-  2. Responsavel que perdeu o time nao recebe o aviso de comentario. Antes da
-     trava recebia, com o titulo da tarefa no payload.
-  3. ⚠️⚠️ O job de prazo continua avisando quem enxerga a tarefa POR
-     HIERARQUIA. O job entra com `tenant_scope` SEM arvore de times; sem o
+  1. `user_ids_that_can_view_task` (lote) responde igual a `user_can_view_task`
+     (um por um).
+  2. Responsavel que perdeu o time nao recebe o aviso de comentario.
+  3. ⚠️ O job de prazo continua avisando quem enxerga a tarefa POR
+     HIERARQUIA. O job entra com `tenant_scope` sem arvore de times; sem o
      `_arvore_de_times`, a trava calaria o aviso do gerente da raiz numa tarefa
      de subtime, sem erro nenhum.
   4. Desativado nao recebe.
-
-SABOTAGENS (medidas):
-  A. Em `task_guards._arvore_de_times`, devolver `tenant.team_tree` sempre (sem
-     carregar do banco). Deve cair `test_job_de_prazo_avisa_quem_ve_por_hierarquia`.
-  B. Em `NotificationEmitter.comment_on_task`, trocar
-     `await self._so_quem_alcanca(task_id, alvos)` por `alvos`. Deve cair
-     `test_responsavel_que_perdeu_o_time_nao_recebe_comentario`.
 """
 
 from __future__ import annotations
@@ -104,7 +95,7 @@ async def test_lote_responde_igual_ao_um_por_um(db) -> None:
 async def test_responsavel_que_perdeu_o_time_nao_recebe_comentario(db) -> None:
     ws, r, a, b, gerente, op_a, op_b, task, forest = await _mundo(db)
     # `op_b` ficou responsavel quando alcancava a tarefa e depois perdeu o time
-    # (hoje, responsavel sem alcance continua responsavel -- spec 053 §8).
+    # (responsavel sem alcance continua responsavel).
     await f.make_assignment(
         db, workspace_id=ws, task_id=task.id, user_id=op_b, assigned_by=gerente
     )

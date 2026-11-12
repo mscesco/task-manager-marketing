@@ -3,12 +3,8 @@
 Puro, sem DB. Existe porque a troca do `_STATUS_SEM_AVISO` cravado pela
 semantica da coluna e uma troca de FONTE, nao de comportamento: enquanto o
 quadro geral tiver as oito colunas padrao, as duas regras tem de dar a mesma
-resposta para as oito. No dia em que divergirem, ou alguem mudou o produto de
-proposito -- e apaga este teste com um ADR -- ou alguem quebrou sem perceber.
-
-Mesmo papel do `test_a_lista_do_SERVICO_e_a_da_MIGRATION_concordam` da Spec
-035: quando a mesma regra existe em dois lugares, o teste e o unico lugar onde
-a duplicacao fica honesta.
+resposta para as oito. Quando a mesma regra existe em dois lugares, o teste e
+o unico lugar onde a duplicacao fica honesta.
 """
 
 from __future__ import annotations
@@ -17,9 +13,9 @@ from app.db.models.enums import TaskStatus
 from app.modules.tasks.domain.board_defaults import COLUNAS_PADRAO
 from app.modules.tasks.domain.board_semantics import avisa_prazo
 
-#: A lista que estava CRAVADA no `DeadlineNotifyService` antes desta fatia.
-#: Copiada de proposito: se o service mudar, este teste tem de continuar
-#: afirmando o comportamento ANTIGO -- e a unica referencia que sobrou dele.
+#: A lista que ficava cravada no `DeadlineNotifyService`. Copiada de proposito:
+#: e a unica referencia que sobrou do comportamento que a regra por coluna
+#: tem de reproduzir.
 _STATUS_SEM_AVISO_ANTIGO = frozenset(
     {TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.BLOCKED}
 )
@@ -39,8 +35,8 @@ def test_a_flag_SOZINHA_nao_reproduz_o_comportamento_de_hoje() -> None:
     """Por que a exclusao do terminal vem da SEMANTICA e nao da flag.
 
     `Concluido` e `Cancelado` nascem com `notify_deadline=True`. Se a regra
-    fosse so a flag, as duas voltariam a receber aviso de prazo -- 136 tarefas
-    em producao, medidas em 06/08. Este teste e o que impede alguem de
+    fosse so a flag, as duas voltariam a receber aviso de prazo. Este teste
+    impede alguem de
     "simplificar" a regra para `notify_deadline` e achar que ficou igual,
     porque o teste acima passaria mesmo assim para seis das oito colunas.
     """

@@ -33,24 +33,6 @@ ACEITOS: frozenset[str] = frozenset(
 )
 
 
-# Slugs de categoria aceitos pelo envio publico.
-CATEGORIES: frozenset[str] = frozenset(
-    {
-        "arte",         # Criar uma arte
-        "foto",         # Sessao de fotos (secao existia no PDF fora do menu)
-        "video",        # Gravar ou editar um video
-        "divulgacao",   # Divulgar acao, campanha ou comunicado
-        "evento",       # Organizar um evento
-        "site",         # Criar ou atualizar pagina no site
-        "email",        # Comunicacao por e-mail ou WhatsApp
-        "lancamento",   # Lancar um curso, campanha ou projeto
-        "revisao",      # Revisar ou atualizar material existente
-        "impressao",    # Impressao de material (somente sede)
-        "outro",        # Outro assunto
-    }
-)
-
-
 def can_review(status: str) -> bool:
     """So solicitacao PENDING pode ser aprovada/rejeitada.
 

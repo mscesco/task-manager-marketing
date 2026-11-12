@@ -57,8 +57,8 @@ def test_is_admin_so_pelo_org_role():
 
 
 def test_vinculo_ADMIN_em_time_nao_concede_nada():
-    """O vinculo ADMIN em `user_team` deixou de existir (migration 0031); se
-    um chegar mesmo assim, e papel desconhecido -- nao vira lente total."""
+    """ADMIN nao e papel de time; um vinculo ADMIN em `user_team` e papel
+    desconhecido, e nao vira lente total."""
     assert team_scope.visible_team_ids(_m(MKT, "ADMIN"), TREE) is not None
 
 
@@ -80,21 +80,11 @@ def test_supervisor_nao_ve_subtime_irmao():
     assert visiveis == frozenset({CRM, MKT})
 
 
-def test_editable_igual_visible():
-    m = _m(AUTO, "OPERATOR")
-    assert team_scope.editable_team_ids(m, TREE) == team_scope.visible_team_ids(
-        m, TREE
-    )
-
-
-# ---- posto de papel (Spec 044, fatia 5) ----
+# ---- posto de papel ----
 def test_posto_tem_ordem_explicita():
-    """⚠️⚠️ O TESTE QUE PROTEGE CONTRA A ARMADILHA DO `StrEnum`.
-
-    `UserTeamRole` NAO tem ordem -- os tres estao declarados em ordem
-    decrescente por coincidencia de leitura. Qualquer comparacao que dependa
-    disso mente sem erro nenhum (mesma classe do `ColumnSemantic`,
-    AGENTS.md §9). Este teste afirma a ordem que a regra usa.
+    """Armadilha do `StrEnum`: `UserTeamRole` NAO tem ordem, e qualquer
+    comparacao que dependa da ordem de declaracao mente sem erro nenhum.
+    Este teste afirma a ordem que a regra usa.
     """
     postos = [
         team_scope.posto_do_papel(p)
@@ -105,7 +95,7 @@ def test_posto_tem_ordem_explicita():
 
 
 def test_posto_de_papel_desconhecido_falha_fechado():
-    """R5: papel sem posto RECUSA, em vez de responder 0 e passar calado."""
+    """Papel sem posto RECUSA, em vez de responder 0 e passar calado."""
     with pytest.raises(BusinessRuleError):
         team_scope.posto_do_papel("DONO_DA_EMPRESA")
 
@@ -114,8 +104,7 @@ def test_raiz_menor_que_subtime_e_a_inversao():
     assert team_scope.raiz_menor_que_subtime(
         papel_raiz="OPERATOR", papel_subtime="SUPERVISOR"
     )
-    # MANAGER na raiz com SUPERVISOR no subtime: permitido pela Camila,
-    # "mesmo nao fazendo sentido".
+    # MANAGER na raiz com SUPERVISOR no subtime e permitido.
     assert not team_scope.raiz_menor_que_subtime(
         papel_raiz="MANAGER", papel_subtime="SUPERVISOR"
     )
@@ -133,15 +122,3 @@ def test_assert_raiz_nao_menor_levanta_com_os_dois_papeis_no_detalhe():
         )
     assert exc.value.details["papel_raiz"] == "OPERATOR"
     assert exc.value.details["papel_subtime"] == "SUPERVISOR"
-
-
-# ---- default de time da task ----
-# ⚠️ OS QUATRO TESTES DE `default_team_id` SAIRAM na Spec 044, fatia 4, junto
-# com a funcao. Eles afirmavam "o time da tarefa nova e o subtime de quem
-# cria" -- regra que a fatia 4 substituiu por "o time do quadro". Mante-los
-# exigiria manter a funcao viva sem chamador, guardando uma regra que o
-# produto nao segue mais.
-#
-# O que os substitui vive em `tests/integration/test_task_time_vem_do_quadro_db.py`,
-# e nao aqui: a regra nova precisa do QUADRO, e quadro nao cabe numa funcao
-# pura sem banco.

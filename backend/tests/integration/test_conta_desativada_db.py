@@ -1,11 +1,8 @@
-"""Conta desativada: nao ganha senha, e volta pelo reativar -- 06/10/2026.
+"""Conta desativada: nao ganha senha, e volta pelo reativar.
 
-⚠️⚠️ O CASO DA JULIANA, LIDO NOS LOGS DE PRODUCAO. Cadastrada as 18:15,
-desativada as 18:21 (seis minutos depois, depois de um 409 ao tentar tira-la do
-Marketing), e resetada QUATRO vezes ate as 19:18. Nenhuma senha servia: o login
-responde a conta desativada igual a senha errada (de proposito, para nao revelar
-quais e-mails tem conta), entao cada tentativa parecia pedir mais um reset. E a
-conta so voltava por UPDATE no banco -- nao havia reativar.
+⚠️ O login responde a conta desativada igual a senha errada (de proposito,
+para nao revelar quais e-mails tem conta). Se o reset de senha funcionasse
+nela, cada tentativa pareceria pedir mais um reset, e nenhuma senha serviria.
 
 Este arquivo prende as duas metades:
     - `reset_password` recusa conta desativada (409), e o botao some;
@@ -46,9 +43,9 @@ async def _mundo(db) -> dict:
         "ws": ws, "mkt": mkt, "arvore": arvore,
         "dona": await pessoa("dona@t.dev", org_role="ADMIN"),
         "manager": await pessoa("manager@t.dev", vinculos=((mkt, "MANAGER"),)),
-        # a Juliana: operadora no Marketing, desativada
-        "juliana": await pessoa(
-            "juliana@t.dev", vinculos=((mkt, "OPERATOR"),), ativa=False
+        # operadora no Marketing, desativada
+        "desativada": await pessoa(
+            "desativada@t.dev", vinculos=((mkt, "OPERATOR"),), ativa=False
         ),
         # um par do gerente, desativado: a trava de papel continua valendo
         "manager2": await pessoa(
@@ -75,8 +72,8 @@ async def test_conta_desativada_nao_ganha_senha(db) -> None:
     m = await _mundo(db)
     with _como(m, "manager"):
         with pytest.raises(BusinessRuleError):
-            await MemberService(db).reset_password(user_id=m["juliana"])
-    user = await db.get(User, m["juliana"])
+            await MemberService(db).reset_password(user_id=m["desativada"])
+    user = await db.get(User, m["desativada"])
     # nada mudou: nem a versao das sessoes, nem a troca obrigatoria
     assert user.token_version == 0
 
@@ -93,7 +90,7 @@ async def test_quem_nao_alcanca_leva_403_e_nao_a_noticia(db) -> None:
 async def test_reativar_devolve_a_conta_e_derruba_as_sessoes_de_antes(db) -> None:
     m = await _mundo(db)
     with _como(m, "manager"):
-        user = await MemberService(db).reactivate_member(user_id=m["juliana"])
+        user = await MemberService(db).reactivate_member(user_id=m["desativada"])
     assert user.is_active is True
     # ⚠️ um token de antes da desativacao nao volta a valer
     assert user.token_version == 1
@@ -104,8 +101,8 @@ async def test_depois_de_reativar_o_reset_funciona(db) -> None:
     m = await _mundo(db)
     with _como(m, "manager"):
         svc = MemberService(db)
-        await svc.reactivate_member(user_id=m["juliana"])
-        assert (await svc.reset_password(user_id=m["juliana"])).temporary_password
+        await svc.reactivate_member(user_id=m["desativada"])
+        assert (await svc.reset_password(user_id=m["desativada"])).temporary_password
 
 
 async def test_reativar_quem_esta_ativo_nao_faz_nada(db) -> None:
@@ -134,5 +131,5 @@ async def test_os_botoes_da_conta_desativada(db) -> None:
     m = await _mundo(db)
     with _como(m, "manager"):
         svc = MemberService(db)
-        assert await svc.acoes_da_conta(user_id=m["juliana"]) == (False, False, True)
+        assert await svc.acoes_da_conta(user_id=m["desativada"]) == (False, False, True)
         assert await svc.acoes_da_conta(user_id=m["ativa"]) == (True, True, False)

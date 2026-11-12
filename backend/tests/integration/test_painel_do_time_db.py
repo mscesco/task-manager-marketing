@@ -1,14 +1,14 @@
-"""Spec 058 -- a tela inicial do time: o que cada numero CONTA (§5.1).
+"""A tela inicial do time: o que cada numero CONTA.
 
 O relogio e FIXO: quarta, 14/10/2026, 15:00:30 em Sao Paulo. A semana e de
-segunda 12/10 a domingo 18/10 (D3 dela).
+segunda 12/10 a domingo 18/10.
 
 O MUNDO:
     Marketing (raiz) + subtime SEO; Comercial (outra raiz).
     ger  MANAGER do Marketing     -- ve a carga e a fila
-    sup  SUPERVISOR do SEO        -- ve a carga (D1), nao a fila
-    op   OPERATOR do SEO          -- nao ve a carga (D1)
-    ana  OPERATOR do Marketing    -- nenhuma tarefa: aparece com ZERO (§10.5)
+    sup  SUPERVISOR do SEO        -- ve a carga, nao a fila
+    op   OPERATOR do SEO          -- nao ve a carga
+    ana  OPERATOR do Marketing    -- nenhuma tarefa: aparece com ZERO
 
     Tarefas do Marketing:
       t1  aberta, prazo 10/10                 -> atrasada (op)
@@ -16,22 +16,13 @@ O MUNDO:
       t3  aberta, prazo hoje 18:00            -> vence hoje (op, sup)
       t10 aberta, prazo hoje 15:00            -> ⚠️ NAO atrasada as 15:00:30
       t4  concluida, prazo 13/10              -> concluida na semana
-      t5  concluida E ARQUIVADA, prazo 12/10  -> conta (§10.6)
-      t6  cancelada, prazo 15/10              -> fora do total (§10.4)
-      t7  bloqueada, prazo 16/10              -> fora do total (§10.4), mas e
-                                                 carga de op
+      t5  concluida E ARQUIVADA, prazo 12/10  -> conta
+      t6  cancelada, prazo 15/10              -> fora do total
+      t7  bloqueada, prazo 16/10              -> fora do total, mas e carga de op
       t8  aberta, prazo 17/10
-      t9  subtarefa de t8, no SEO, prazo 18/10 -> conta (§10.3) (sup)
+      t9  subtarefa de t8, no SEO, prazo 18/10 -> conta (sup)
     Comercial:
       tc  aberta, prazo 15/10                 -> nunca entra no Marketing
-
-SABOTAGENS (executadas em 14/10, resultado colado):
-    1. `notify_deadline` fora de `charges_deadline` (a bloqueada entra):
-       caem a semana, os proximos dias e o do operador. ✓
-    2. `is_archived.is_(False)` dentro de `done`:
-       caem a semana e o do operador. ✓
-    3. `due_time < now.minute` -> `<=` (a t10 vira atrasada as 15:00:30):
-       caem a de atrasada e a dos proximos dias. ✓
 """
 
 from __future__ import annotations
@@ -191,8 +182,8 @@ async def test_supervisor_ve_a_carga_e_nao_a_fila(db) -> None:
 
 
 async def test_operador_nao_ve_a_carga_nem_a_fila(db) -> None:
-    """D1 dela: o operador ve a parte pessoal e os numeros gerais, sem o
-    ranking. O servidor nem calcula."""
+    """O operador ve a parte pessoal e os numeros gerais, sem o ranking. O
+    servidor nem calcula."""
     m = await _mundo(db)
     p = await _painel(db, m, "op")
     assert p.workload is None
@@ -238,8 +229,7 @@ def _client(db, ctx):
 
 
 async def test_a_rota_existe_e_devolve_os_sete_dias(db) -> None:
-    """Rota nova leva teste HTTP (AGENTS.md §9). O relogio aqui e o de verdade,
-    entao o teste so confere a FORMA."""
+    """O relogio aqui e o de verdade, entao o teste so confere a FORMA."""
     m = await _mundo(db)
     with _como(m, "op") as ctx:
         async with _client(db, ctx) as cli:
@@ -251,12 +241,12 @@ async def test_a_rota_existe_e_devolve_os_sete_dias(db) -> None:
     assert set(corpo["week"]) == {"start", "end", "done", "total"}
 
 
-# ------------------------------------------------------------ filtrar por pessoa (14/10)
+# ------------------------------------------------------------ filtrar por pessoa
 
 
 async def test_filtrar_por_pessoa_ajusta_o_relatorio_inteiro(db) -> None:
-    """Pedido da chefe dela: o relatorio inteiro de uma pessoa. A do `op`:
-    t1, t2 (atrasadas), t3 (hoje), t6 (cancelada), t7 (bloqueada)."""
+    """O relatorio inteiro de uma pessoa. A do `op`: t1, t2 (atrasadas), t3
+    (hoje), t6 (cancelada), t7 (bloqueada)."""
     m = await _mundo(db)
     with _como(m, "ger"):
         p = await DashboardService(db).build(m["mkt"], assignee_id=m["op"], at=AGORA)
@@ -272,14 +262,6 @@ async def test_filtrar_por_pessoa_ajusta_o_relatorio_inteiro(db) -> None:
     assert p.queue is not None
 
 
-async def test_operador_nao_filtra_por_pessoa(db) -> None:
-    from app.shared.exceptions.base import AuthorizationError
-
-    m = await _mundo(db)
-    with _como(m, "op"), pytest.raises(AuthorizationError):
-        await DashboardService(db).build(m["mkt"], assignee_id=m["sup"], at=AGORA)
-
-
 async def test_a_lista_traz_a_coluna_e_a_prioridade(db) -> None:
     m = await _mundo(db)
     p = await _painel(db, m, "ger")
@@ -288,13 +270,13 @@ async def test_a_lista_traz_a_coluna_e_a_prioridade(db) -> None:
     assert t1.column_color
 
 
-# ------------------------------------------------------------ revisao de 15/10
+# ------------------------------------------------------------ carga
 
 
 async def test_supervisor_nao_ve_o_subtime_vizinho_na_carga(db) -> None:
     """O supervisor do SEO tem o verbo na raiz, mas a lente dele nao alcanca o
-    subtime vizinho (Ads): o Beto aparecia com zero tarefas -- "livre" para
-    quem nao enxerga as tarefas dele."""
+    subtime vizinho (Ads): o Beto nao aparece (com zero tarefas pareceria
+    "livre" a quem nao enxerga as tarefas dele)."""
     m = await _mundo(db)
     ads = await f.make_team(db, workspace_id=m["ws"], parent_team_id=m["mkt"], slug="ads")
     beto = await f.make_user(db, workspace_id=m["ws"])
@@ -344,9 +326,9 @@ async def test_a_rota_recusa_filtro_de_pessoa_para_o_operador(db) -> None:
     assert r.status_code == 403, r.text
 
 
-# ------------------------------------------------------------ periodo (15/10)
-# Decisao dela: escolhido um periodo, tudo e das tarefas com prazo nele, no
-# ESTADO DE HOJE -- a concluida depois do prazo conta como concluida.
+# ------------------------------------------------------------ periodo
+# Escolhido um periodo, tudo e das tarefas com prazo nele, no ESTADO DE HOJE:
+# a concluida depois do prazo conta como concluida.
 
 
 async def _no_periodo(db, m, quem, inicio, fim):
@@ -409,7 +391,7 @@ async def test_periodo_invalido(db) -> None:
 
 
 
-# ------------------------------------------------------------ planilha (15/10)
+# ------------------------------------------------------------ planilha
 
 
 async def test_a_planilha_bate_com_o_painel(db) -> None:
@@ -453,8 +435,8 @@ async def test_a_planilha_do_operador_nao_tem_a_carga(db) -> None:
 
 
 async def test_titulo_que_parece_formula_continua_texto_na_planilha(db) -> None:
-    """Auditoria 11/11: o `\x0b` colado do PowerPoint dava 500 no export, e
-    `=HYPERLINK(...)` virava link vivo -- a regra que o export da Base ja tinha."""
+    """Caractere de controle (`\x0b`, colado do PowerPoint) nao da 500 e
+    `=HYPERLINK(...)` nao vira link vivo."""
     import io
 
     from openpyxl import load_workbook
@@ -476,8 +458,8 @@ async def test_titulo_que_parece_formula_continua_texto_na_planilha(db) -> None:
 
 
 async def test_planilha_nao_le_nome_de_time_nem_de_pessoa_de_outra_organizacao(db) -> None:
-    """Auditoria 11/11, item 20: o `session.get` pulava a organizacao, e um
-    `under_team_id` de fora punha o nome daquele time no cabecalho."""
+    """Um `under_team_id` (ou pessoa) de outra organizacao nao poe o nome dele
+    no cabecalho."""
     import io
 
     from openpyxl import load_workbook

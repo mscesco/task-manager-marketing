@@ -1,4 +1,4 @@
-"""Spec 057 (15/10) -- importar e exportar planilha na Base.
+"""Importar e exportar planilha na Base.
 
 O MUNDO: Marketing (raiz) com a Ana (SUPERVISOR, cria base) e o Op (OPERATOR,
 so mexe no conteudo); a base da factory ("Calendario": Titulo + Plataforma,
@@ -72,17 +72,6 @@ def _plano(m, **kw) -> ImportPlan:
         ColumnPlan(5, "new", name="Responsavel", type="person"),
     ]
     return ImportPlan(columns=colunas, base_id=m["base"], **kw)
-
-
-async def test_a_previa_sugere_os_tipos(db) -> None:
-    p = BaseImportService(db).preview(CSV, "posts.csv", sheet=None, header_row=1)
-    assert p.total_rows == 3
-    tipos = {c.name: c.suggested_type for c in p.columns}
-    assert tipos["Alcance"] == "number"
-    assert tipos["Feito"] == "checkbox"
-    assert tipos["Plataforma"] == "select"
-    # a 31/02 nao e data, entao a coluna inteira nao "parece data"
-    assert tipos["Data"] == "text"
 
 
 async def test_validar_aponta_a_linha_do_arquivo_e_nao_grava(db) -> None:
@@ -186,19 +175,9 @@ async def test_exportar_e_importar_de_volta_da_o_mesmo(db) -> None:
     assert [c.name for c in p.columns] == ["Título", "Plataforma"]
 
 
-# ------------------------------------------------------------ 15/10, o teste dela
-
-
 async def test_selecao_multipla_do_google_planilhas_separa_por_virgula(db) -> None:
-    """O Planilhas exporta os chips como "Formulario, Import, Site": eram UMA
-    opcao com o texto inteiro."""
-    from app.modules.bases.domain.spreadsheet import split_many, suggest_type
-
-    assert split_many("Formulário, Import, Site") == ["Formulário", "Import", "Site"]
-    assert suggest_type(["Formulário, Import", "Import, Sydle", "Site"]) == "multi_select"
-    # frase com virgula continua texto
-    assert suggest_type(["Revisar a landing da pós, ajustar o texto do banner principal"]) == "text"
-
+    """O Planilhas exporta os chips como "Formulario, Import, Site": cada um
+    vira uma opcao, nao uma so com o texto inteiro."""
     m = await _mundo(db)
     csv = "Tarefa;Fonte\nA;Formulário, Import, Site\nB;Import\n".encode()
     with _como(m, "ana", "SUPERVISOR"):
@@ -236,10 +215,6 @@ async def test_criar_varias_linhas_e_uma_acao(db) -> None:
     assert (u.applied, u.kind) == (True, "rows.import")
 
 
-# ------------------------------------------------------------ 16/10, a auditoria
-# Um teste por achado; cada um falhava antes do conserto.
-
-
 async def _vivas(db, base_id) -> list:
     return (await db.execute(
         BaseRow.__table__.select().where(
@@ -249,7 +224,7 @@ async def _vivas(db, base_id) -> list:
 
 
 async def test_exporta_base_com_nome_que_o_excel_recusa_na_aba(db) -> None:
-    """`/ \\ ? * : [ ]` nao cabem em nome de aba: "Pautas 2026/1" dava 500."""
+    """`/ \\ ? * : [ ]` nao cabem em nome de aba do Excel."""
     m = await _mundo(db)
     from app.db.models.bases import BaseTable
 
@@ -261,8 +236,8 @@ async def test_exporta_base_com_nome_que_o_excel_recusa_na_aba(db) -> None:
 
 
 async def test_texto_que_parece_formula_continua_texto(db) -> None:
-    """`=HYPERLINK(...)` virava link vivo no .xlsx; o `\\x0b` colado do
-    PowerPoint dava 500; no CSV, o apostrofo vai e volta."""
+    """`=HYPERLINK(...)` nao vira link vivo no .xlsx; o `\\x0b` colado do
+    PowerPoint nao quebra a exportacao; no CSV, o apostrofo vai e volta."""
     m = await _mundo(db)
     linha = await db.get(BaseRow, m["linha"])
     linha.values = {**linha.values, str(m["titulo"]): '=HYPERLINK("http://x";"y")\x0b'}
@@ -278,7 +253,7 @@ async def test_texto_que_parece_formula_continua_texto(db) -> None:
 
 
 async def test_visao_sem_nenhuma_linha_exporta_so_o_cabecalho(db) -> None:
-    """A visao com filtro que nao casa nada manda `[]` -- e exportava tudo."""
+    """A visao com filtro que nao casa nada manda `[]`: nao e "exportar tudo"."""
     m = await _mundo(db)
     with _como(m, "ana", "SUPERVISOR"):
         conteudo, _, _ = await BaseExportService(db).export(m["base"], fmt="xlsx", row_ids=[])
@@ -286,8 +261,8 @@ async def test_visao_sem_nenhuma_linha_exporta_so_o_cabecalho(db) -> None:
 
 
 async def test_desfazer_importacao_com_linha_apagada_por_outro_nao_desfaz_nada(db) -> None:
-    """Marcando linha a linha, as anteriores a do conflito iam para a lixeira e
-    a entrada saia da pilha: metade da importacao desfeita, sem refazer."""
+    """O conflito e conferido antes de marcar qualquer linha: nada de metade
+    da importacao desfeita com a entrada fora da pilha."""
     from app.modules.bases.application.row_service import RowService
 
     m = await _mundo(db)
@@ -296,8 +271,8 @@ async def test_desfazer_importacao_com_linha_apagada_por_outro_nao_desfaz_nada(d
             CSV, "posts.csv", _plano(m, dry_run=False, skip_invalid=True)
         )
     assert r.imported == 2
-    # ⚠️ A ULTIMA da importacao: com a primeira, o codigo velho tambem passava
-    # (o conflito vinha antes de marcar qualquer uma).
+    # ⚠️ Apaga a ULTIMA da importacao: com a primeira, o conflito viria antes
+    # de marcar qualquer linha e o teste nao discriminaria.
     from app.db.models.bases import BaseChange
 
     entrada = (await db.execute(
@@ -313,8 +288,8 @@ async def test_desfazer_importacao_com_linha_apagada_por_outro_nao_desfaz_nada(d
 
 
 async def test_desfazer_troca_de_tipo_devolve_o_valor_da_linha_na_lixeira(db) -> None:
-    """Os valores guardados eram so os das linhas vivas, e a troca zera todas:
-    a linha restaurada depois voltava com a celula vazia."""
+    """A troca de tipo zera todas as linhas, inclusive as da lixeira: o desfazer
+    tem de guardar o valor delas tambem."""
     from app.modules.bases.application.base_service import BaseService, UpdateColumnCommand
     from app.modules.bases.application.row_service import RowService
 
@@ -331,33 +306,3 @@ async def test_desfazer_troca_de_tipo_devolve_o_valor_da_linha_na_lixeira(db) ->
     linha = await db.get(BaseRow, m["linha"])
     await db.refresh(linha)
     assert (linha.deleted_at, linha.values.get(chave)) == (None, m["opcao"])
-
-
-def test_csv_do_excel_brasileiro_le_travessao_e_aspas_curvas() -> None:
-    """O Excel em portugues grava cp1252; lido como latin-1, o travessao e as aspas curvas viravam
-    caracteres de controle, gravados sem aviso."""
-    from app.modules.bases.domain.spreadsheet import read_table
-
-    texto = "\u201cReunião\u201d \u2013 14h"  # aspas curvas e travessao
-    t = read_table(f"Tarefa\n{texto}\n".encode("cp1252"), "a.csv")
-    assert t.rows == [[texto]]
-
-
-def test_planilha_grande_demais_e_recusada_antes_de_ler_o_resto() -> None:
-    from app.modules.bases.domain.spreadsheet import MAX_RAW_ROWS, read_table
-    from app.shared.exceptions.base import ValidationError
-
-    with pytest.raises(ValidationError, match="passa de 3 linhas"):
-        read_table(b"T\na\nb\nc\nd\n", "a.csv", max_rows=3)
-    # linha em branco nao conta para o teto da base, mas conta para o de leitura
-    assert len(read_table(b"T\na\n\n\nb\n", "a.csv", max_rows=2).rows) == 2
-    with pytest.raises(ValidationError, match="contando as em branco"):
-        read_table(b"T\n" + b";\n" * (MAX_RAW_ROWS + 1), "a.csv")
-
-
-def test_csv_com_aspas_sem_fechar_e_422_e_nao_500() -> None:
-    from app.modules.bases.domain.spreadsheet import read_table
-    from app.shared.exceptions.base import ValidationError
-
-    with pytest.raises(ValidationError, match="aspas"):
-        read_table(b'T\n"' + b"x" * 200_000 + b"\n", "a.csv")

@@ -1,17 +1,14 @@
-"""O ARREIO de teste sabe que existe mais de um quadro (06/08).
+"""A factory `make_task` sabe que existe mais de um quadro.
 
-Testes DA FACTORY, e nao do produto. Existem porque a `make_task` cravava o
-quadro do time raiz -- o mesmo SQL que a F2 tirou do `BoardRepository` -- e uma
-factory errada nao aparece em lugar nenhum: ela nao muda a contagem de testes,
-nao deixa a suite vermelha e nao chega em producao. Ela mente para os testes
-que ainda vao ser escritos, que aqui sao os da F3 (`GET /boards`, com permissao)
-e os da F5 (quadro interno).
+Testes DA FACTORY, e nao do produto. Uma factory errada nao aparece em lugar
+nenhum: nao muda a contagem de testes, nao deixa a suite vermelha e nao chega
+em producao. Ela mente para os testes que ainda vao ser escritos.
 
 ⚠️ O DEFEITO QUE ESTES TESTES FECHAM E O SILENCIOSO. Uma filha nascida no
 quadro geral com a coluna do quadro geral e um par internamente consistente: a
 FK composta `(column_id, board_id)` ACEITA. Pai num quadro, filha em outro, sem
-erro e sem tela. E por isso que o caso 3 (heranca do pai) e o que mais importa
-aqui, e nao o caso 2.
+erro e sem tela. E por isso que o caso 4 (heranca do pai) e o que mais importa
+aqui.
 """
 
 from __future__ import annotations
@@ -56,8 +53,7 @@ async def _quadro_geral(db, ws: uuid.UUID) -> uuid.UUID:
 #      `make_board` monta a linha direto em vez de chamar o `BoardService`
 #      (o motivo esta no docstring dela: o estado intermediario
 #      `is_default=True` viola o indice parcial). Duas regras convivendo
-#      precisam de um teste comparando as duas -- mesmo remedio que a 035 usou
-#      para a lista da migration versus a do servico.
+#      precisam de um teste comparando as duas.
 async def test_make_board_gera_o_mesmo_quadro_que_o_servico(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)
@@ -139,8 +135,8 @@ async def test_make_task_com_board_usa_a_coluna_daquele_quadro(db) -> None:
     assert t.column_id != do_geral[TaskStatus.IN_PROGRESS]
 
 
-# 4 -- ⚠️ O QUE MAIS IMPORTA. Subtarefa herda o quadro do pai, igual ao produto
-#      depois da F2. Sem isto a factory monta a arvore partida em silencio, e
+# 4 -- ⚠️ O QUE MAIS IMPORTA. Subtarefa herda o quadro do pai, igual ao
+#      produto. Sem isto a factory monta a arvore partida em silencio, e
 #      um teste de arvore dentro do quadro interno passaria verde afirmando o
 #      contrario do que o produto faz.
 async def test_make_task_com_pai_herda_o_quadro_do_pai(db) -> None:
@@ -199,10 +195,9 @@ async def test_make_task_recusa_board_conflitante_com_o_pai(db) -> None:
         )
 
 
-# 6 -- o mundo da D4: quadro cujas colunas foram criadas por GENTE nao responde
-#      por status. Falhar ALTO aqui e o comportamento correto ate a derivacao
-#      pela semantica existir -- escolher "a primeira coluna que achar" e
-#      exatamente o defeito que a Spec 035 inteira existe para evitar.
+# 6 -- quadro cujas colunas foram criadas por GENTE nao responde por status.
+#      Falhar ALTO aqui e o correto: escolher "a primeira coluna que achar"
+#      poria a tarefa na coluna errada sem erro nenhum.
 async def test_make_task_recusa_quadro_sem_coluna_para_o_status(db) -> None:
     ws = await f.make_workspace(db)
     raiz = await f.make_team(db, workspace_id=ws)

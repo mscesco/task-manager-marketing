@@ -1,8 +1,5 @@
-"""Testes de logica PURA dos comentarios (Entrega 14) -- sem DB.
-
-Cobrem validacao de conteudo, threading de 1 nivel, autorizacao e tombstone.
-Rodam em qualquer lugar (nao exigem TEST_DATABASE_URL).
-"""
+"""Comentarios, logica pura: validacao de conteudo, threading de 1 nivel,
+autorizacao e tombstone."""
 
 from __future__ import annotations
 
@@ -22,7 +19,7 @@ from app.modules.tasks.domain.comment import (
 from app.shared.exceptions.base import ValidationError
 
 
-# --- conteudo (D8) ---
+# --- conteudo ---
 def test_normalize_strip_ok() -> None:
     assert normalize_content("  oi  ") == "oi"
 
@@ -39,7 +36,7 @@ def test_normalize_limite() -> None:
         normalize_content("a" * (CONTENT_MAX + 1))
 
 
-# --- threading 1 nivel (D4) ---
+# --- threading 1 nivel ---
 def test_reply_em_topo_da_mesma_task_ok() -> None:
     task = uuid.uuid4()
     # pai de topo (parent_parent None), mesma task -> nao levanta
@@ -67,7 +64,7 @@ def test_reply_em_pai_de_outra_task_falha() -> None:
         )
 
 
-# --- autorizacao (D2/D3) ---
+# --- autorizacao ---
 def test_can_edit_so_autor() -> None:
     autor = uuid.uuid4()
     outro = uuid.uuid4()
@@ -88,7 +85,7 @@ def test_can_delete_autor_ou_moderador() -> None:
     assert can_delete(author_id=autor, actor_id=outro, actor_can_moderate=True)
 
 
-# --- tombstone (D5) ---
+# --- tombstone ---
 def test_mask_content() -> None:
     assert mask_content("texto", is_deleted=False) == "texto"
     assert mask_content("texto", is_deleted=True) == TOMBSTONE_TEXT

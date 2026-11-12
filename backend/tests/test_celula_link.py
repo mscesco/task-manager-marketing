@@ -1,7 +1,7 @@
-"""Spec 056, fatia J: a celula de link guarda VARIOS links, com nome opcional.
+"""A celula de link guarda VARIOS links, com nome opcional.
 
-A forma antiga (um texto so) continua aceita e vira lista de um -- e por isso
-que as celulas gravadas antes da fatia nao precisaram de migration.
+A forma antiga (um texto so) continua aceita e vira lista de um: e por isso
+que as celulas ja gravadas nessa forma nao precisam de migration.
 """
 
 import uuid

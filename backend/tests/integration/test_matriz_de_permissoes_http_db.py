@@ -967,7 +967,7 @@ def test_linha_com_meta_ainda_nao_chegou_la() -> None:
             continue
         nome = f"{linha.acao} ({linha.alvo})"
         assert len(linha.meta) == len(PAPEIS), nome
-        assert linha.diverge, f"{nome}: meta sem dizer qual fatia a entrega"
+        assert linha.diverge, f"{nome}: meta sem dizer por que ainda diverge"
         assert linha.meta != linha.esperado, (
             f"{nome}: ja chegou no alvo -- apague `meta` e `diverge`"
         )

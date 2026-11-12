@@ -1,4 +1,4 @@
-"""Editar o formulario depois de criado (Spec 043, fatia C2).
+"""Editar o formulario depois de criado.
 
 ⚠️⚠️ QUASE TODO ESTE ARQUIVO E SOBRE UM UNICO DEFEITO, e ele nao da erro
 nenhum: **a pergunta que some sem sumir.**
@@ -13,11 +13,8 @@ data da sessao de fotos".
 
 Sao QUATRO caminhos para o mesmo buraco, e cada um tem um teste aqui.
 
-⚠️ AS TRES REGRAS DA CONDICIONAL NAO FORAM INVENTADAS. Conferi os 25
-condicionais herdados do formulario do Marketing, um a um, antes de escrever a
-validacao: **todos** na mesma secao, **todos** apontando para tras, **todos**
-para uma pergunta de escolha. Zero excecoes -- o que ja era regra virou regra
-escrita, e nao regra nova.
+As tres regras da condicional (mesma secao, apontando para tras, para uma
+pergunta de escolha) sao as que todos os condicionais existentes ja seguiam.
 
 ⚠️ E O `slug` DA SECAO NAO E EDITAVEL, o que parece arbitrario e nao e: ele
 viaja gravado em cada pedido (`solicitation_item.category`) e e por ele que a
@@ -325,8 +322,8 @@ async def test_titulo_e_emoji_mudam_e_o_slug_NAO_EXISTE_no_corpo(db) -> None:
 
 
 async def test_apagar_secao_leva_as_perguntas_junto(db) -> None:
-    """ADR-0005. Perguntas vivas penduradas numa secao morta continuariam
-    servindo de alvo para condicionais que ninguem mais ve."""
+    """Perguntas vivas penduradas numa secao morta continuariam servindo de
+    alvo para condicionais que ninguem mais ve."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
         svc = SolicitationFormService(db)
@@ -358,8 +355,7 @@ async def test_resumo_tem_de_ser_pergunta_da_propria_secao(db) -> None:
 
         # ⚠️ ASSERCAO NO MEIO, E DE PROPOSITO: os dois `definir_resumo`
         # devolvem a MESMA instancia da seção. Guardar as duas em variaveis e
-        # conferir no fim leria o estado final duas vezes -- foi o que fiz na
-        # primeira versao deste teste, e ele reprovou por isso.
+        # conferir no fim leria o estado final duas vezes.
         posta = await svc.definir_resumo(section_id=secao.id, question_id=alvo.id)
         assert posta.summary_question_id == alvo.id
 
@@ -392,7 +388,7 @@ async def test_apagar_a_pergunta_RESUMO_limpa_o_ponteiro(db) -> None:
 
 
 # ==========================================================
-# ⚠️ O slug da seção é chave de dado (achado do review da fatia A)
+# ⚠️ O slug da seção é chave de dado
 # ==========================================================
 async def test_duas_secoes_do_MESMO_formulario_nao_dividem_endereco(db) -> None:
     """⚠️⚠️ O SLUG DA SEÇÃO VIAJA GRAVADO EM CADA PEDIDO.
@@ -400,11 +396,7 @@ async def test_duas_secoes_do_MESMO_formulario_nao_dividem_endereco(db) -> None:
     Duas seções com o mesmo slug tornam o pedido AMBÍGUO: a fila monta o
     dicionário de rótulos por `(form_id, slug)` e a segunda linha SOBRESCREVE
     a primeira, então o pedido aparece com o título e o emoji da seção ERRADA.
-    Nada dá erro em lugar nenhum.
-
-    ⚠️ E A FATIA C2 PROTEGEU O LADO ERRADO: lá está escrito que o slug não
-    pode MUDAR porque fica gravado no pedido -- e nunca se impediu que dois
-    nascessem iguais. Os dois quebram a mesma coisa.
+    Nada dá erro em lugar nenhum. (Pelo mesmo motivo o slug não pode MUDAR.)
     """
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(mkt, "MANAGER"))):
@@ -451,20 +443,12 @@ async def test_endereco_de_secao_APAGADA_pode_ser_reaproveitado(db) -> None:
 
 
 # ==========================================================
-# ⚠️ O time tem de existir (achado do review da fatia A)
+# ⚠️ O time tem de existir
 # ==========================================================
 async def test_ADMIN_com_time_inexistente_leva_404_e_nao_500(db) -> None:
-    """⚠️ Nascido quando `_assert_pode_gerir` retornava cedo para ADMIN, e
-    nenhum caminho conferia se o id existe.
-
-    ⚠️ E ELE PEGOU A FATIA B DA SPEC 049: com a permissão com escopo, a
-    recusa por "time fora da sua árvore" vinha ANTES da existência, e o id
-    inexistente respondia 403. A ordem em `criar_formulario` virou existência
-    primeiro.
-
-    Sem esta guarda o INSERT ia com um `team_id` inválido, a FK composta
-    `(team_id, workspace_id)` recusava, e saía **500** em vez de 404 -- mesmo
-    padrão que o `_assert_tarefa_do_workspace` da fatia E já tratava.
+    """A existencia do time e conferida ANTES da permissao com escopo: senao
+    o id inexistente responde 403 ("fora da sua arvore"), ou, sem guarda
+    nenhuma, a FK composta `(team_id, workspace_id)` recusa o INSERT e sai 500.
     """
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, org_role="ADMIN")):
@@ -489,10 +473,10 @@ async def test_time_de_OUTRO_workspace_tambem_e_recusado(db) -> None:
 
 
 # ==========================================================
-# ⚠️ Apagar o formulário leva as seções (achado do review da fatia A)
+# ⚠️ Apagar o formulário leva as seções
 # ==========================================================
 async def test_apagar_FORMULARIO_leva_secoes_e_perguntas_junto(db) -> None:
-    """ADR-0005. Era inerte -- todo caminho passa pelo `_form_do_workspace`,
+    """Era inerte -- todo caminho passa pelo `_form_do_workspace`,
     que dá 404 --, mas deixava estado inconsistente com o próprio
     `apagar_secao`, que cascateia para as perguntas."""
     ws, raiz, mkt, design, user, arvore = await _mundo(db)
@@ -525,7 +509,7 @@ async def test_apagar_FORMULARIO_leva_secoes_e_perguntas_junto(db) -> None:
 
 
 # ==========================================================
-# ⚠️ A posição depois de apagar (achado da revisão de 31/08)
+# ⚠️ A posição depois de apagar
 # ==========================================================
 async def test_criar_depois_de_APAGAR_nao_colide_de_posicao(db) -> None:
     """⚠️⚠️ `len(vivos)` COLIDE, e o soft delete não compacta.
@@ -580,8 +564,8 @@ async def test_a_CONDICIONAL_funciona_depois_de_apagar_e_criar(db) -> None:
             section_id=secao.id, label="Data", kind="data"
         )
 
-        # ⚠️ Antes do conserto, `dependente` nascia na mesma posição do
-        # `gatilho` e esta chamada levantava ValidationError.
+        # ⚠️ Se `dependente` nascer na mesma posição do `gatilho`, esta
+        # chamada levanta ValidationError.
         ligada = await svc.definir_condicional(
             question_id=dependente.id, alvo_id=gatilho.id, valor="Sessão"
         )
@@ -604,7 +588,7 @@ async def test_secao_criada_depois_de_apagar_tambem_nao_colide(db) -> None:
 
 
 # ==========================================================
-# ⚠️ Limpar um campo opcional (achado da revisão de 31/08)
+# ⚠️ Limpar um campo opcional
 # ==========================================================
 async def test_prazo_e_ajuda_podem_ser_LIMPOS(db) -> None:
     """⚠️ O PATCH TRATA `None` COMO "não mexe", então o front tem de mandar

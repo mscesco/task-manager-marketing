@@ -1,4 +1,4 @@
-"""API de leitura de notificacoes (Spec 018, F4) -- nivel HTTP.
+"""API de leitura de notificacoes -- nivel HTTP.
 
 Via httpx ASGITransport com sessao/UoW/auth do teste. Cobre: feed so com
 as minhas, unread-count, mark-read (flipa read_at), mark-read de outro =
@@ -110,8 +110,11 @@ async def test_mark_read_flipa_e_baixa_contagem(db) -> None:
     async with _client(db, ctx) as c:
         r1 = await c.post(f"/api/v1/notifications/{nid}/read")
         r2 = await c.get("/api/v1/notifications/unread-count")
+        # Idempotente: remarcar a mesma nao vira 404.
+        r3 = await c.post(f"/api/v1/notifications/{nid}/read")
     assert r1.status_code == 204
     assert r2.json()["count"] == 0
+    assert r3.status_code == 204
 
 
 async def test_mark_read_de_outro_404(db) -> None:

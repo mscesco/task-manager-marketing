@@ -1,7 +1,6 @@
-"""Spec 051, fatia E -- cada pessoa edita o PROPRIO nome (decisao 8).
+"""Cada pessoa edita o PROPRIO nome, e so o proprio.
 
-*"liberar somente para proprio, eu posso editar meu proprio nome"* (Camila,
-16/09). O que este arquivo prende:
+O que este arquivo prende:
 
     1. trocar o nome grava o nome aparado;
     2. nome so de espaco e 422 -- e nada muda;
@@ -79,7 +78,7 @@ async def test_nome_so_de_espaco_e_recusado(db) -> None:
 
 
 async def test_nao_ha_como_mirar_outra_pessoa(db) -> None:
-    """⭐ A regra da decisao 8 inteira.
+    """⭐ So o proprio nome.
 
     Um `user_id` de outra pessoa mandado no corpo nao muda nada nela: o schema
     nao tem o campo, e o alvo sai do token. Sem esta prova, "so o proprio"

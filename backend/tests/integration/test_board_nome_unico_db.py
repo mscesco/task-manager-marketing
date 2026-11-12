@@ -1,37 +1,25 @@
-"""Nome único de quadro e de coluna (Spec 036, fatia 9).
+"""Nome único de quadro e de coluna.
 
-⚠️ POR QUE ESTA FATIA EXISTE, E NAO E ARRUMACAO: ela e PRE-REQUISITO de apagar
-quadro (fatia 7). Aquela confirma a exclusao pedindo para a pessoa DIGITAR o
-nome do quadro -- e com tres quadros "Quadro CRM Teste" no mesmo subtime (que
-foi o que a conferencia visual de 17/08 mostrou na tela), digitar o nome nao
-diz qual dos tres. A confirmacao vira teatro numa operacao que apaga as tarefas
-de dentro.
+Apagar quadro pede para a pessoa DIGITAR o nome; com tres quadros de mesmo
+nome no mesmo subtime, digitar o nome nao diria qual dos tres.
 
 ⚠️⚠️ **AS DUAS METADES TEM GARANTIAS DIFERENTES, E ISSO E DELIBERADO:**
 
-  - **QUADRO** tem indice no banco (`board_nome_unico_por_time`, migration
-    `0013`) E validacao no servico. O indice e a verdade; a validacao existe
-    para a recusa sair como **422 com `code`** em vez do `IntegrityError` cru,
-    que vira 500 com a transacao ja abortada.
+  - **QUADRO** tem indice no banco (`board_nome_unico_por_time`) E validacao
+    no servico. O indice e a verdade; a validacao existe para a recusa sair
+    como **422 com `code`** em vez do `IntegrityError` cru, que vira 500 com a
+    transacao ja abortada.
   - **COLUNA** tem SO validacao no servico. Um indice unico recusaria o estado
     INTERMEDIARIO do lote -- ver `test_o_lote_permite_TROCAR_dois_nomes` e
-    `test_o_lote_permite_APAGAR_e_RECRIAR_com_o_mesmo_nome`, que sao os dois
-    gestos que morreriam. Quem vigia o dado e a **consulta 9 do
-    `invariantes.sql`**.
+    `test_o_lote_permite_APAGAR_e_RECRIAR_com_o_mesmo_nome`. Quem vigia o dado
+    e a consulta 9 do `invariantes.sql`.
 
-⚠️ MAIUSCULA CONTA (decisao de 18/08): "Backlog" e "backlog" convivem. Se
-alguem trocar o indice por `lower(name)`, `test_maiuscula_faz_nome_diferente`
-cai -- e e assim que se descobre que a decisao mudou sem estar escrita.
+⚠️ MAIUSCULA CONTA: "Backlog" e "backlog" convivem
+(`test_maiuscula_faz_nome_diferente`).
 
-⚠️ `ColumnSemantic`, E NUNCA A STRING. A primeira versao deste arquivo passava
-`semantic="CANCELLED"` e o teste do apagar-e-recriar caiu com
-`AttributeError: 'str' object has no attribute 'value'` -- o `logger.info` de
-`criar_coluna` faz `semantica.value`. `ColumnSemantic` e `StrEnum`, entao a
-string COMPARA igual e passa por toda validacao ate a linha do log, muito
-depois do ponto que o teste queria exercitar. **A falha aparece longe da
-causa**, e nos outros testes deste arquivo ela nem aparecia: eles levantam
-antes de chegar la. E irma da armadilha ja catalogada "`text()` devolve STRING,
-nao enum".
+⚠️ `ColumnSemantic`, E NUNCA A STRING: `ColumnSemantic` e `StrEnum`, entao a
+string COMPARA igual e passa por toda validacao ate o `logger.info` de
+`criar_coluna`, que faz `semantica.value` -- a falha aparece longe da causa.
 """
 
 from __future__ import annotations
@@ -93,7 +81,6 @@ def _nomes(colunas):
 
 
 async def test_dois_quadros_do_mesmo_time_nao_podem_ter_o_mesmo_nome(db) -> None:
-    """O caso que a conferencia de 17/08 encontrou na tela, com TRES quadros."""
     ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
         await BoardService(db).criar_quadro(team_id=sub_a, nome="Quadro CRM Teste")
@@ -112,7 +99,7 @@ async def test_o_MESMO_nome_em_OUTRO_time_passa(db) -> None:
     """⚠️ A unicidade e POR TIME, e nao por workspace.
 
     Dois subtimes podem ter, cada um, o seu "Quadro de Campanhas" -- eles nao
-    se veem (ADR 0035 D3) e nao ha o que desambiguar. Unicidade global seria
+    se veem e nao ha o que desambiguar. Unicidade global seria
     uma regra que ninguem pediu, e que faria o segundo time descobrir o nome
     escolhido pelo primeiro.
     """
@@ -128,12 +115,7 @@ async def test_o_MESMO_nome_em_OUTRO_time_passa(db) -> None:
 
 
 async def test_maiuscula_faz_nome_diferente(db) -> None:
-    """⚠️ DECISAO DE 18/08, e ela esta escrita aqui de proposito.
-
-    "Campanhas" e "campanhas" convivem. A alternativa (indexar `lower(name)`)
-    foi recusada -- "sao diferentes visualmente". **Se alguem mudar de ideia,
-    este teste cai, e e assim que a mudanca fica visivel** em vez de virar
-    comportamento novo que ninguem anunciou.
+    """"Campanhas" e "campanhas" convivem: o indice NAO e por `lower(name)`.
     """
     ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
@@ -145,7 +127,7 @@ async def test_maiuscula_faz_nome_diferente(db) -> None:
 
 
 async def test_espaco_nas_pontas_NAO_faz_nome_diferente(db) -> None:
-    """⚠️ `strip()` ANTES DE COMPARAR (decisao de 18/08).
+    """⚠️ `strip()` ANTES DE COMPARAR.
 
     Sem isso `"Campanhas "` passaria por ser texto diferente, e as duas linhas
     virariam o mesmo nome no banco -- a colisao entra gravada, e a proxima
@@ -190,15 +172,12 @@ async def test_renomear_para_o_nome_de_OUTRO_quadro_recusa(db) -> None:
 
 
 async def test_quadro_APAGADO_libera_o_nome(db) -> None:
-    """⚠️ DECISAO DE 18/08: quadro apagado nao ocupa o nome.
+    """Quadro apagado nao ocupa o nome.
 
     Sem o `WHERE deleted_at IS NULL` no indice E na consulta, um quadro que
     ninguem consegue ver bloquearia o nome para sempre -- e a tela diria "ja
     existe um quadro com esse nome" apontando para o nada, sem nenhuma tela
-    onde encontra-lo.
-
-    ⚠️ APAGA NA MAO PORQUE APAGAR QUADRO NAO EXISTE (fatia 7). Este teste e
-    o que garante que, quando ela existir, o nome volta a ficar livre.
+    onde encontra-lo. Apaga na mao: o teste precisa do estado, nao do caminho.
     """
     ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
@@ -252,7 +231,6 @@ async def _quadro(db, ws, user, arvore, time, nome="Quadro do SEO"):
 
 
 async def test_duas_colunas_do_mesmo_quadro_nao_podem_ter_o_mesmo_nome(db) -> None:
-    """O outro caso da conferencia de 17/08: duas "Em Andamento" no mesmo quadro."""
     ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
     quadro = await _quadro(db, ws, user, arvore, sub_a)
     with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
@@ -265,12 +243,18 @@ async def test_duas_colunas_do_mesmo_quadro_nao_podem_ter_o_mesmo_nome(db) -> No
 
 
 async def test_o_MESMO_nome_em_OUTRO_quadro_passa(db) -> None:
-    """A unicidade e POR QUADRO. Todo quadro avulso nasce com "Backlog"."""
+    """A unicidade e POR QUADRO: a mesma coluna nova cabe nos dois."""
     ws, _raiz, sub_a, _sub_b, user, arvore = await _mundo(db)
     a = await _quadro(db, ws, user, arvore, sub_a, nome="A")
     b = await _quadro(db, ws, user, arvore, sub_a, nome="B")
-    assert "Backlog" in _nomes(await _colunas(db, a.id))
-    assert "Backlog" in _nomes(await _colunas(db, b.id))
+    with acting_as(**_ctx(ws, user, arvore, mship(sub_a, "SUPERVISOR"))):
+        for quadro in (a, b):
+            await BoardService(db).criar_coluna(
+                board_id=quadro.id, nome="Ideias", semantica=ColumnSemantic.OPEN
+            )
+            await db.flush()
+    assert "Ideias" in _nomes(await _colunas(db, a.id))
+    assert "Ideias" in _nomes(await _colunas(db, b.id))
 
 
 async def test_o_lote_permite_TROCAR_dois_nomes(db) -> None:

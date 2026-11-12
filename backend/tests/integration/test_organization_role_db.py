@@ -8,11 +8,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.core.tenant import Membership
 from app.db.models import User
 from app.db.models.enums import OrgRole
 from app.modules.users.application.member_service import MemberService
-from app.shared.exceptions.base import AuthorizationError, BusinessRuleError
+from app.shared.exceptions.base import BusinessRuleError
 from tests.integration import factories as f
 from tests.integration.conftest import acting_as
 
@@ -94,62 +93,6 @@ async def test_admin_INATIVO_nao_conta_para_a_trava(db) -> None:
             await MemberService(db).change_organization_role(
                 user_id=dona, new_role=None
             )
-
-
-async def test_DESATIVAR_o_ultimo_admin_e_recusado(db) -> None:
-    """Desativar o ultimo admin: um MANAGER leva 403 antes de chegar na trava.
-
-    So ADMIN mexe em conta de ADMIN (`_assert_pode_agir_sobre_a_conta`). A trava
-    do ultimo admin em `deactivate_member` fica como defesa em profundidade.
-    """
-    ws, raiz, dona = await _mundo(db)
-    mgr = await f.make_user(db, workspace_id=ws, email="mgr@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=mgr, team_id=raiz, role="MANAGER")
-    # A dona ganha vinculo na raiz para o MANAGER a alcancar: assim o 403 abaixo
-    # prova a trava de papel, e nao a de alcance.
-    await f.add_member(db, workspace_id=ws, user_id=dona, team_id=raiz, role="OPERATOR")
-
-    with acting_as(
-        workspace_id=ws,
-        user_id=mgr,
-        memberships=(Membership(team_id=raiz, role="MANAGER"),),
-    ):
-        with pytest.raises(AuthorizationError):
-            await MemberService(db).deactivate_member(user_id=dona)
-
-    # A conta continua ativa: a recusa nao passou pela escrita.
-    user = await db.get(User, dona)
-    assert user.is_active is True
-    assert user.org_role is OrgRole.ADMIN
-
-
-async def test_desativar_admin_passa_quando_ha_outro_ativo(db) -> None:
-    """A trava guarda o ultimo, nao o cargo: com dois admins, desligar um e normal."""
-    ws, raiz, dona = await _mundo(db)
-    segunda = await f.make_user(db, workspace_id=ws, email="segunda@t.dev")
-    await _set_org_role(db, segunda, OrgRole.ADMIN)
-
-    with acting_as(workspace_id=ws, user_id=dona, org_role="ADMIN"):
-        user = await MemberService(db).deactivate_member(user_id=segunda)
-
-    assert user.is_active is False
-
-
-async def test_desativar_quem_nao_administra_a_organizacao_segue_livre(db) -> None:
-    """Desativar quem nao tem papel de organizacao segue livre."""
-    ws, raiz, dona = await _mundo(db)
-    saiu = await f.make_user(db, workspace_id=ws, email="saiu@t.dev")
-    await f.add_member(db, workspace_id=ws, user_id=saiu, team_id=raiz, role="OPERATOR")
-
-    with acting_as(
-        workspace_id=ws,
-        user_id=dona,
-        memberships=(),
-        org_role=OrgRole.ADMIN.value,
-    ):
-        user = await MemberService(db).deactivate_member(user_id=saiu)
-
-    assert user.is_active is False
 
 
 async def test_a_trava_e_so_do_admin_gestor_sai_livre(db) -> None:

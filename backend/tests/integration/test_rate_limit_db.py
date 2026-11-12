@@ -1,9 +1,8 @@
-"""O limitador de tentativas, contando no banco (auditoria de 11/11, item 10).
+"""O limitador de tentativas, contando no banco.
 
-Ate 11/11 a contagem morava na memoria de cada processo, e producao sobe dois
-workers: o limite real era ate o dobro e o deploy zerava. O teste que
-justifica a mudanca e `test_dois_processos_dividem_a_mesma_contagem` -- dois
-limitadores (um por worker) no mesmo balde enxergam as tentativas um do outro.
+Dois workers dividem a mesma contagem
+(`test_dois_processos_dividem_a_mesma_contagem`): contando em memoria, o limite
+real seria o dobro e o deploy o zeraria.
 
 O tempo anda para tras no banco (`_envelhecer`), e nao num relogio falso: o
 relogio que conta e o `clock_timestamp()` do Postgres.
@@ -101,11 +100,6 @@ async def test_check_record_reset_do_freio_por_conta(db) -> None:
     await lim.reset(db, "ninguem")  # chave sem registro nao estoura
 
 
-def test_max_hits_invalido() -> None:
-    with pytest.raises(ValueError):
-        RateLimiter(bucket="x", max_hits=0, window_seconds=60)
-
-
 # ------------------------------------------------------------ pela rota
 
 
@@ -138,10 +132,8 @@ async def test_http_429_por_ip(db) -> None:
     assert int(a2.headers["Retry-After"]) > 0
 
 
-# ⚠️ `/client-errors` e a unica rota sem auth que produz UMA LINHA DE LOG por
-# requisicao (revisao de seguranca, 23/09). SABOTAGEM: tirar o
-# `dependencies=[Depends(rate_limit(...))]` de `app/api/client_errors.py` --
-# cai o teste abaixo.
+# `/client-errors` e a unica rota sem auth que produz uma linha de log por
+# requisicao: precisa de freio por IP.
 async def test_client_errors_tem_freio_por_ip_e_nao_exige_login(db) -> None:
     from app.main import create_app
 

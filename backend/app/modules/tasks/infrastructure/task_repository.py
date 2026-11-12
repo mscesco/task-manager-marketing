@@ -758,7 +758,7 @@ class TaskRepository(BaseRepository[Task]):
     ) -> list[Task]:
         """Tasks terminais paradas ha mais de `days` dias, para o arquivamento.
 
-        Par de `domain.archival.is_stale_terminal`: mudou aqui, muda la.
+        `status` continua checado: `terminal_since` numa tarefa viva nao arquiva.
         """
         cutoff = now - timedelta(days=days)
         stmt = (

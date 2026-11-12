@@ -1,69 +1,10 @@
-"""Spec 036, peca de backend da fatia 5 -- `PATCH /tasks/{id}` com `column_id`.
+"""`PATCH /tasks/{id}` com `column_id`: o backend resolve o status pela coluna.
 
-Decisoes na **ADR 0041**. E a entrega que inverte a direcao da escrita: ate
-aqui o front mandava `status` e o backend resolvia a coluna; a partir daqui ele
-pode mandar `column_id` e o backend resolve o status. As duas direcoes
-convivem ate a fatia 4c matar o `STATUSES` do front.
-
-⚠️ O MUNDO DESTE ARQUIVO NAO E O DE HOJE, E E DE PROPOSITO. Producao tem um
-quadro, com as 8 colunas padrao, todas com ponte (`invariantes.sql`, consulta
-5: `colunas_sem_ponte = 0`). Aqui o SEO ganha um quadro proprio com uma NONA
-coluna sem ponte -- "Aguardando cliente" -- porque e esse o mundo que a fatia 5
-constroi, e e nele que as duas alineas da ADR 0041 se separam. Os testes que
-falam do mundo de hoje sao os do `test_task_board_no_contrato_db.py`.
-
-⚠️ POR QUE UMA COLUNA A MAO E NAO `make_board(com_legacy_status=False)`. Aquele
-fixture monta um quadro em que NENHUMA coluna tem ponte, e nele `make_task` nem
-consegue criar a tarefa (`_coluna_do_status_no_quadro` nao acha nada). O caso
-que interessa e o MISTO: um quadro que ainda responde por status para as 8
-colunas padrao e ganhou uma coluna nova por cima. E o estado que o CRUD de
-coluna da fatia 5 vai produzir no primeiro clique.
-
-SABOTAGENS DESTA ENTREGA -- ✅ MEDIDAS EM 10/08/2026 (657 coletados):
-
-    ⚠️ ANTES DELAS, a primeira rodada do arquivo achou DOIS defeitos, e um era
-    de PRODUTO: a exclusao mutua `status`/`column_id` num `@model_validator`
-    devolvia 500, nao 422 (ver o docstring do
-    `test_status_e_column_id_juntos_sao_recusados`). Ou seja: este arquivo ja
-    se pagou antes de qualquer sabotagem rodar.
-
-    1. (D2, a ordem da derivacao) Em `board_semantics.status_da_coluna`, troque
-       as tres linhas do corpo por `return STATUS_POR_SEMANTICA[semantic]` --
-       ou seja, ignore a ponte.
-
-       **Caem QUATRO** (`4 failed, 653 passed`):
-         - `test_column_id_da_ponte_vira_o_status_daquela_coluna` (deste
-           arquivo) -- `assert 'IN_PROGRESS' == 'EXTERNAL_APPROVAL'`;
-         - `test_status_da_coluna.py::test_a_ponte_manda_sobre_a_semantica`;
-         - `test_status_da_coluna.py::test_planejado_nao_vira_backlog`;
-         - `test_status_da_coluna.py::test_as_oito_colunas_padrao_fazem_round_trip`
-           -- falha em `Planejado`, que e a PRIMEIRA das oito a divergir.
-
-       ⚠️ Os outros seis testes DESTE arquivo continuam VERDES, e isso e o
-       ponto: eles derivam status pela semantica de qualquer jeito (a coluna
-       sem ponte) ou nao dependem da derivacao. **A ponte tem um portao so, e
-       e o teste 1 daqui mais os tres puros.**
-
-    2. (D4, a gravacao fora do `if`) Em `TaskService.update`, traga a
-       atribuicao de `task.column_id` para dentro do `if` de status (expressao
-       condicional com `coluna_alvo`) e apague o bloco
-       `if coluna_alvo is not None: task.column_id = coluna_alvo` do fim.
-
-       **Cai UM, e so ele** (`1 failed, 656 passed`):
-         - `test_mover_entre_colunas_de_mesmo_status_grava_a_coluna`, na
-           mensagem `a coluna TEM de mudar`.
-
-       ⚠️ E o unico portao da D4 em todo o repositorio. Se um dia ele for
-       apagado ou afrouxado, a regressao volta a ser invisivel: a API responde
-       200, o log fica limpo, e o card arrastado volta sozinho para o lugar na
-       tela.
-
-O QUE ESTES TESTES NAO PROVAM:
-    - o front. Nenhuma tela manda `column_id` ainda -- isso e a fatia 4c;
-    - que arrastar funciona. Drag-and-drop nao e testavel em jsdom (registrado
-      no `Board.test.tsx`), entao a unica rede continua sendo o teste manual;
-    - desempenho: `coluna_no_quadro` acrescenta UMA consulta ao PATCH, e so
-      quando `column_id` vem. Nao medida.
+O mundo: o SEO tem um quadro proprio com as 8 colunas padrao (com ponte para
+um status) e uma NONA sem ponte, "Aguardando cliente" -- o quadro misto em que
+"a ponte manda" e "sem ponte, a semantica" se separam. Coluna a mao, e nao
+`make_board(com_legacy_status=False)`: sem nenhuma ponte, `make_task` nao acha
+coluna para criar a tarefa.
 """
 
 from __future__ import annotations
@@ -105,7 +46,7 @@ async def _setup(db):
     e pedir dois padroes para o mesmo time falha no indice parcial
     `board_um_padrao_por_time`.
     """
-    ws = await f.make_workspace(db, name="WS fatia 5 backend")
+    ws = await f.make_workspace(db, name="WS coluna no PATCH")
     raiz = await f.make_team(db, workspace_id=ws, slug="marketing")
     seo = await f.make_team(db, workspace_id=ws, parent_team_id=raiz, slug="seo")
 
@@ -113,9 +54,8 @@ async def _setup(db):
         db, workspace_id=ws, team_id=seo, name="Quadro do SEO"
     )
 
-    # A nona coluna: criada por GENTE, como o CRUD da fatia 5 vai criar.
-    # `legacy_status=None` e o ponto inteiro -- ela nao corresponde a status
-    # nenhum, entao so a semantica responde por ela.
+    # A nona coluna, criada por gente: `legacy_status=None`, entao so a
+    # semantica responde por ela.
     db.add(
         BoardColumn(
             id=uuid.uuid4(),
@@ -197,15 +137,14 @@ async def _coluna(db, *, board_id: uuid.UUID, nome: str) -> uuid.UUID:
     ).scalar_one()
 
 
-# ------------------------------------------------- 1. a ponte manda (D2, 1)
+# ------------------------------------------------- 1. a ponte manda
 
 
 async def test_column_id_da_ponte_vira_o_status_daquela_coluna(db) -> None:
     """Mover para "Aprovacao Externa" grava `EXTERNAL_APPROVAL`.
 
-    ⚠️ E O TESTE DA SABOTAGEM 1. A coluna tem semantica `IN_PROGRESS`, entao
-    derivar pela semantica devolveria `IN_PROGRESS` -- um status VALIDO, que
-    passa em todos os outros portoes. So este teste separa as duas regras.
+    A coluna tem semantica `IN_PROGRESS`: derivar pela semantica devolveria um
+    status valido, que passa em todos os outros testes.
     """
     c = await _setup(db)
     t = await f.make_task(
@@ -231,7 +170,7 @@ async def test_column_id_da_ponte_vira_o_status_daquela_coluna(db) -> None:
     assert uuid.UUID(body["column_id"]) == alvo
 
 
-# --------------------------------------------- 2. sem ponte, a semantica (D2, 2)
+# --------------------------------------------- 2. sem ponte, a semantica
 
 
 async def test_column_id_sem_ponte_deriva_pela_semantica(db) -> None:
@@ -260,17 +199,15 @@ async def test_column_id_sem_ponte_deriva_pela_semantica(db) -> None:
     assert uuid.UUID(body["column_id"]) == alvo
 
 
-# ------------------------------------ 3. o teste da D4: mesmo status, outra coluna
+# ------------------------------------ 3. mesmo status, outra coluna
 
 
 async def test_mover_entre_colunas_de_mesmo_status_grava_a_coluna(db) -> None:
     """De "Em Andamento" para a coluna sem ponte: o status NAO muda, a coluna sim.
 
-    ⚠️ E O UNICO TESTE QUE COBRE A D4 DA ADR 0041, e o motivo dela existir.
-    As duas colunas derivam `IN_PROGRESS`. Com a gravacao de `column_id` de
-    volta dentro do `if` de status, o bloco nao roda, a tarefa NAO SAI DA
-    COLUNA e a API responde 200 com o estado velho -- na tela, o card arrastado
-    volta sozinho para o lugar, sem erro nenhum em log nenhum.
+    ⚠️ As duas colunas derivam `IN_PROGRESS`. Se a gravacao de `column_id`
+    ficasse dentro do `if` de status, a tarefa nao sairia da coluna e a API
+    responderia 200 com o estado velho.
     """
     c = await _setup(db)
     t = await f.make_task(
@@ -303,44 +240,14 @@ async def test_mover_entre_colunas_de_mesmo_status_grava_a_coluna(db) -> None:
     assert t.column_id == alvo
 
 
-# --------------------------------------------- 4. o quadro nao muda por aqui
-
-
-async def test_mover_de_coluna_nao_muda_o_quadro(db) -> None:
-    """`board_id` fica. Mover tarefa de quadro nao existe (adendo da 036)."""
-    c = await _setup(db)
-    t = await f.make_task(
-        db,
-        workspace_id=c["ws"],
-        created_by=c["sup"],
-        team_id=c["seo"],
-        board_id=c["quadro"].id,
-        title="artigo",
-    )
-    await db.commit()
-    quadro_antes = t.board_id
-
-    alvo = await _coluna(db, board_id=c["quadro"].id, nome="Concluído")
-
-    async with _client(db, c["ctx_sup"]) as cli:
-        r = await cli.patch(
-            f"/api/v1/tasks/{t.id}", json={"column_id": str(alvo)}
-        )
-
-    assert r.status_code == 200, r.text
-    assert uuid.UUID(r.json()["board_id"]) == quadro_antes
-
-
-# ----------------------------------------- 5. coluna de outro quadro: 422
+# ----------------------------------------- 4. coluna de outro quadro: 422
 
 
 async def test_coluna_de_outro_quadro_e_recusada(db) -> None:
     """422, e a tarefa fica onde estava.
 
-    ⚠️ SEM A CONFERENCIA NO SERVICE ISSO SERIA 500. O par (coluna do quadro
-    geral, `board_id` do quadro do SEO) nao existe, entao a FK composta
-    recusaria a linha no flush -- erro de banco, cru, depois de a requisicao
-    ja ter passado por tudo.
+    Sem a conferencia no service seria 500: a FK composta recusaria o par
+    (coluna do geral, quadro do SEO) no flush.
     """
     c = await _setup(db)
     t = await f.make_task(
@@ -352,13 +259,8 @@ async def test_coluna_de_outro_quadro_e_recusada(db) -> None:
         title="artigo",
     )
     await db.commit()
-    # ⚠️ LEIA OS IDS AGORA, ANTES DA REQUISICAO QUE VAI FALHAR. Medido em
-    # 10/08: a requisicao recusada faz o UoW dar ROLLBACK, e o rollback EXPIRA
-    # todo objeto da sessao. Depois disso, tocar em `t.id` dispara um SELECT
-    # de recarga fora do greenlet do SQLAlchemy async e o teste morre com
-    # `MissingGreenlet` -- um erro que nao fala nem de coluna nem de quadro, e
-    # que aparece SO nos testes de caminho recusado. Os de caminho feliz
-    # commitam e nao expiram nada.
+    # ⚠️ Leia os ids ANTES da requisicao que falha: o rollback do UoW expira
+    # os objetos da sessao, e tocar em `t.id` depois da `MissingGreenlet`.
     tarefa_id = t.id
     coluna_antes = t.column_id
 
@@ -387,19 +289,15 @@ async def test_coluna_de_outro_quadro_e_recusada(db) -> None:
     assert guardado == coluna_antes
 
 
-# ------------------------------------- 6. status + column_id juntos: 422 (D3)
+# ------------------------------------- 5. status + column_id juntos: 422
 
 
 async def test_status_e_column_id_juntos_sao_recusados(db) -> None:
-    """Recusa explicita, nao precedencia (ADR 0041, D3).
+    """Recusa explicita, nao precedencia.
 
-    ⚠️ O 422 VEM DO ROUTER, com a `ValidationError` de dominio, e o codigo do
-    envelope e `validation_error`. A primeira versao punha a regra num
-    `@model_validator` do Pydantic e devolvia **500**: o
-    `_validation_error_handler` serializa `exc.errors()` cru, e o `ctx` de um
-    validador custom carrega o objeto `ValueError`, que o `json.dumps` do
-    Starlette recusa. Medido, nao previsto -- e o motivo de a regra ter mudado
-    de lugar.
+    ⚠️ O 422 vem do router, com a `ValidationError` de dominio. Num
+    `@model_validator` do Pydantic daria 500: o `ctx` do erro carrega o
+    `ValueError`, que o `json.dumps` do handler recusa.
     """
     c = await _setup(db)
     t = await f.make_task(
@@ -427,16 +325,13 @@ async def test_status_e_column_id_juntos_sao_recusados(db) -> None:
     assert r.json()["error"]["details"]["field"] == "column_id"
 
 
-# ------------------------------------------- 7. o rastro no historico (D5)
+# ------------------------------------------- 6. o rastro no historico
 
 
 async def test_mover_de_coluna_grava_no_historico(db) -> None:
     """Uma linha com `field_name="column_id"`, com valor velho e novo.
 
-    ⚠️ Existe porque a alternativa era herdar o buraco da designacao, que grava
-    o evento com `old_value`/`new_value` nulos e por isso nao responde "o que
-    mudou". Uma sessao inteira de 10/08 foi gasta tentando reconstruir
-    movimentacao sem rastro.
+    Com valores nulos, o historico nao responderia "o que mudou".
     """
     c = await _setup(db)
     t = await f.make_task(

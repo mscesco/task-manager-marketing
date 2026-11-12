@@ -48,11 +48,6 @@ class TenantContext:
     #: Papel na organizacao, que nao depende de time. `None` = nenhum.
     org_role: str | None = None
 
-    def has_role(self, role: str) -> bool:
-        """Papel no workspace, de time ou de organizacao (o ADMIN de
-        organizacao nao tem time)."""
-        return role in self.roles or role == self.org_role
-
     def has_permission_in(
         self, permission: str, team_id: uuid.UUID | None
     ) -> bool:

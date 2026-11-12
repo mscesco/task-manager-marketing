@@ -1,29 +1,18 @@
-"""Duplicacao com decisao POR SUBTAREFA (ADR 0031, fatia 1).
+"""Duplicacao com responsavel decidido POR SUBTAREFA (`subtask_assignees`).
 
-O passo 2 do modal manda, para cada filha DIRETA da origem, quem responde por
-ela -- ou pede pra nao leva-la. Estes testes defendem, em ordem:
+Para cada filha DIRETA da origem, o modal manda quem responde por ela, ou pede
+para nao leva-la. Estes testes defendem:
 
-  1. Que a escolha explicita GANHA da heranca. Se o mapa nao for respeitado, a
-     tela mostra um seletor que nao decide nada e a pessoa salva achando que
-     designou alguem.
-  2. Que chave desconhecida vira 422 e nao silencio. Um id de neto ou de
-     subtarefa arquivada aceito calado e uma decisao tomada na tela que o
-     backend joga fora -- mesma familia do query param nao declarado que o
-     FastAPI descarta sem avisar.
-  3. Que lista VAZIA e recusada. `assign_many_or_fail([])` e no-op silencioso,
-     entao sem esta trava a filha nasceria orfa com 200 na resposta -- que e
-     exatamente o que a ADR 0031 fecha.
-  4. Que o neto herda de quem foi decidido pra mae dele (05/08).
+  1. Que a escolha explicita ganha da heranca.
+  2. Que chave desconhecida (neto, subtarefa arquivada) vira erro, e nao
+     silencio: seria uma decisao tomada na tela que o backend joga fora.
+  3. Que lista VAZIA e recusada. `assign_many_or_fail([])` e no-op
+     silencioso, e sem esta trava a filha nasceria orfa com 200.
+  4. Que o neto herda de quem foi decidido para a mae dele.
 
-⚠️ TODA LEITURA DEPOIS DO ATO PRECISA DE `acting_as`. `list_children` e
-`assignee_ids_for` chamam `require_tenant()` -- asserção fora do bloco
-levanta `MissingTenantContextError` e o teste falha por motivo NENHUM
-relacionado ao produto. Aconteceu na primeira rodada deste arquivo, em 4 dos
-7 testes; os 3 que passaram eram os que so esperavam excecao DENTRO do bloco.
-
-⚠️ Esta fatia e ADITIVA: sem os campos novos, tudo se comporta como antes. A
-trava de "toda tarefa nasce com responsavel" e a fatia 3, e so pode subir
-depois que o passo 2 estiver em producao.
+⚠️ TODA LEITURA DEPOIS DO ATO PRECISA DE `acting_as`: `list_children` e
+`assignee_ids_for` chamam `require_tenant()`, e fora do bloco o teste cai com
+`MissingTenantContextError`, por motivo nenhum ligado ao produto.
 """
 
 from __future__ import annotations
@@ -160,8 +149,7 @@ async def test_escolha_explicita_ganha_da_heranca(db) -> None:
 
 
 async def test_neto_herda_de_quem_foi_decidido_pra_mae(db) -> None:
-    """Decisao de 05/08: o modal so lista filhas DIRETAS -- listar tres niveis
-    num seletor e uma parede. O neto segue a mae na copia."""
+    """O modal so lista filhas DIRETAS; o neto segue a mae na copia."""
     ws, team, admin, ana, bia, proj, ctx = await _mundo(db)
     origem, filha1, neto, filha2 = await _arvore(db, ctx, proj, team, ana)
 
@@ -259,19 +247,3 @@ async def test_decisao_sem_include_subtasks_e_incoerencia(db) -> None:
                 )
             )
 
-
-async def test_sem_os_campos_novos_nada_muda(db) -> None:
-    """A fatia e ADITIVA. Cliente velho (n8n, Swagger, front atual) continua
-    com o comportamento da Spec 033, sem tocar em nada."""
-    ws, team, admin, ana, bia, proj, ctx = await _mundo(db)
-    origem, filha1, neto, filha2 = await _arvore(db, ctx, proj, team, ana)
-
-    with acting_as(**ctx):
-        r = await TaskService(db).duplicate(_cmd(origem.id, proj, team, admin))
-
-    with acting_as(**ctx):
-        colab = CollaborationService(db)
-        copia1 = await _filha_por_titulo(db, r.task.id, "Roteiro")
-        copia2 = await _filha_por_titulo(db, r.task.id, "Arte")
-        assert await colab.assignee_ids_for(copia1) == [ana]
-        assert await colab.assignee_ids_for(copia2) == [ana]

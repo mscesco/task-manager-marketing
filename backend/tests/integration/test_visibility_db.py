@@ -1,9 +1,7 @@
 """Visibilidade de tasks: a lente de time.
 
-⚠️ O `created_by` NAO concede mais visibilidade (Spec 037, E1 -- ADR 0038).
-Ate a 037 este arquivo afirmava o furo da ADR 0013 ("quem cria sempre ve");
-agora ele afirma o contrario, no mesmo lugar. A inversao e a entrega -- os
-testes NAO foram apagados, senao nada impediria o ramo de voltar.
+⚠️ O `created_by` NAO concede visibilidade: quem criou uma tarefa fora da
+propria lente nao a ve. Continua sendo historico, mostrado a quem alcanca.
 """
 
 from __future__ import annotations
@@ -70,17 +68,11 @@ async def test_avulsa_lente_de_time(db) -> None:
 
 
 async def test_created_by_NAO_ve_avulsa_fora_da_lente(db) -> None:
-    """Spec 037, E1 -- este teste INVERTEU, e a inversao e a entrega.
+    """Quem criou, com o time fora da lente, nao ve a tarefa.
 
-    Ate a 037 ele se chamava `test_created_by_ve_avulsa_fora_da_lente_mas_nao
-    _edita` e afirmava o furo da ADR 0013: quem criou via a tarefa no detalhe
-    E na listagem, mesmo com o time fora da lente. A ADR 0038 retirou o ramo.
-
-    ⚠️ AFIRMA OS DOIS CAMINHOS DE PROPOSITO -- detalhe (`get`) e listagem
-    (`list_page`). Sao os DOIS pontos da E1, um em `task_guards.py` e outro no
-    `or_` do bloco (B) do `task_repository.py`. Tirar so um deixaria a tarefa
-    fora da lista e acessivel por link direto, ou o contrario -- e um teste
-    que so olhasse um dos lados passaria verde com metade do furo aberto.
+    ⚠️ Afirma os dois caminhos: detalhe (`get`, em `task_guards.py`) e listagem
+    (`list_page`, no `task_repository.py`). Um so deixaria a tarefa fora da
+    lista e acessivel por link direto, ou o contrario.
     """
     ws, r, a, b = await _tree(db)
     op = await f.make_user(db, workspace_id=ws)
@@ -100,13 +92,9 @@ async def test_created_by_NAO_ve_avulsa_fora_da_lente(db) -> None:
 
 
 async def test_created_by_continua_na_resposta_de_quem_alcanca(db) -> None:
-    """Spec 037, criterio 2 -- a E1 NAO pode ser implementada apagando o campo.
-
-    `created_by` deixa de conceder acesso (E1) e continua sendo HISTORICO (E2):
-    a tarefa mostra quem a criou mesmo depois de essa pessoa perder a lente.
-
-    ⚠️ ESTE TESTE E O QUE IMPEDE O ATALHO. Apagar `Task.created_by` do schema
-    faria os tres testes invertidos passarem verde -- e destruiria o dado.
+    """`created_by` nao concede acesso, mas continua sendo historico: a
+    tarefa mostra quem a criou mesmo depois de essa pessoa perder a lente.
+    Apagar o campo faria o teste acima passar e destruiria o dado.
     """
     ws, r, a, b = await _tree(db)
     op_b = await f.make_user(db, workspace_id=ws)
@@ -128,16 +116,7 @@ async def test_created_by_continua_na_resposta_de_quem_alcanca(db) -> None:
 
 
 async def test_admin_ve_TUDO_sem_excecao(db) -> None:
-    """⚠️⚠️ ESTE TESTE SE CHAMAVA `test_admin_ve_tudo_menos_pessoal_alheio`, e o
-    "menos" saiu em 10/09 com o projeto pessoal.
-
-    Ele afirmava a UNICA excecao a "admin ve tudo" que este produto ja teve:
-    tarefa em projeto pessoal era invisivel inclusive para o admin. Sem projeto
-    pessoal, a frase perdeu a ressalva -- e o teste, a segunda metade.
-
-    ⚠️ E ELE FICA, com a asserção que sobrou: "admin ve tudo" continua sendo
-    regra, e uma regra sem teste e uma regra que alguem estreita sem perceber.
-    """
+    """O ADMIN ve todas as tarefas do workspace."""
     ws, r, a, b = await _tree(db)
     admin = await f.make_user(db, workspace_id=ws, org_role="ADMIN")
     outro = await f.make_user(db, workspace_id=ws)

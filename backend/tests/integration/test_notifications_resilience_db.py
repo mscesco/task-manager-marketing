@@ -1,7 +1,7 @@
-"""Blindagem do emitter (Spec 018): falha na emissao NAO derruba a acao.
+"""Blindagem do emitter: falha na emissao NAO derruba a acao.
 
-Reproduz o incidente de producao -- o INSERT da notificacao falha (aqui via
-FK violada, igual a 'tabela ausente' abortar a transacao) -- e prova que o
+O INSERT da notificacao falha (aqui via FK violada, que aborta a transacao
+como uma tabela ausente abortaria) e o teste prova que o
 assignment e o comentario SOBREVIVEM. A emissao roda num savepoint: a falha
 e contida (rollback so do savepoint) + logada, nunca propagada.
 """
@@ -28,8 +28,8 @@ pytestmark = pytest.mark.integration
 
 def _create_quebrado(self, **kwargs):
     """Troca o create do repo por um INSERT que FALHA no flush: recipient
-    inexistente -> viola a FK -> reproduz o abort de transacao do incidente
-    de producao. (self = instancia do NotificationRepository.)"""
+    inexistente -> viola a FK -> aborta a transacao.
+    (self = instancia do NotificationRepository.)"""
     bad = Notification(
         workspace_id=require_tenant().workspace_id,
         recipient_id=uuid.uuid4(),  # nao existe em users -> FK falha no flush

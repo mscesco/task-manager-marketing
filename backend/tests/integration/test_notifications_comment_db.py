@@ -1,4 +1,4 @@
-"""Emissao de TASK_COMMENTED via create_comment (Spec 018, F3).
+"""Emissao de TASK_COMMENTED via create_comment.
 
 Fan-out pros responsaveis da task, menos o autor. Cobre: comentar notifica
 os outros responsaveis; autor-responsavel nao recebe; task sem responsavel
@@ -154,9 +154,9 @@ async def _tipos(db, recipient_id) -> list[str]:
 
 
 async def test_resposta_avisa_quem_perguntou_mesmo_sem_seguir(db) -> None:
-    """Auditoria 11/11, item 13 (decisao da Camila): quem pergunta sem seguir,
-    ser responsavel ou criador recebia NADA quando respondiam. Agora recebe um
-    TASK_COMMENT_REPLIED -- e so ele, nao o TASK_COMMENTED junto."""
+    """Quem pergunta sem seguir, ser responsavel ou criador recebe um
+    TASK_COMMENT_REPLIED quando respondem -- e so ele, nao o TASK_COMMENTED
+    junto."""
     ws, r, a, manager, proj, task, forest, mgr_ctx = await _world(db)
     pergunta = await _op(db, ws, a)  # ve a task, nao segue, nao e responsavel
     resp = await _op(db, ws, a)

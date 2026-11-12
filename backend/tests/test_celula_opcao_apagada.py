@@ -1,8 +1,8 @@
-"""Spec 056, D17: a opcao apagada FICA na celula que ja a tinha, e a celula
-continua editavel -- so nao se escolhe a opcao de novo (revisao de 08/10).
+"""A opcao apagada FICA na celula que ja a tinha, e a celula continua
+editavel: so nao se escolhe a opcao de novo.
 
-Antes, a selecao multipla com uma opcao apagada recusava qualquer mudanca
-(422), porque a tela devolve os ids que ja estavam e o servidor conferia todos.
+Armadilha: a tela devolve os ids que ja estavam. Se o servidor conferir todos,
+a selecao multipla com uma opcao apagada recusa qualquer mudanca (422).
 """
 
 import uuid

@@ -1,34 +1,18 @@
-"""Spec 048, fatia D -- a fila de solicitacoes e do time que a tela mostra.
+"""`list_batches(team_id)`: a fila de solicitacoes do time que a tela mostra.
 
-⚠️⚠️ E O QUE FALTAVA NAO ERA A LENTE. A §3.5 da minha spec dizia que
-`list_batches` *"nao filtra por time"*, e isso estava ERRADO: o recorte por
-`form.team_id` existe desde a Spec 043 fatia A, no `_base_select`, com teste.
-Fui ler o codigo e a afirmacao caiu.
+Dois recortes combinados com AND:
 
-O que faltava e o mesmo par que a listagem de projetos precisou em 11/09:
-
-    a LENTE      responde "posso ver?"   -- e para papel de organizacao e `None`
-    o `team_id`  responde "estou olhando qual time?" -- e vale para todos
+    a lente / o verbo  responde "posso ver?" -- `None` para papel de organizacao
+    o `team_id`        responde "estou olhando qual time?" -- vale para todos
 
 Sem o segundo, quem administra a organizacao ve a fila do Comercial dentro da
-tela do Marketing. Com so o segundo, um supervisor pediria a fila alheia. Os
-dois testes abaixo (`..._ate_para_o_admin` e `..._nao_alarga_a_lente`) sao um
-para cada metade.
+tela do Marketing. Com so o segundo, um gerente pediria a fila alheia.
 
-O MUNDO (`_mundo`): DUAS raizes, e as duas sao o ponto -- com uma so, nenhum
-teste daqui distingue nada.
+O mundo: duas raizes, e as duas sao o ponto.
 
     Marketing (raiz) + subtime SEO      formulario "arte" no SEO
     Comercial (raiz)                    formulario "metas" no Comercial
-    uma solicitacao ORFA (form_id nulo) -- historico de antes da Spec 043
-
-SABOTAGENS (executadas, resultado colado abaixo de cada teste que as pega).
-
-O QUE ESTES TESTES NAO PROVAM:
-    - nada sobre a tela: a `/solicitacoes` passa a mandar o `?time=` na fatia C
-      (ela esta bloqueada nisto);
-    - nada sobre a listagem de FORMULARIOS, que e a fatia E;
-    - nada sobre a rota publica `/solicitar/<slug>`, que nao muda (§4.4).
+    uma solicitacao ORFA (form_id nulo)
 """
 
 from __future__ import annotations
@@ -131,14 +115,9 @@ def _como_admin(m):
 
 
 def _como_gerente_do_marketing(m):
-    """Quem LE a fila sem ser da organizacao.
-
-    ⚠️⚠️ ATE A SPEC 051 (fatia B) ERA O SUPERVISOR DO SEO -- que nao tem
-    `solicitation.read`. Os testes chamam o repositorio direto, e o recorte era
-    a LENTE (onde a pessoa trabalha), entao o supervisor "via" a fila que a
-    rota nunca lhe mostraria. O recorte virou o verbo, e o leitor de verdade
-    abaixo da organizacao e o MANAGER.
-    """
+    """Quem le a fila sem ser da organizacao: o MANAGER
+    (`solicitation.read`). Os testes chamam o repositorio direto, entao um
+    papel sem o verbo "veria" a fila que a rota nunca lhe mostra."""
     return acting_as(
         workspace_id=m["ws"],
         user_id=m["user"],
@@ -157,54 +136,26 @@ async def _forms_na_fila(db, *, team_id):
 # ------------------------------------------------- 1. o recorte da tela
 
 
-async def test_recorte_tira_a_outra_raiz_ate_para_o_admin(db) -> None:
-    """O defeito, na forma em que ela o reportou para projetos.
-
-    Quem administra a organizacao ALCANCA o Comercial de verdade -- a lente
-    nao tem o que negar. O que tira a fila do Comercial da tela do Marketing e
-    o recorte.
-
-    SABOTAGEM: apagar o `.where(*recorte)` do `list_batches` -> este teste cai
-    (o formulario do Comercial volta a aparecer).
-    """
-    m = await _mundo(db)
-    with _como_admin(m):
-        forms = await _forms_na_fila(db, team_id=m["marketing"])
-
-    assert m["f_com"].id not in forms
-
-
 async def test_recorte_pela_raiz_traz_o_formulario_do_SUBTIME(db) -> None:
-    """⚠️ RAIZ + DESCENDENTES, e nao igualdade.
-
-    O formulario "arte" pertence ao SEO, nao ao Marketing. Pedir o Marketing e
-    receber so o que e dele mesmo esconderia a fila do SEO de quem olha a raiz
-    -- e e exatamente ali que a triagem acontece.
-
-    SABOTAGEM: trocar `{team_id} | descendants(...)` por `{team_id}` -> este
-    teste cai com a fila vazia.
-    """
+    """⚠️ RAIZ + DESCENDENTES, e nao igualdade: o formulario "arte" e do SEO,
+    e e na raiz que a triagem acontece. E o Comercial sai mesmo para o admin,
+    que o alcanca: quem o tira e o recorte, nao a lente. (A orfa entra para o
+    admin; ver abaixo.)"""
     m = await _mundo(db)
     with _como_admin(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
 
-    assert m["f_seo"].id in forms
+    assert set(forms) == {m["f_seo"].id, None}
 
 
 async def test_sem_recorte_a_fila_e_da_organizacao(db) -> None:
-    """`team_id=None` e resposta legitima, e nao "esqueci de passar".
-
-    ⚠️ E por isso o parametro NAO tem default: a diferenca entre "a fila da
-    organizacao" e "a fila do time" e grande demais para sair de um valor
-    omitido. Sem default, o `pytest` aponta cada chamador -- e apontou treze
-    quando esta fatia entrou.
-    """
+    """`team_id=None` e resposta legitima, e por isso o parametro NAO tem
+    default: "a fila da organizacao" nao pode sair de um valor omitido."""
     m = await _mundo(db)
     with _como_admin(m):
         forms = await _forms_na_fila(db, team_id=None)
 
-    assert m["f_seo"].id in forms
-    assert m["f_com"].id in forms
+    assert set(forms) == {m["f_seo"].id, m["f_com"].id, None}
 
 
 # ------------------------------------------------- 2. a lente segue de pe
@@ -213,14 +164,8 @@ async def test_sem_recorte_a_fila_e_da_organizacao(db) -> None:
 async def test_team_id_nao_alarga_a_lente(db) -> None:
     """O gerente do Marketing pede a fila do Comercial, e recebe vazio.
 
-    Ele le {Marketing, SEO}; o recorte pede Comercial. Os dois predicados
-    entram na MESMA consulta e se combinam com AND -- a intersecao vazia sai
-    de graca.
-
-    ⚠️ ESTE TESTE NAO PROVA UMA CHECAGEM, e sim o contrato: na listagem de
-    projetos eu tinha escrito uma intersecao explicita para isto e a sabotagem
-    mostrou que era codigo morto. Aqui o teste existe para que trocar a ordem
-    (aplicar o recorte ANTES da lente, ou em vez dela) apareca.
+    Os dois predicados entram na mesma consulta com AND. O teste trava o
+    contrato: aplicar o recorte em vez da lente apareceria aqui.
     """
     m = await _mundo(db)
     with _como_gerente_do_marketing(m):
@@ -229,33 +174,16 @@ async def test_team_id_nao_alarga_a_lente(db) -> None:
     assert forms == []
 
 
-async def test_gerente_no_seu_time_ve_a_fila_dele(db) -> None:
-    """A trava nao pode fechar a porta de quem tem a chave."""
-    m = await _mundo(db)
-    with _como_gerente_do_marketing(m):
-        forms = await _forms_na_fila(db, team_id=m["marketing"])
-
-    assert m["f_seo"].id in forms
-    assert m["f_com"].id not in forms
-
-
-# ------------------------------------------------- 3. a orfa (§4.4)
+# ------------------------------------------------- 3. a orfa
 
 
 async def test_orfa_fica_para_quem_administra_a_organizacao(db) -> None:
-    """§4.4: ela sai da fila de time, nao do produto.
+    """Sem `form_id` nao ha time para comparar; exclui-la de todas as filas
+    perderia trabalho pendente. Quem a adota e quem administra a organizacao.
 
-    Solicitacao sem `form_id` nao tem time para comparar. Excluí-la de todas
-    as filas seria perder trabalho pendente por causa de um vinculo que o
-    produto nem exigia quando ela chegou -- e quem pode adota-la e quem
-    administra a organizacao.
-
-    ⚠️ A VERRUGA, e o teste a registra: para essa pessoa a orfa aparece na fila
-    de TODO time, porque ela nao e de nenhum.
-
-    SABOTAGEM: tirar o ramo `Solicitation.form_id.is_(None)` do
-    `_recorte_de_time` -> este teste cai, e a orfa fica invisivel no produto
-    inteiro (a tela sempre manda um time).
+    ⚠️ Para essa pessoa a orfa aparece na fila de TODO time, porque ela nao e
+    de nenhum. Sem o ramo `form_id.is_(None)`, ela some do produto inteiro (a
+    tela sempre manda um time).
     """
     m = await _mundo(db)
     with _como_admin(m):
@@ -267,35 +195,23 @@ async def test_orfa_fica_para_quem_administra_a_organizacao(db) -> None:
 
 
 async def test_orfa_NAO_aparece_na_fila_de_quem_nao_administra(db) -> None:
-    """A outra metade da §4.4: "some da fila de time".
-
-    ⚠️ Spec 051, fatia B: com o SUPERVISOR este teste passava por acaso -- ele
-    nao lia fila nenhuma. Com o gerente (que le) ele prova a regra, e prova
-    tambem sem recorte: a orfa nao e de gerente nenhum.
-    """
+    """A orfa nao e de gerente nenhum, com ou sem recorte; e o gerente segue
+    vendo a fila do seu time."""
     m = await _mundo(db)
     with _como_gerente_do_marketing(m):
         forms = await _forms_na_fila(db, team_id=m["marketing"])
         sem_recorte = await _forms_na_fila(db, team_id=None)
 
-    assert None not in forms
-    assert None not in sem_recorte
-    assert m["f_seo"].id in sem_recorte
+    assert forms == [m["f_seo"].id]
+    assert sem_recorte == [m["f_seo"].id]
 
 
 # ------------------------------------------------- 4. os contadores
 
 
 async def test_contadores_recebem_o_mesmo_recorte_da_lista(db) -> None:
-    """⚠️⚠️ UM CONTADOR QUE DIVERGE DA LISTA E PIOR QUE NAO TER CONTADOR.
-
-    A aba diria "3 pendentes" e a fila mostraria duas -- e quem tria passaria a
-    procurar um pedido que nao esta ali. Os dois badges recebem o MESMO
-    `team_id` da listagem, na rota.
-
-    SABOTAGEM: tirar o `.where(*self._recorte_de_time(team_id))` do
-    `count_pending` -> este teste cai (o contador volta a 3).
-    """
+    """Um contador que diverge da lista manda procurar um pedido que nao
+    esta ali. Os badges recebem o MESMO `team_id` da listagem."""
     m = await _mundo(db)
     with _como_admin(m):
         svc = SolicitationService(db)
@@ -309,24 +225,10 @@ async def test_contadores_recebem_o_mesmo_recorte_da_lista(db) -> None:
 
 
 async def test_o_TOTAL_tambem_respeita_o_recorte(db) -> None:
-    """⚠️⚠️ ESTE TESTE NASCEU DE UMA SABOTAGEM QUE NAO PEGOU NADA.
-
-    `list_batches` consulta em DOIS tempos: (1) escolhe os `batch_id` da pagina
-    e conta o total; (2) traz as linhas desses lotes. O recorte entra nos dois.
-
-    Sabotei o do tempo (1) esperando ver um teste cair -- e os oito passaram.
-    O motivo: o tempo (2) recorta de novo, entao as LINHAS devolvidas continuam
-    certas. O que quebra e o `total` (conta lotes de todos os times) e, com ele,
-    a paginacao: a tela pediria pagina 2 de uma fila que tem uma pagina, e
-    receberia uma pagina vazia sem explicacao.
-
-    Nenhum dos meus testes olhava o `total`. Ou seja: a linha do tempo (1) NAO
-    era codigo morto -- era codigo sem teste, que e outra coisa e se conserta
-    ao contrario (teste novo, e nao linha removida).
-
-    SABOTAGEM, refeita depois deste teste existir: tirar o `.where(*recorte)`
-    do `alvo = self._base_select()...` -> este teste cai com `total == 3`.
-    """
+    """⚠️ `list_batches` consulta em DOIS tempos: (1) escolhe os `batch_id` da
+    pagina e conta o total; (2) traz as linhas desses lotes. O recorte entra
+    nos dois. Sem o do tempo (1), as linhas continuam certas (o tempo 2 recorta
+    de novo), e so o `total` e a paginacao quebram."""
     m = await _mundo(db)
     with _como_admin(m):
         linhas, total = await SolicitationRepository(db).list_batches(

@@ -1,22 +1,21 @@
-"""Resetar senha e desativar conta respeitam o PAPEL do alvo -- revisao de 16/09.
+"""Resetar senha e desativar conta respeitam o PAPEL do alvo.
 
-⚠️⚠️ ESTE ARQUIVO PRENDE UMA TOMADA DE CONTA. `reset_password` devolve a senha
-provisoria a quem clicou, e a unica pergunta era "voce alcanca esta pessoa?".
-Um GESTOR resetava a senha de um ADMIN e entrava como ele; um MANAGER fazia o
-mesmo com outro MANAGER. Em producao (PR #51) nem a pergunta de alcance existia.
+⚠️ `reset_password` devolve a senha provisoria a quem clicou: sem esta trava,
+quem alcanca a pessoa toma a conta dela.
 
-As regras NAO sao novas -- sao as da troca de papel, aplicadas a conta:
+As regras sao as da troca de papel, aplicadas a conta:
     ADMIN      -> qualquer conta
     alvo ADMIN -> so ADMIN (de organizacao)
     GESTOR     -> GESTOR e abaixo
     MANAGER    -> so SUPERVISOR e OPERATOR, sem papel de organizacao
 
 ⚠️ OS ALVOS "COM VINCULO NA ARVORE DO MANAGER" SAO O PONTO. Um ADMIN ou GESTOR
-de organizacao SEM time ja era barrado para o MANAGER pela pergunta de alcance;
+de organizacao SEM time ja e barrado para o MANAGER pela pergunta de alcance;
 com um vinculo de OPERATOR no Marketing, o alcance passa -- e so a trava de
 papel diz nao.
 
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
+As recusas que a matriz HTTP ja confere (GESTOR -> ADMIN etc.) nao se repetem
+aqui; ficam as que ela nao tem e as que conferem o efeito.
 """
 
 from __future__ import annotations
@@ -79,18 +78,8 @@ async def _recusa(coro) -> None:
 # ------------------------------------------------------------- GESTOR
 
 
-async def test_gestor_nao_reseta_nem_desativa_admin(db) -> None:
-    """⭐ A tomada de conta do relato: GESTOR -> ADMIN."""
-    m = await _mundo(db)
-    with _como(m, "gestor"):
-        svc = MemberService(db)
-        await _recusa(svc.reset_password(user_id=m["admin2"]))
-        await _recusa(svc.reset_password(user_id=m["dona"]))
-        await _recusa(svc.deactivate_member(user_id=m["admin2"]))
-
-
 async def test_gestor_administra_gestor_e_papeis_de_time(db) -> None:
-    """Contraprova: a trava nao pode ter fechado o que o GESTOR sempre fez."""
+    """A trava nao fechou o que o GESTOR sempre fez."""
     m = await _mundo(db)
     with _como(m, "gestor"):
         svc = MemberService(db)
@@ -105,7 +94,7 @@ async def test_gestor_administra_gestor_e_papeis_de_time(db) -> None:
 
 
 async def test_manager_nao_reseta_nem_desativa_par_nem_organizacao(db) -> None:
-    """⭐ MANAGER -> outro MANAGER, e -> ADMIN/GESTOR com vinculo na arvore dele.
+    """MANAGER -> outro MANAGER, e -> ADMIN/GESTOR com vinculo na arvore dele.
 
     Todos passam na pergunta de alcance (os vinculos estao no Marketing); so a
     trava de papel os recusa.

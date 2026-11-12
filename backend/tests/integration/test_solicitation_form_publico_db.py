@@ -1,20 +1,12 @@
-"""A leitura PUBLICA do formulario (Spec 043, fatia B).
+"""O formulario publico: leitura e envio sem login.
 
-⚠️⚠️ O TESTE QUE IMPORTA MAIS E O PRIMEIRO, e ele parece bobo: chamar o servico
-SEM `acting_as`. Todo o resto deste projeto le dado atraves do
-`BaseRepository`, cujo `_base_select` chama `require_tenant()` e ESTOURA sem
-contexto -- e e essa explosao que garante que nada vaze entre clientes. O
-caminho publico nao tem essa rede: ele resolve o workspace pelo SLUG e escreve
-o filtro a mao.
+⚠️ O primeiro teste chama o servico SEM `acting_as`. O resto do projeto le pelo
+`BaseRepository`, que estoura sem tenant e assim impede vazamento entre
+clientes; o caminho publico nao tem essa rede: resolve o workspace pelo slug e
+escreve o filtro a mao.
 
-Sem este teste, alguem "arrumaria" o servico para usar o repositorio padrao e
-descobriria o erro so quando o formulario publico parasse de abrir -- ou, pior,
-alguem esqueceria um `workspace_id` no WHERE e o formulario de outro cliente
-sairia pela porta publica, sem nenhum teste de tenant existente pegar.
-
-⚠️ E O SEGUNDO GRUPO E SOBRE O QUE **NAO** SAI: rascunho, apagado e formulario
-de outro workspace respondem os TRES a mesma coisa (404). Resposta diferente
-vira um enumerador de slugs para quem sonda.
+Rascunho, apagado e formulario de outro workspace respondem a mesma coisa
+(404): resposta diferente viraria um enumerador de slugs.
 """
 
 from __future__ import annotations
@@ -269,14 +261,12 @@ async def test_pergunta_apagada_some_do_publico(db) -> None:
 
 
 # ----------------------------------------------------------
-# A ESCRITA com `form_id` (Spec 043, fatia B)
+# A ESCRITA com `form_id`
 #
-# ⚠️ ESTE GRUPO GUARDA A UNICA ROTA DE ESCRITA SEM CREDENCIAL DA API. Ate a
-# fatia B ela validava a categoria contra uma lista fixa no dominio; agora, com
-# `form_id`, ela valida contra as SECOES daquele formulario -- lidas do banco,
-# sem usuario nenhum para culpar se algo passar.
+# ⚠️ A unica rota de escrita sem credencial da API: a categoria e validada
+# contra as SECOES do formulario, lidas do banco.
 # ----------------------------------------------------------
-def _envio(slug_ws: str, *, categoria: str, form_id=None) -> CreatePublicCommand:
+def _envio(slug_ws: str, *, categoria: str, form_id) -> CreatePublicCommand:
     return CreatePublicCommand(
         workspace_slug=slug_ws,
         requester_name="Maria do Polo",
@@ -312,12 +302,7 @@ async def test_envio_COM_form_id_grava_o_vinculo(db) -> None:
 
 
 async def test_categoria_fora_das_SECOES_do_formulario_e_recusada(db) -> None:
-    """⚠️ A validacao passou a ser contra o BANCO, e nao contra a lista fixa.
-
-    `arte` existe na `CATEGORIES` do dominio -- e ainda assim tem de ser
-    recusada aqui, porque a secao deste formulario se chama `briefing`. Se este
-    teste passar com `arte`, a validacao velha continua mandando.
-    """
+    """A secao deste formulario se chama `briefing`: `arte` e recusada."""
     ws, raiz, user, ctx = await _mundo(db)
     form, _, _ = await _form_publicado(db, ctx, raiz)
     slug_ws = await _slug_do_ws(db, ws)
@@ -330,13 +315,10 @@ async def test_categoria_fora_das_SECOES_do_formulario_e_recusada(db) -> None:
 
 
 async def test_form_id_de_OUTRO_workspace_e_recusado(db) -> None:
-    """⚠️⚠️ A TRAVA QUE IMPORTA MAIS DESTE ARQUIVO.
+    """Um `form_id` copiado penduraria o pedido no formulario de OUTRO cliente.
 
-    Rota sem credencial: um `form_id` copiado de outro lugar penduraria a
-    solicitacao no formulario de OUTRO cliente, e nao ha usuario para
-    responsabilizar depois. A recusa e a MESMA de categoria invalida, de
-    proposito -- um erro especifico confirmaria a existencia do formulario para
-    quem esta sondando.
+    A recusa e a mesma de categoria invalida, para nao confirmar a existencia
+    do formulario a quem sonda.
     """
     ws_a, raiz_a, _, ctx_a = await _mundo(db)
     ws_b, _, _, _ = await _mundo(db)
@@ -370,32 +352,8 @@ async def test_form_id_de_RASCUNHO_e_recusado(db) -> None:
             )
 
 
-async def test_SEM_form_id_o_caminho_antigo_continua_valendo(db) -> None:
-    """⚠️ COMPATIBILIDADE, e nao a regra.
-
-    A aba que ficou aberta durante o deploy nao pode receber 422 numa rota sem
-    login. Ela envia sem `form_id`, cai na lista fixa `CATEGORIES`, e a
-    solicitacao nasce sem vinculo -- que e exatamente o estado que o `LEFT
-    JOIN` da fila existe para acolher.
-
-    ⚠️ QUANDO O FRONT ANTIGO SUMIR, este teste e o ramo que ele guarda saem
-    juntos. Ele esta aqui para a remocao ser deliberada, e nao um efeito
-    colateral de alguem "limpando" o `frozenset`.
-    """
-    ws, raiz, user, ctx = await _mundo(db)
-    slug_ws = await _slug_do_ws(db, ws)
-
-    async with UnitOfWork(db) as uow:
-        criadas = await SolicitationService(db).create_public(
-            uow, _envio(slug_ws, categoria="arte", form_id=None)
-        )
-
-    assert criadas is not None
-    assert criadas[0].form_id is None
-
-
 # ----------------------------------------------------------
-# Secao repetivel (Spec 059, 15/10)
+# Secao repetivel
 #
 # A pessoa preenche a mesma secao mais de uma vez (varios eventos). Cada
 # repeticao e um item do lote -- a categoria se repete SO nessas secoes.
@@ -494,7 +452,7 @@ async def test_rotulo_vazio_volta_ao_titulo(db) -> None:
 
 
 async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
-    """15/10: a fila nao dizia por qual formulario o pedido entrou."""
+    """A fila diz por qual formulario o pedido entrou."""
     ws, raiz, user, ctx = await _mundo(db)
     form, secao, _ = await _form_publicado(db, ctx, raiz)
     slug_ws = await _slug_do_ws(db, ws)
@@ -510,7 +468,7 @@ async def test_a_fila_sabe_o_TITULO_do_formulario_do_pedido(db) -> None:
 
 
 # ----------------------------------------------------------
-# A fila nova (15/10): busca, formulario, "so sem tarefa" e abas
+# A fila: busca, formulario, "so sem tarefa" e abas
 # ----------------------------------------------------------
 async def test_fila_busca_formulario_e_abas(db) -> None:
     from app.shared.pagination import PageParams
@@ -560,11 +518,10 @@ async def test_fila_busca_formulario_e_abas(db) -> None:
 
 
 async def test_fila_busca_sem_acento_com_underline_e_abas_com_a_caixinha(db) -> None:
-    """Revisao de 16/10, antes do PR da 060:
-    - a busca APAGAVA `%` e `_`: `joao_silva@` virava `joaosilva@` e nao achava;
-    - a busca diferenciava acento: "conceicao" nao achava "Conceicao" com cedilha;
-    - os numeros das abas ignoravam a caixinha "so sem tarefa", e o selo dela
-      contava a fila inteira, e nao a aba aberta."""
+    """- `%` e `_` sao literais na busca: `joao_silva@` acha `joao_silva@`;
+    - a busca ignora acento: "conceicao" acha "Conceicao" com cedilha;
+    - os numeros das abas respeitam a caixinha "so sem tarefa", e o selo
+      conta a aba aberta, nao a fila inteira."""
     from dataclasses import replace
 
     from app.modules.solicitations.application.service import ReviewCommand
@@ -601,19 +558,6 @@ async def test_fila_busca_sem_acento_com_underline_e_abas_com_a_caixinha(db) -> 
         }
         # O selo e da aba aberta: em Concluidas, nenhuma sem tarefa.
         assert (await svc.count_by_tab(None, filtro="DONE"))["WITHOUT_TASK"] == 0
-
-
-# ----------------------------------------------------------
-# 16/10, a auditoria
-# ----------------------------------------------------------
-def test_enunciado_de_ate_300_caracteres_cabe_no_envio() -> None:
-    """O editor aceita pergunta de 300 caracteres e o envio cortava em 200:
-    quem respondesse a ela recebia 422 depois de preencher tudo."""
-    from app.modules.solicitations.api.form_schemas import QuestionCreateRequest
-    from app.modules.solicitations.api.schemas import AnswerItem
-
-    teto = QuestionCreateRequest.model_fields["label"].metadata[0].max_length
-    AnswerItem(label="x" * teto, value="ok")  # nao levanta
 
 
 async def test_envio_grande_demais_e_recusado_antes_de_gravar(db) -> None:

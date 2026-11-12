@@ -1,9 +1,8 @@
-"""Bateria de teste NEGATIVO -- revisao de seguranca de 23/09.
+"""Bateria de teste NEGATIVO.
 
 ⚠️ O QUE ESTE ARQUIVO E: as perguntas que um atacante faria, escritas como
-teste. A suite ja cobre bem "quem PODE, consegue" (70 arquivos afirmam 404 e
-50 afirmam 403). O que faltava era um lugar unico para "quem NAO pode, nao
-consegue" -- as classes de abuso, e nao os casos de produto.
+teste. Um lugar unico para "quem NAO pode, nao consegue" -- as classes de
+abuso, e nao os casos de produto.
 
 O QUE ELE PRENDE:
   - ⚠️ CAMPO QUE A ROTA NAO OFERECE E IGNORADO, e nao obedecido: mandar
@@ -13,7 +12,7 @@ O QUE ELE PRENDE:
   - ⚠️ ATRAVESSAR WORKSPACE devolve 404, e nao 403: 403 confirma que o id
     existe do outro lado, e isso ja e vazamento;
   - preferencia de notificacao e PESSOAL: a rota nao tem por onde receber
-    usuario, e mexer nas minhas nao encosta nas de ninguem (Spec 054, D15);
+    usuario, e mexer nas minhas nao encosta nas de ninguem;
   - a leitura de notificacao nunca cruza workspace;
   - o formulario publico recusa `form_id` de OUTRO workspace.
 
@@ -245,9 +244,9 @@ async def test_notificacao_de_outro_workspace_nao_aparece_nem_se_marca(db) -> No
     assert ainda_nao_lida.read_at is None
 
 
-# --------------------------------------------- preferencia de notificacao (054)
+# --------------------------------------------- preferencia de notificacao
 async def test_preferencia_nao_alcanca_outra_pessoa(db) -> None:
-    """Spec 054 (D15): so a propria pessoa mexe nas suas -- e as duas pessoas
+    """So a propria pessoa mexe nas suas -- e as duas pessoas
     deste teste estao NO MESMO workspace, que e o caso dificil.
 
     ⚠️ A ROTA NAO TEM POR ONDE RECEBER USUARIO, e isso e a trava, nao um
@@ -305,10 +304,8 @@ async def test_envio_publico_recusa_form_de_outro_workspace(db) -> None:
     solicitacao. Copiar o id de um formulario de outro workspace nao pode por
     nada na fila de la.
 
-    ⚠️ CONSERTADO EM 16/10 (auditoria da suite): o corpo nao mandava
-    `workspace_slug` nem `summary`, obrigatorios -- o Pydantic recusava antes
-    de qualquer regra, e o teste aceitava 400, 404 OU 422. Passava pelo motivo
-    errado. Agora o corpo e valido e so a regra do workspace pode recusar."""
+    ⚠️ O corpo e VALIDO de proposito: com campo obrigatorio faltando, o
+    Pydantic recusaria antes de qualquer regra, pelo motivo errado."""
     from app.db.models import Workspace
 
     m = await _mundo(db)

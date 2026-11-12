@@ -1,22 +1,12 @@
-"""Spec 055, fatia A -- a leitura do historico da tarefa.
+"""GET /tasks/{id}/history: a leitura do historico da tarefa.
 
-⚠️ A TABELA E ESCRITA DESDE A ENTREGA 4 E NUNCA FOI LIDA. Esta e a primeira
-porta de leitura, e por isso o arquivo nao se contenta em provar que a rota
-responde: ele monta uma tarefa com VIDA (editar, mover de coluna, designar,
-seguir, arquivar) e confere que os eventos chegam.
-
-O QUE ELE PRENDE:
-  - ⚠️ QUEM NAO VE A TAREFA NAO LE O HISTORICO DELA -- 404, a mesma regra dos
-    comentarios (D6). Sem isso, o passado da tarefa (titulo velho, quem foi
-    designado, quando mudou de coluna) vazaria para fora do time;
-  - mais NOVO primeiro (§9.1, decisao dela);
-  - a paginacao nao repete nem pula linha -- inclusive entre eventos gravados
-    no MESMO commit, que empatam em `created_at`;
-  - comentario NAO entra no historico (D7 da Entrega 14);
+Monta uma tarefa com vida (editar, mover de coluna, designar) e confere:
+  - quem nao ve a tarefa nao le o historico dela (404, como a tarefa);
+  - mais novo primeiro;
+  - a paginacao nao repete nem pula linha, mesmo entre eventos do mesmo
+    commit, que empatam em `created_at`;
+  - comentario nao entra no historico;
   - o `total` e o da tarefa, e nao o da tabela.
-
-SABOTAGEM (medida): em `TaskHistoryService.list_for_task`, tirar o
-`assert_visible`. Deve cair "⚠️ quem nao ve a tarefa nao le o historico".
 """
 
 from __future__ import annotations
@@ -162,12 +152,13 @@ async def test_historico_conta_a_vida_da_tarefa(db) -> None:
     # quebrado para quem usa.
     assert "created" in tipos
     assert "updated" in tipos  # o titulo mudou
+    assert "status_changed" in tipos  # mudou de coluna
     assert "assigned" in tipos  # duas pessoas foram designadas
     assert corpo["total"] == len(corpo["items"])
 
 
 async def test_mais_novo_primeiro(db) -> None:
-    """§9.1 (decisao dela): ninguem abre o historico para ler o comeco."""
+    """Ninguem abre o historico para ler o comeco."""
     m = await _mundo(db)
     async with _cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
@@ -208,7 +199,7 @@ async def test_paginacao_nao_repete_nem_pula(db) -> None:
 
 
 async def test_comentario_nao_entra_no_historico(db) -> None:
-    """D7 da Entrega 14, ainda valendo: comentario e conversa, nao auditoria."""
+    """Comentario e conversa, nao auditoria."""
     m = await _mundo(db)
     async with _cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)
@@ -236,9 +227,9 @@ async def test_o_total_e_o_da_tarefa(db) -> None:
 
 
 async def test_quem_nao_ve_a_tarefa_nao_le_o_historico(db) -> None:
-    """⚠️⚠️ O GUARDIAO DA §6.1. Sem o `assert_visible`, esta rota entregaria o
-    passado inteiro da tarefa -- titulo velho, quem foi designado, quando
-    mudou de coluna -- para quem toma 404 na tarefa em si."""
+    """Sem o `assert_visible`, esta rota entregaria o passado inteiro da
+    tarefa -- titulo velho, quem foi designado, quando mudou de coluna -- para
+    quem toma 404 na tarefa em si."""
     m = await _mundo(db)
     async with _cliente(db, m["ctx_sup"]) as cli:
         tid = await _tarefa_com_vida(cli, m)

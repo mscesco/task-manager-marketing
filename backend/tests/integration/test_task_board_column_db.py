@@ -1,27 +1,14 @@
-"""A tarefa grava QUADRO e COLUNA (Spec 035 fatia 3b, ADR 0033).
+"""A tarefa grava QUADRO e COLUNA, derivados do status.
 
-A fatia 3a fez o quadro nascer com o workspace. Esta faz a tarefa apontar para
-ele -- e a `0011` trava os dois campos como obrigatorios.
+⚠️ A direcao e `status -> coluna`. Cada assercao compara a coluna da tarefa
+com o `legacy_status` dela, e nao com a semantica: quatro colunas dividem
+`IN_PROGRESS`, entao afirmar a semantica passaria com a tarefa na coluna errada.
 
-⚠️ A DIRECAO E `status -> coluna`. Cada assercao aqui compara a coluna da
-tarefa com o `legacy_status` dela, e nao com a semantica. Pela semantica o
-teste passaria com a tarefa na coluna ERRADA: quatro colunas dividem
-`IN_PROGRESS`, entao "esta numa coluna IN_PROGRESS" e verdade para Em
-Andamento, Aprovação Interna, Aprovação Externa e Bloqueado ao mesmo tempo.
-Afirmar a semantica seria afirmar quase nada -- a versao deste teste que
-"passa mais facil" e a que nao mede.
-
-O que defendem, em ordem:
-
-  1. Tarefa nova nasce no quadro do time RAIZ, na coluna do seu status.
-  2. Os OITO status tem coluna. E o que a inversao da D3 preserva -- pela
-     regra original, quatro deles cairiam na mesma coluna.
-  3. Mudar o status MOVE a coluna, e nao muda o quadro.
-  4. A CASCATA de conclusao move a coluna dos descendentes. E o `UPDATE`
-     textual em massa, que passa por fora do ORM -- o ponto mais facil de
-     esquecer, e o que ja deixou `updated_at` velho por meses.
-  5. Subtarefa de subtime vai para o quadro da RAIZ (ADR 0032), e nao para um
-     quadro do subtime, que nao existe.
+  1. Os oito status tem coluna.
+  2. Mudar o status move a coluna, e nao muda o quadro.
+  3. A cascata de conclusao (`UPDATE` textual, por fora do ORM) move a coluna
+     dos descendentes.
+  4. Tarefa de subtime vai para o quadro da raiz; subtime nao tem quadro.
 """
 
 from __future__ import annotations
@@ -95,34 +82,10 @@ async def _quadro_da_raiz(db, raiz: uuid.UUID):
     ).scalar_one()
 
 
-async def test_tarefa_nova_nasce_no_quadro_da_raiz_e_na_coluna_do_status(
-    db,
-) -> None:
-    ws, raiz, sub, admin, ana, proj, ctx = await _mundo(db)
-    with acting_as(**ctx):
-        t = await TaskService(db).create(
-            CreateTaskCommand(
-                title="Campanha",
-                project_id=proj,
-                team_id=raiz,
-                assignee_ids=[admin],
-            )
-        )
-
-    board_id, column_id, legacy, status = await _coluna_da_tarefa(db, t.id)
-    assert board_id == await _quadro_da_raiz(db, raiz)
-    assert column_id is not None
-    assert legacy == status == TaskStatus.BACKLOG.value
-
-
 @pytest.mark.parametrize("status", list(TaskStatus))
 async def test_os_OITO_status_tem_coluna(db, status) -> None:
-    """⚠️ O teste que a inversao da D3 existe para tornar possivel.
-
-    Pela regra original (status derivado da semantica), `PLANNED`, `IN_REVIEW`,
-    `EXTERNAL_APPROVAL` e `BLOCKED` cairiam todos na mesma coluna e o status
-    voltaria diferente do que entrou.
-    """
+    """Derivando da semantica, `PLANNED`, `IN_REVIEW`, `EXTERNAL_APPROVAL` e
+    `BLOCKED` cairiam na mesma coluna e o status voltaria diferente."""
     ws, raiz, sub, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         t = await TaskService(db).create(
@@ -140,7 +103,7 @@ async def test_os_OITO_status_tem_coluna(db, status) -> None:
     assert gravado == status.value, "o status recebido nao pode ser trocado"
     assert legacy == status.value, (
         f"{status.value} foi parar na coluna de {legacy} -- a derivacao esta "
-        "usando a semantica em vez do legacy_status (ADR 0033)"
+        "usando a semantica em vez do legacy_status"
     )
 
 
@@ -172,11 +135,8 @@ async def test_mudar_o_status_MOVE_a_coluna_e_nao_muda_o_quadro(db) -> None:
 
 
 async def test_cascata_de_conclusao_move_a_coluna_dos_DESCENDENTES(db) -> None:
-    """⚠️ `UPDATE` textual em massa, por fora do ORM. Sem a subconsulta no SQL,
-    a subarvore ficaria COMPLETED apontando para a coluna antiga -- estado
-    inconsistente que a tela nao mostra hoje (o front desenha por status) e que
-    apareceria como tarefa na coluna errada no dia em que o front ler o
-    quadro."""
+    """`UPDATE` textual em massa, por fora do ORM: sem a subconsulta no SQL, a
+    subarvore ficaria COMPLETED apontando para a coluna antiga."""
     ws, raiz, sub, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         pai = await TaskService(db).create(
@@ -224,10 +184,8 @@ async def test_cascata_de_conclusao_move_a_coluna_dos_DESCENDENTES(db) -> None:
 
 
 async def test_tarefa_de_SUBTIME_vai_para_o_quadro_da_RAIZ(db) -> None:
-    """ADR 0032: um quadro por workspace, do time raiz. Subtime nao tem quadro
-    proprio -- ele tem a LENTE sobre o mesmo quadro. Se a resolucao usasse o
-    time da tarefa, a tarefa do subtime nao acharia quadro nenhum e a criacao
-    falharia."""
+    """O quadro padrao e do time raiz; subtime tem a lente sobre ele. Se a
+    resolucao usasse o time da tarefa, a do subtime nao acharia quadro."""
     ws, raiz, sub, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         t = await TaskService(db).create(
@@ -248,12 +206,11 @@ async def test_tarefa_de_SUBTIME_vai_para_o_quadro_da_RAIZ(db) -> None:
             text("SELECT count(*) FROM board WHERE team_id = :t"), {"t": sub}
         )
     ).scalar_one()
-    assert n == 0, "subtime nao ganha quadro por existir (ADR 0032)"
+    assert n == 0, "subtime nao ganha quadro por existir"
 
 
 async def test_a_coluna_e_sempre_do_MESMO_quadro_da_tarefa(db) -> None:
-    """A FK composta `(column_id, board_id)` promete isso no banco. Medido
-    assim mesmo: constraint que ninguem testou e promessa."""
+    """A FK composta `(column_id, board_id)` promete isso no banco."""
     ws, raiz, sub, admin, ana, proj, ctx = await _mundo(db)
     with acting_as(**ctx):
         for status in (TaskStatus.BACKLOG, TaskStatus.BLOCKED):

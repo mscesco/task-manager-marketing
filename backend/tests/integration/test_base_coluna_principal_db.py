@@ -1,13 +1,11 @@
-"""Spec 061 -- trocar a coluna principal da Base (pedido dela em 16/10).
+"""Trocar a coluna principal da Base.
 
     - uma coluna de TEXTO vira o titulo, e o titulo de antes vira texto;
     - os valores ficam onde estavam (titulo e texto guardam a mesma string);
     - as duas trocam de lugar: o titulo continua na primeira posicao;
-    - so texto (decisao dela): selecao recusa com 422; ja ser o titulo e nada;
+    - so texto: selecao recusa com 422; ja ser o titulo e nada;
     - o Ctrl+Z troca de volta, e recusa se alguem trocou de novo no meio;
     - continua havendo UM titulo so.
-
-Roda so com db-test de pe + TEST_DATABASE_URL (senao e PULADO).
 """
 
 from __future__ import annotations
@@ -106,7 +104,7 @@ async def test_ctrl_z_troca_de_volta_e_refazer_troca_de_novo(db) -> None:
 
 
 async def test_ctrl_z_recusa_se_outra_pessoa_trocou_a_principal_depois(db) -> None:
-    """Desfazer nunca apaga o que outra pessoa fez depois (D12) -- e nunca
+    """Desfazer nunca apaga o que outra pessoa fez depois -- e nunca
     deixa a base com dois titulos."""
     m = await _mundo(db)
     outra = await f.make_user(db, workspace_id=m["ws"])
