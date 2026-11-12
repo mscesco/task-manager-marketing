@@ -19,15 +19,8 @@ import { useTema } from "@/lib/useTema";
 import type { Tema } from "@/lib/tema";
 
 import Loading from "@/components/Loading";
-// Perfil: nome (editável), e-mail e times + atalho pra trocar senha e o tema.
-//
-// ⚠️ Spec 051, fatia E: O NOME PASSOU A SER EDITÁVEL AQUI, e só aqui -- decisão
-// da Camila (16/09): *"liberar somente para próprio"*. Ninguém edita o nome de
-// outra pessoa, admin incluído, e por isso a gaveta do membro não ganha campo.
-// Avatar e e-mail seguem fora (ADR 0009).
-//
-// Redesign (fatia 4): duas colunas -- dados à esquerda, preferências de
-// notificação à direita -- e o personagem do Tibia no canto (só nesta tela).
+// Perfil: nome (editável só aqui, pela própria pessoa), e-mail, times, tema e
+// preferências de notificação.
 const PAPEL_LABEL: Record<string, string> = {
   ADMIN: "Administrador",
   GESTOR: "Gestor",
@@ -220,9 +213,8 @@ function Perfil() {
           </div>
         </Card>
 
-        {/* ⚠️ O `id` E O DESTINO DO "Configurar" de `/notificacoes`
-            (`/perfil#notificacoes`, Spec 054 §9.6). Tirar o id nao quebra
-            nada visivelmente -- so faz o link cair no topo da pagina. */}
+        {/* O `id` é o destino do "Configurar" de `/notificacoes`
+            (`/perfil#notificacoes`). */}
         <section id="notificacoes" className="scroll-mt-4">
           <Card>
             <NotificationPreferences />
@@ -230,8 +222,7 @@ function Perfil() {
         </section>
       </div>
 
-      {/* Easter egg (decisao dela): o personagem no canto da tela. O PNG e
-          animado e anda sozinho. Decoracao: `aria-hidden`, sem alt, sem clique. */}
+      {/* Easter egg: o personagem animado no canto. Decoração, `aria-hidden`. */}
       <div className="tibia-egg print:hidden" aria-hidden="true">
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src="/tibia.png" alt="" width={96} height={96} />

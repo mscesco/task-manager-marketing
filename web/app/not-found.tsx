@@ -5,13 +5,8 @@ import type { Metadata } from "next";
 export const metadata: Metadata = { title: "Página não encontrada" };
 
 /**
- * O 404 do app. Sem este arquivo o Next desenhava o dele, em inglês e fora do
- * tema -- e é onde cai quem guardou um endereço que saiu, como `/membros`
- * (Spec 047).
- *
- * ⚠️ FICA FORA DO `AppShell` de propósito: o shell exige sessão, e o 404 tem
- * de responder também a quem não entrou. Por isso o link vai para `/`, que já
- * decide entre o quadro e o login.
+ * O 404 do app. Fora do `AppShell` de propósito: o shell exige sessão, e o 404
+ * responde também a quem não entrou; por isso o link vai para `/`.
  */
 export default function NotFound() {
   return (

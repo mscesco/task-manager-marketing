@@ -6,9 +6,8 @@ import { login, getMe, setTokens, ApiError } from "@/lib/api";
 import OnirosMark from "@/components/OnirosMark";
 import { LinksLegais } from "@/components/MolduraPublica";
 
-// Redesign (fatia 4): duas colunas a partir de 900px -- o painel azul com
-// tres cartoezinhos decorativos a esquerda, o formulario num card a direita.
-// Abaixo disso so o formulario. Nada de frase de efeito (decisao dela).
+// Duas colunas a partir de 900px: painel decorativo à esquerda, formulário à
+// direita. Abaixo disso, só o formulário.
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,7 +26,6 @@ export default function LoginPage() {
       setTokens(tokens.access_token, tokens.refresh_token);
       // primeiro acesso? backend marca must_change_password -> manda trocar
       const me = await getMe();
-      // Spec 058 (§10.1): a entrada é a tela inicial, e não mais o quadro.
       router.replace(me.must_change_password ? "/trocar-senha" : "/inicio");
     } catch (err) {
       const e = err as ApiError;
@@ -105,8 +103,8 @@ export default function LoginPage() {
             <div className="relative">
               <input
                 id="senha" className="input w-full"
-                // `.input` vence o `pr-*` do Tailwind (web/AGENTS.md §11):
-                // o respiro para o botao do olho vai inline.
+                // `.input` vence o `pr-*` do Tailwind: o respiro para o botão
+                // do olho vai inline.
                 style={{ paddingRight: 44 }}
                 type={mostrarSenha ? "text" : "password"}
                 autoComplete="current-password"

@@ -71,16 +71,11 @@ function Projeto() {
   const [excluindo, setExcluindo] = useState(false);
   const [erroExcluir, setErroExcluir] = useState<string | null>(null);
   const [editando, setEditando] = useState(false);
-  // Spec 052, fatia B. Falhar em buscar os links não pode derrubar a página do
-  // projeto -- ela continua útil sem eles.
-  // ⚠️⚠️ `null` = AINDA NÃO SEI, e não "sem links" (revisão de 16/09). Com `[]`
-  // até a resposta chegar, abrir o painel de editar cedo (ou com a busca
-  // falhando) começava o editor vazio -- e salvar mandava a lista vazia,
-  // APAGANDO os links do projeto.
+  // Falhar em buscar os links não derruba a página. `null` = ainda não sei, e
+  // não "sem links": com `[]`, salvar cedo apagaria os links do projeto.
   const [links, setLinks] = useState<LinkItem[] | null>(null);
   const [falhouLinks, setFalhouLinks] = useState(false);
-  // Redesign (21/10, a prancha "Projeto"): a página abre no RESUMO -- números,
-  // tarefas em aberto, pessoas -- e o quadro fica a um clique. Sessão-only.
+  // A página abre no resumo; o quadro fica a um clique. Sessão-only.
   const [vista, setVista] = useState<"resumo" | "quadro">("resumo");
   const { teams } = useActiveTeam();
 
@@ -108,30 +103,18 @@ function Projeto() {
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!project) return <Loading />;
 
-  // ⚠️⚠️ Spec 051, fatia A: OS BOTÕES VÊM DO PROJETO, e não de `me.permissions`.
-  // Até aqui a tela perguntava `project.update`/`project.delete` "em algum
-  // lugar" -- e quem é gerente no Marketing e operador no Comercial via Editar
-  // e Excluir num projeto do Comercial, que o servidor recusa. O servidor
-  // calcula as duas no time do projeto, pela mesma pergunta da escrita.
-  // ⚠️ E continuam SEPARADOS (bug de 22/08, "não dá pra excluir projeto"):
-  // quem pode editar não necessariamente pode apagar.
+  // Os botões vêm do projeto (calculados pelo servidor no time dele), não de
+  // `me.permissions`. Editar e apagar são separados.
   const editavel = project.can_update;
   const excluivel = project.can_delete;
 
-  // ⚠⚠ O VOLTAR LEVA O TIME DO PROJETO (14/09, mesmo defeito do menu: com o
-  // Comercial ativo, voltar abria os projetos do Marketing). Esta rota não tem
-  // `?time=`, então o "time ativo" aqui seria a RESERVA -- quem sabe o time
-  // certo é o próprio projeto. Se ele for de subtime, `activeTeam` sobe até a
-  // raiz na chegada.
+  // O voltar leva o time do projeto: esta rota não tem `?time=`.
   const listaDoTime = project.team_id
     ? withTeam("/projetos", "", project.team_id)
     : "/projetos";
 
   async function excluir() {
-    // ⚠️ O AVISO DIZ O QUE ACONTECE COM AS TAREFAS, e isso não é zelo: o
-    // soft delete marca `deleted_at` no PROJETO e não toca nelas. Elas
-    // continuam existindo e apenas perdem a tag na tela -- quem lê "excluir
-    // projeto" costuma imaginar o contrário, e a diferença é grande.
+    // O soft delete marca só o projeto: as tarefas continuam e perdem a tag.
     const ok = window.confirm(
       `Excluir o projeto “${project!.title}”?\n\n` +
         "As tarefas dele NÃO são apagadas: elas continuam no quadro e passam " +
@@ -142,10 +125,8 @@ function Projeto() {
     setExcluindo(true);
     try {
       await deleteProject(project!.id);
-      // ⚠️ `replace`, e não `push`: a página do projeto apagado não pode
-      // sobrar no histórico -- o "voltar" cairia num 404.
-      // ⚠️ VOLTA PARA A LISTA DO TIME DO PROJETO (14/09). O caminho puro
-      // apagava o time e a lista caía na reserva.
+      // `replace`: a página do projeto apagado não pode sobrar no histórico.
+      // Volta para a lista do time do projeto.
       router.replace(listaDoTime);
     } catch (e) {
       const err = e as ApiError;
@@ -160,15 +141,7 @@ function Projeto() {
     }
   }
 
-  // ⚠️ A META VIRA UMA LINHA DISCRETA (decisão da Camila, 22/08). Ela morava
-  // num bloco próprio com bolinha grande, título e descrição em parágrafo --
-  // e o `Quadro Projeto.png` tem UMA linha. A escolha foi "vira uma linha
-  // discreta abaixo": o desenho é respeitado e nenhum dado some da tela.
-  //
-  // ⚠️⚠️ A DESCRIÇÃO SAIU DESTA LINHA (Spec 052, fatia A). Ela ficava aqui
-  // cortada em uma linha com reticências -- e com uma descrição longa não se
-  // lia nada. Agora é o bloco "Sobre o projeto", logo abaixo, com o começo à
-  // vista e "Ver mais". A linha discreta de 22/08 continua sendo a META.
+  // A meta é uma linha discreta; a descrição fica no bloco "Sobre o projeto".
   const metaDoProjeto = (
     <div
       className="muted"
@@ -190,8 +163,7 @@ function Projeto() {
       <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
-      {/* Spec 052, fatia B: os links do projeto, só com o nome, na mesma linha
-          da meta -- é a primeira coisa que as pessoas abrem. */}
+      {/* Os links do projeto, só com o nome, na mesma linha da meta. */}
       <LinksDoItem links={links ?? []} rotulo="Links do projeto" />
     </div>
   );
@@ -238,8 +210,7 @@ function Projeto() {
       ) : (
         <>
           {metaDoProjeto}
-          {/* Sem descrição, sem bloco -- nada de "Sem descrição" ocupando
-              espaço acima do quadro. */}
+          {/* Sem descrição, sem bloco. */}
           {project.description && project.description.trim().length > 0 && (
             <SobreOProjeto texto={project.description} />
           )}
@@ -268,17 +239,7 @@ function Projeto() {
 
   return (
     <div>
-      {/* ⚠️ EU APAGUEI ESTE LINK AO REFAZER O CABEÇALHO, e a Camila pegou na
-          tela no mesmo dia: "você tirou o 'voltar' da tela quando abre um
-          projeto né". Foi regressão, não decisão -- ele morava no bloco de
-          cabeçalho que a página deixou de desenhar, e saiu junto sem que eu
-          percebesse.
-
-          ⚠️ FICA ACIMA DO CABEÇALHO, e não dentro dele: "voltar" é sobre a
-          NAVEGAÇÃO (de onde vim), e o cabeçalho é sobre o CONTEÚDO (o que
-          estou vendo). Enfiá-lo entre o título e o contador misturaria as duas
-          coisas -- é a mesma separação que o `acoesDoTitulo` respeita do outro
-          lado. */}
+      {/* O "voltar" fica acima do cabeçalho: é navegação, não conteúdo. */}
       <a
         href={listaDoTime}
         className="muted max-md:min-h-6"
@@ -287,20 +248,8 @@ function Projeto() {
         ‹ Projetos
       </a>
 
-      {/* ⚠️ O NOME DO PROJETO APARECIA DUAS VEZES, e foi isso que o print da
-          Camila mostrou. Esta página desenhava o próprio cabeçalho (bolinha +
-          h1 de 19px + meta + descrição) e logo abaixo passava
-          `title={project.title}` para o `Board`, que desenha o título DE NOVO,
-          agora em 26px. O desenho tem uma linha só.
-
-          Agora o cabeçalho é o do `Board`, e a página entrega a ele as duas
-          peças que são do projeto: o lápis, junto do título, e a meta, abaixo.
-
-          ⚠️ E NÃO HÁ LÁPIS DE COLUNAS AQUI -- nem antes havia. `podeEditarColunas`
-          é `false` por omissão e esta página nunca o passou, o que já era a
-          regra que a Camila confirmou em 22/08: "no quadro de projeto não é pra
-          ser possível editar o quadro". Fica escrito para ninguém "corrigir" a
-          ausência achando que é esquecimento. */}
+      {/* O cabeçalho é o do `Board`; a página entrega a ele o lápis e a meta.
+          Sem lápis de colunas: o quadro de projeto não se edita. */}
       {vista === "resumo" ? (
         <>
           <PageHeader title={project.title} titleAddon={lapis} actions={alternarVista} />
@@ -342,14 +291,7 @@ function EditPanel({
   onRecarregarLinks,
 }: {
   project: Project;
-  /**
-   * ⚠️ O EXCLUIR MORA AQUI DENTRO desde 22/08, por decisão da Camila: "só tem
-   * um lápis de edição, que é pra editar o projeto e ali dentro já deixa o
-   * excluir". Antes era um botão vermelho no cabeçalho, ao lado de "Editar" --
-   * uma ação irreversível a um clique de distância, no meio da navegação.
-   * Dentro do painel ela exige abrir a edição primeiro, e fica ao lado das
-   * outras decisões sobre o projeto.
-   */
+  /** Painel de edição do projeto; o Excluir mora aqui dentro, não no cabeçalho. */
   excluivel: boolean;
   excluindo: boolean;
   onExcluir: () => void;
@@ -362,10 +304,8 @@ function EditPanel({
   onRecarregarLinks: () => void;
 }) {
   const [title, setTitle] = useState(project.title);
-  // Spec 052, fatia B: os links entram no MESMO formulário e salvam no mesmo
-  // botão. Só vai ao servidor se a lista mudou (`linksMudaram`).
-  // ⚠️ `null` ENQUANTO OS LINKS NÃO CHEGAM (revisão de 16/09): o rascunho nasce
-  // da lista SALVA, nunca de uma lista vazia que só significa "ainda não sei".
+  // Os links salvam no mesmo botão, só se a lista mudou (`linksMudaram`). O
+  // rascunho nasce da lista salva; `null` enquanto ela não chega.
   const [rascunhoLinks, setRascunhoLinks] = useState<RascunhoLink[] | null>(() =>
     links ? rascunhoDe(links) : null,
   );
@@ -399,9 +339,7 @@ function EditPanel({
     setSalvando(true);
     setErroForm(null);
     try {
-      // Datas: o PATCH do backend nao LIMPA (None = "nao mexer"). Por isso
-      // so enviamos a data quando ha valor; campo esvaziado e OMITIDO e a
-      // data atual permanece. Remover data exigiria backend -- fora daqui.
+      // O PATCH não limpa datas (None = "não mexer"): campo esvaziado é omitido.
       const patch: ProjectUpdateInput = {
         title: t,
         description,
@@ -411,12 +349,9 @@ function EditPanel({
         ...(dueDate ? { due_date: dueDate } : {}),
       };
       const atualizado = await updateProject(project.id, patch);
-      // ⚠️ DEPOIS do projeto, e só se mudou. Se o PUT dos links falhar, o
-      // projeto já foi salvo: o erro aparece e o painel continua aberto com o
-      // rascunho, para tentar de novo sem redigitar.
-      // ⚠️ E SÓ COM OS DOIS LADOS CONHECIDOS: sem a lista salva (ainda
-      // carregando, ou a busca falhou) não há com o que comparar, e mandar o
-      // rascunho substituiria links que a tela nunca viu.
+      // Os links vão depois do projeto, e só se mudaram e a lista salva é
+      // conhecida: sem ela, o rascunho substituiria links que a tela nunca viu.
+      // Se o PUT falhar, o painel fica aberto com o rascunho.
       const envio = linksParaEnviar(links, rascunhoLinks);
       const salvos = envio ? await putProjectLinks(project.id, envio) : links;
       onSaved(atualizado, salvos);
@@ -442,7 +377,7 @@ function EditPanel({
       </div>
       <div className="field">
         <span className="label" id="projeto-descricao-rotulo">Descrição</span>
-        {/* Spec 052, fatia E: o editor que já mostra formatado. */}
+        {/* O editor que já mostra formatado. */}
         <EditorDeDescricao
           rotuloId="projeto-descricao-rotulo"
           valor={description}
@@ -526,10 +461,7 @@ function EditPanel({
       </span>
       {erroForm && <div className="error-box">{erroForm}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        {/* ⚠️ NA PONTA ESQUERDA, LONGE DO "Salvar". Destrutivo encostado no
-            botão que a pessoa vai clicar é como se erra por milímetro -- o
-            `marginRight: auto` empurra o par Cancelar/Salvar para a direita e
-            deixa um vão entre eles. */}
+        {/* Excluir na ponta esquerda, longe do "Salvar" (`marginRight: auto`). */}
         {excluivel && (
           <button
             type="button"

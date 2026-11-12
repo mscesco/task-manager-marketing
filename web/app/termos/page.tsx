@@ -1,4 +1,4 @@
-// /termos -- publica, sem login (Spec 064).
+// /termos: pública, sem login.
 
 import TextoLegal from "@/components/TextoLegal";
 

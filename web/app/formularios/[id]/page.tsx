@@ -1,16 +1,9 @@
 "use client";
-// /formularios/[id] — o editor de seções e perguntas (Spec 043, fatia C2).
+// /formularios/[id]: o editor de seções e perguntas.
 //
-// ⚠️ ATÉ AQUI DAVA PARA CRIAR UM FORMULÁRIO E MAIS NADA. A fatia C1 entregou a
-// lista, e o primeiro formulário criado por ela bateu num beco: "um formulário
-// sem perguntas não pode ser publicado", e nenhum lugar onde pôr perguntas.
-// Esta tela é a saída daquele beco.
-//
-// ⚠️ ORDEM POR SETAS, E NÃO POR ARRASTAR, e é uma escolha e não um esquecimento:
-// `onDragEnd` não roda em jsdom (AGENTS.md §6), então arrastar aqui nasceria
-// sem portão nenhum — num editor em que mover a pergunta errada apaga uma
-// condicional. As setas são testáveis, funcionam no teclado, e desabilitam com
-// o motivo escrito quando o movimento quebraria alguma coisa.
+// Ordem por setas, não por arrastar: `onDragEnd` não roda em jsdom, e as setas
+// são testáveis, funcionam no teclado e desabilitam com o motivo quando o
+// movimento quebraria uma condicional.
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
@@ -67,10 +60,10 @@ export default function EditorPage() {
   );
 }
 
-// Spec 063, decisao 1: montar formulario e so em tela grande.
+// Montar formulário é só em tela grande.
 function EditorOuAviso() {
-  // Decide UMA vez, ao abrir: cruzar 768 px no meio da edicao (janela
-  // estreitada, aparelho girado) desmontaria o editor e perderia o rascunho.
+  // Decide uma vez, ao abrir: cruzar 768 px no meio da edição desmontaria o
+  // editor e perderia o rascunho.
   const [faixaAoAbrir] = useState(useFaixaDeTela());
   if (faixaAoAbrir !== "celular") return <Editor />;
   return (
@@ -115,9 +108,8 @@ function Editor() {
       );
   }, [formId]);
 
-  // Redesign (fatia 7): os outros formulários do mesmo time ficam numa coluna
-  // à esquerda, para trocar de formulário sem voltar à lista. ⚠️ Acessório:
-  // se a lista falhar, a coluna fica só com este, e o editor segue.
+  // Os outros formulários do mesmo time, numa coluna à esquerda. Acessório: se
+  // a lista falhar, a coluna fica só com este.
   const [lista, setLista] = useState<Formulario[]>([]);
   const teamId = form?.team_id ?? null;
   useEffect(() => {
@@ -132,14 +124,9 @@ function Editor() {
   }, [teamId]);
 
   /**
-   * ⚠️ TODA ESCRITA PASSA POR AQUI, E RECARREGA O FORMULÁRIO INTEIRO.
-   *
-   * Parece desperdício e é a decisão certa para esta tela: quase toda ação
-   * mexe em mais de uma coisa. Apagar uma pergunta pode limpar o resumo da
-   * seção; reordenar renumera todo mundo; apagar uma seção leva as perguntas
-   * junto. Costurar cada um desses efeitos no estado local seria manter uma
-   * segunda cópia das regras do backend — e a primeira que divergisse mostraria
-   * um formulário que não existe.
+   * Toda escrita passa por aqui e recarrega o formulário inteiro: quase toda
+   * ação mexe em mais de uma coisa, e costurar no estado local duplicaria as
+   * regras do backend.
    */
   async function agir(o_que: () => Promise<unknown>): Promise<boolean> {
     setOcupado(true);
@@ -149,20 +136,9 @@ function Editor() {
       await recarregar();
       return true;
     } catch (e) {
-      // ⚠️ A MENSAGEM DO BACKEND APARECE INTEIRA. É ela que nomeia a pergunta
-      // que travou ("Data da sessão") -- trocá-la por "não consegui" mandaria
-      // procurar sozinha entre 108 perguntas qual delas foi.
+      // A mensagem do backend aparece inteira: ela nomeia a pergunta que travou.
       setErro((e as ApiError).message || "Não consegui salvar.");
-      // ⚠️⚠️ E DEVOLVE `false`, EM VEZ DE SÓ ENGOLIR. Sem isto, `await agir(…)`
-      // sempre resolvia com sucesso, e os quatro botões de Salvar limpavam os
-      // campos e fechavam o painel **mesmo com o backend recusando**. A pessoa
-      // via a mensagem no topo -- aquela que NOMEIA o que travou -- e o texto
-      // que ela precisava corrigir já tinha sumido.
-      //
-      // ⚠️ E ISSO ERA COMUM, não raro: o editor tem oito códigos de recusa
-      // (slug repetido, escolha sem alternativa, condicional inválida,
-      // dependente…). Cada um atropelava o que a pessoa tinha digitado.
-      // Achado pela revisão de 31/08.
+      // Devolve `false` para o chamador não limpar os campos nem fechar o painel.
       return false;
     } finally {
       setOcupado(false);
@@ -172,9 +148,7 @@ function Editor() {
   if (fatal) {
     return (
       <div>
-        {/* ⚠️ CAMINHO PURO AQUI, e é o único: o formulário não carregou (apagado,
-            ou sem acesso), então não há time dele para levar. A lista resolve
-            pela reserva -- que é a resposta honesta quando não se sabe. */}
+        {/* Caminho puro: o formulário não carregou, então não há time dele para levar. */}
         <Link href="/formularios" className="muted" style={{ fontSize: 13 }}>
           ‹ Formulários
         </Link>
@@ -193,15 +167,10 @@ function Editor() {
 
   return (
     <div className="grid items-start gap-5 md:grid-cols-[340px_minmax(0,1fr)]">
-      {/* ---- a coluna dos formulários do time (redesign, fatia 7) ---- */}
+      {/* ---- a coluna dos formulários do time ---- */}
       <aside className="flex flex-col gap-2" aria-label="Formulários do time">
-        {/* ⚠️ O VOLTAR EXISTE PORQUE ELE JÁ FOI ESQUECIDO UMA VEZ, na tela de
-            projeto (Spec 039). Sem ele a única saída é o menu lateral.
-
-            ⚠⚠ E LEVA O TIME DO FORMULÁRIO (14/09). O caminho puro apagava o
-            time, e a lista caía na reserva: editando um formulário do Comercial,
-            voltar abria os do Marketing. Esta rota não tem `?time=`; quem sabe
-            o time certo é o formulário. */}
+        {/* Leva o time do formulário: esta rota não tem `?time=`, e o caminho puro
+            faria a lista cair noutro time. */}
         <Link
           href={withTeam("/formularios", "", form.team_id)}
           className="muted mb-1"
@@ -234,8 +203,6 @@ function Editor() {
         })}
       </aside>
 
-      {/* O editor ocupa o resto da largura (21/10: o teto de 900px deixava um
-          vão enorme à direita a 1920). */}
       <div className="min-w-0">
       <PageHeader
         title={form.title}
@@ -244,9 +211,7 @@ function Editor() {
         } ${secoes.length === 1 ? "seção" : "seções"}`}
         actions={
           <>
-            {/* O formulário como quem pede vê (15/10: ela sentiu falta de
-                abrir a porta pública de dentro do editor). Rascunho não
-                abre -- a rota pública responde 404 para ele. */}
+            {/* A porta pública, só se publicado (rascunho responde 404). */}
             {form.is_published && (
               <a
                 className="btn"
@@ -327,17 +292,9 @@ function Editor() {
 }
 
 // =====================================================================
-// ⚠️ O cabeçalho -- o que a porta pública mostra ANTES das perguntas
+// O cabeçalho: o que a porta pública mostra antes das perguntas
 // =====================================================================
-/**
- * ⚠️ ESTE PAINEL NASCEU DE "não é todo formulário que chama fazae também e
- * tals, muitas variáveis aí" (Camila, 27/08).
- *
- * Duas coisas estavam presas: o TÍTULO, escrito na mão no componente público
- * mesmo já existindo no banco desde a fatia A -- todo formulário novo abria
- * com o nome do Marketing --, e os CINCO CAMPOS de identificação, fixos e
- * obrigatórios, três deles vocabulário da FECAF.
- */
+/** Título do formulário e os campos de identificação que ele pede. */
 function Cabecalho({
   form,
   ocupado,
@@ -372,10 +329,7 @@ function Cabecalho({
         }}
       >
         <strong style={{ fontSize: 14 }}>Cabeçalho</strong>
-        {/* ⚠️ O RESUMO LÊ O `form`, E NÃO O ESTADO LOCAL. Lendo o estado, ele
-            mostrava a intenção descartada como se fosse o que está no banco --
-            e essa é a única linha da tela que diz o que o formulário pede
-            hoje. */}
+        {/* O resumo lê o `form`, não o estado local: diz o que está no banco. */}
         <span className="muted" style={{ fontSize: 12.5, minWidth: 0 }}>
           {form.title}
           {" · pede "}
@@ -431,9 +385,7 @@ function Cabecalho({
 
       <div className="field">
         <span className="label">O que perguntar a quem solicita</span>
-        {/* ⚠️ NOME E E-MAIL APARECEM DESLIGADOS E EXPLICADOS, em vez de
-            simplesmente não aparecerem: sem isso, quem procura "por que não
-            consigo tirar o e-mail?" não acha resposta em lugar nenhum. */}
+        {/* Nome e e-mail aparecem desligados e explicados, em vez de sumirem. */}
         <p className="muted" style={{ fontSize: 12, margin: "2px 0 8px" }}>
           <strong>Nome</strong> e <strong>e-mail</strong> são sempre pedidos: a
           fila é organizada por quem pediu, e é pelo e-mail que a pessoa recebe
@@ -485,12 +437,8 @@ function Cabecalho({
         <button
           type="button"
           className="btn btn-ghost"
-          // ⚠️⚠️ CANCELAR TEM DE DESFAZER, e não só fechar. Sem o reset, o
-          // estado local guardava a mudança descartada e causava DOIS
-          // estragos: o resumo fechado passava a mentir ("não pede mais
-          // Polo", com o banco pedindo), e reabrir depois para corrigir uma
-          // vírgula no título reenviava `polo_label: null` -- que o backend,
-          // por contrato, trata como DESLIGUE. Achado pela revisão de 31/08.
+          // Cancelar desfaz o estado local, não só fecha: senão o resumo mentiria
+          // e o próximo salvar reenviaria `polo_label: null` (que é "desligue").
           onClick={() => {
             setTitulo(form.title);
             setDescricao(form.description);
@@ -510,10 +458,8 @@ function Cabecalho({
           disabled={ocupado || !titulo.trim()}
           onClick={async () => {
             await agir(() =>
-              // ⚠️ OS TRÊS RÓTULOS VÃO SEMPRE, e é o único jeito: para eles
-              // `null` significa DESLIGUE, e o backend distingue "não veio" de
-              // "veio null". Como este painel é exatamente onde se decide isso,
-              // mandar os três é a intenção.
+              // Os três rótulos vão sempre: para eles `null` significa desligue,
+              // e o backend distingue "não veio" de "veio null".
               renomearFormulario(form.id, {
                 title: titulo,
                 description: descricao,
@@ -689,8 +635,7 @@ function Secao({
               onChange={(e) => setPrazo(e.target.value)}
             />
           </div>
-          {/* Spec 059: a pessoa preenche a seção mais de uma vez no mesmo
-              envio (vários eventos); cada repetição vira um pedido na fila. */}
+          {/* Seção repetível: cada repetição no mesmo envio vira um pedido na fila. */}
           <div
             style={{ flex: "1 1 100%", display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}
           >
@@ -724,9 +669,7 @@ function Secao({
             )}
           </div>
           <div style={{ flex: "1 1 100%" }}>
-            {/* ⚠️ O AVISO DO SLUG NÃO É DECORAÇÃO. Ele é o único campo da tela
-                que não dá para mudar, e o motivo é invisível: ele viaja gravado
-                em cada pedido, e é por ele que a fila descobre a categoria. */}
+            {/* O slug não muda: viaja gravado em cada pedido e é por ele que a fila descobre a categoria. */}
             <span className="muted" style={{ fontSize: 12 }}>
               O endereço <code>{secao.slug}</code> não muda — ele fica gravado
               em cada pedido que já chegou por esta seção, e é o que mantém eles
@@ -740,12 +683,8 @@ function Secao({
               className="btn btn-primary"
               disabled={ocupado || !titulo.trim()}
               onClick={async () => {
-                // ⚠️ `sla_text` VAI COMO STRING VAZIA, e não como `null`. No
-                // PATCH deste projeto `null` significa "não mexe" -- então
-                // apagar o prazo era silenciosamente ignorado: 200 OK, nada
-                // mudava, e o valor antigo voltava ao recarregar. Não havia
-                // como limpar o campo pela tela. O backend já converte `""`
-                // para `None` (`.strip() or None`).
+                // `sla_text` vai como string vazia, não `null`: no PATCH `null` é
+                // "não mexe". O backend converte `""` para `None`.
                 const ok = await agir(() =>
                   editarSecao(secao.id, {
                     title: titulo,
@@ -756,8 +695,7 @@ function Secao({
                     repeat_label: rotuloRepeticao.trim(),
                   })
                 );
-                // ⚠️ SÓ FECHA SE DEU CERTO -- senão o painel some levando o
-                // que a pessoa digitou, e a mensagem de erro fica órfã.
+                // Só fecha se deu certo, senão o painel some com o que foi digitado.
                 if (ok) setEditando(false);
               }}
             >
@@ -838,9 +776,7 @@ function Pergunta({
   const impedeDescer = impedimentoParaMover(secao, indice, 1);
 
   async function excluir() {
-    // ⚠️ O AVISO VEM ANTES DA RECUSA. O backend recusa de qualquer forma, mas
-    // descobrir por uma caixa vermelha depois do clique é pior do que ler o
-    // motivo antes.
+    // O aviso vem antes da recusa do backend.
     if (dependentes.length > 0) {
       avisar(
         `Não dá para excluir “${pergunta.label}”: ` +
@@ -978,28 +914,22 @@ function FormPergunta({
         label,
         kind,
         required: obrigatoria,
-        // ⚠️ SÓ MANDA `options` QUANDO O TIPO USA. Mandar `[]` para um `texto`
-        // é inofensivo, mas mandar `[]` por engano para uma `escolha` apagaria
-        // as alternativas -- e o backend não tem como distinguir "esvazie" de
-        // "não mexa" se o campo sempre vier.
+        // Só manda `options` quando o tipo usa: `[]` por engano numa `escolha`
+        // apagaria as alternativas.
         ...(exigeOpcoes(kind)
           ? { options: opcoes.split("\n").map((o) => o.trim()).filter(Boolean) }
           : {}),
-        // ⚠️ STRING VAZIA, e não `null`: `null` no PATCH é "não mexe", e
-        // apagar a ajuda era ignorado em silêncio. Mesmo caso do `sla_text`
-        // da seção. O backend converte `""` para `None`.
+        // String vazia, não `null`: no PATCH `null` é "não mexe". O backend converte `""` para `None`.
         help: ajuda.trim(),
       });
-      // ⚠️ A CONDICIONAL É UMA SEGUNDA CHAMADA porque é uma rota própria: nela
-      // `null` significa DESLIGAR, e num PATCH significaria "não mexa".
+      // A condicional é rota própria: nela `null` significa desligar; num PATCH, "não mexa".
       const alvoAtual = pergunta.show_if_question_id ?? "";
       const valorAtual = pergunta.show_if_value ?? "";
       if (alvo !== alvoAtual || valor !== valorAtual) {
         await definirCondicional(pergunta.id, alvo || null, alvo ? valor : null);
       }
     });
-    // ⚠️ SÓ FECHA SE DEU CERTO. O editor tem oito códigos de recusa, e cada
-    // um fechava o painel levando o que a pessoa tinha digitado.
+    // Só fecha se deu certo, senão o painel some com o que foi digitado.
     if (ok) aoFechar();
   }
 
@@ -1084,10 +1014,7 @@ function FormPergunta({
         />
       </div>
 
-      {/* ⚠️ A CONDICIONAL SÓ APARECE QUANDO HÁ ALVO POSSÍVEL. Um `<select>`
-          vazio com o rótulo "só aparece quando" faria procurar uma opção que
-          não existe -- e a razão de não existir (precisa de uma pergunta de
-          escolha ANTES desta) fica escrita no lugar. */}
+      {/* A condicional só aparece quando há alvo possível; senão, o motivo fica escrito. */}
       <div className="field" style={{ flex: "1 1 100%" }}>
         <span className="label">Só aparece quando…</span>
         {alvos.length === 0 ? (
@@ -1223,9 +1150,7 @@ function NovaSecao({
           maxLength={120}
           onChange={(e) => {
             setTitulo(e.target.value);
-            // ⚠️ A SUGESTÃO PARA DE SEGUIR ASSIM QUE ALGUÉM MEXE NO SLUG. Ele é
-            // permanente; sobrescrever o que a pessoa digitou seria trocar,
-            // sem aviso, um valor que não tem volta.
+            // A sugestão para de seguir quando alguém mexe no slug: ele é permanente.
             if (!mexeuNoSlug) setSlug(sugereSlugDeSecao(e.target.value));
           }}
         />
@@ -1278,9 +1203,7 @@ function NovaSecao({
               title: titulo.trim(),
               emoji,
             });
-            // ⚠️ SÓ LIMPA SE DEU CERTO. Slug repetido é a recusa mais comum
-            // aqui, e ela apagava o título inteiro que a pessoa acabara de
-            // escrever -- junto com o slug que ela precisava trocar.
+            // Só limpa se deu certo: slug repetido é a recusa mais comum.
             if (!ok) return;
             setTitulo("");
             setSlug("");
@@ -1394,9 +1317,7 @@ function NovaPergunta({
             value={opcoes}
             onChange={(e) => setOpcoes(e.target.value)}
           />
-          {/* ⚠️ SEM ALTERNATIVA, UMA PERGUNTA DE ESCOLHA É UM BECO: aparece com
-              zero opções e, se for obrigatória, TRAVA o envio de quem responde
-              -- sem que a pessoa tenha como saber por quê. */}
+          {/* Escolha sem alternativa, se obrigatória, trava o envio de quem responde. */}
           {lista.length === 0 && (
             <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
               Uma pergunta de escolha precisa de ao menos uma alternativa.
@@ -1421,8 +1342,7 @@ function NovaPergunta({
               required: obrigatoria,
               options: lista,
             });
-            // ⚠️ IDEM. Uma pergunta de escolha com seis alternativas digitadas
-            // à mão sumia inteira num 422.
+            // Idem: um 422 apagaria as alternativas digitadas.
             if (!ok) return;
             setLabel("");
             setOpcoes("");
@@ -1437,12 +1357,7 @@ function NovaPergunta({
   );
 }
 
-/**
- * ⚠️ A SETA CARREGA O MOTIVO DE ESTAR DESABILITADA.
- *
- * Um botão cinza sem explicação é a pior versão de uma regra: ela existe, ela
- * impede, e ninguém sabe por quê. O `title` diz qual condicional quebraria.
- */
+/** Seta de ordem; o `title` diz por que está desabilitada (qual condicional quebraria). */
 function Seta({
   direcao,
   oque,

@@ -639,7 +639,7 @@ function Minhas() {
   const contagem =
     visiveis === items.length ? `${items.length} tarefas` : `${visiveis} de ${items.length}`;
 
-  // Uma linha de tarefa. A data saiu daqui — agora vive no cabeçalho do grupo.
+  // Uma linha de tarefa; a data vive no cabeçalho do grupo.
   function linhaTarefa(t: MyTaskItem) {
     // Cor de prazo do card (respeita status/arquivada); `null` = sem alerta.
     const col = colunaDe(t);

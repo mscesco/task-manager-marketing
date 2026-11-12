@@ -1,27 +1,12 @@
 "use client";
-// /solicitacoes — fila de triagem agrupada por ENVIO.
+// /solicitacoes: fila de triagem em duas colunas, uma linha por envio (não por
+// demanda) e o envio escolhido ao lado. A aprovação continua por seção; o
+// agrupamento é só de visualização.
 //
-// UMA LINHA POR SUBMISSÃO, não por demanda: quem preenche o formulário
-// escolhendo 4 categorias gerava 4 cards soltos, e ninguém enxergava que
-// eram da mesma pessoa.
+// Animações só de `transform` e `opacity`; o `MotionConfig reducedMotion="user"`
+// as desliga, porque o bloco global do CSS não alcança o `motion`.
 //
-// ⚠️ CAIXA DE ENTRADA EM DUAS COLUNAS DESDE 15/10 (proposta aprovada por ela,
-// "fica bem melhor"; depois "quero algo mais bonito, mais dinâmico", com uma
-// referência de inbox): a lista de envios à esquerda e o envio escolhido à
-// direita. O card que abria e fechava fazia a página pular, e aprovar exigia
-// abrir, achar a seção e voltar. Os números no código (1 a 5) são os da
-// proposta.
-//
-// ⚠️ AS ANIMAÇÕES SÃO SÓ DE `transform` E `opacity` (§7 do `web/AGENTS.md`),
-// e o `MotionConfig reducedMotion="user"` as desliga para quem pediu menos
-// movimento no sistema -- o bloco global do CSS não alcança o `motion`.
-//
-// A aprovação continua sendo POR SEÇÃO (aprovar a arte, rejeitar a
-// divulgação). O agrupamento é só de visualização.
-//
-// "Tarefa criada" é autodeclarado — ninguém verifica. O valor está no
-// contrário: o filtro "só sem tarefa" mostra o que foi aceito e nunca virou
-// tarefa. Sem esse filtro, a marcação seria decorativa.
+// "Tarefa criada" é autodeclarado; o valor está no filtro "só sem tarefa".
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -82,15 +67,9 @@ const STATUS_LABEL: Record<SolicitacaoStatus, string> = {
   DONE: "Concluída",
   REJECTED: "Rejeitada",
 };
-// ⚠️ AZUL PARA "EM ANDAMENTO" E TEAL PARA "CONCLUÍDA", e não dois verdes:
-// são estados distantes no fluxo e precisam se distinguir de relance.
-//
-// Redesign (19/10): tokens no lugar de hex. Os hex antigos NÃO invertiam no
-// tema escuro e, medidos com a tinta do `Badge tone="soft"` no claro, pendente
-// (#d97706) dava 2.81 e aprovada (#16a34a) 2.89 -- reprovavam AA. Agora, com a
-// tinta, claro/escuro: âmbar 4.89/7.94, teal 5.16/7.19, azul 4.98/7.78,
-// vermelho 5.29/6.98. "Rejeitada" não usa `--danger` porque ele dá 4.01 com a
-// tinta no claro; usa o stop escuro de "bloqueado", a mesma família.
+// Azul para "em andamento" e teal para "concluída": estados distantes precisam
+// se distinguir. "Rejeitada" usa o tom de "bloqueado" e não `--danger`, que não
+// passa contraste AA com a tinta do `Badge` no claro.
 const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
   PENDING: "var(--amber)",
   APPROVED: "var(--teal)",
@@ -102,10 +81,7 @@ const STATUS_COLOR: Record<SolicitacaoStatus, string> = {
 /** A mola de toda a tela: rápida, quase sem quique. */
 const MOLA = { type: "spring", duration: DUR[3], bounce: 0.12 } as const;
 
-// ⚠️ AS ABAS (15/10, proposta aprovada por ela): eram sete botões iguais aos
-// de ação, com número em só dois, e "Aprovadas" e "Aprovadas sem tarefa" se
-// sobrepondo. Agora são cinco situações, todas com número, e "só sem tarefa"
-// é uma caixinha que vale em qualquer aba onde faz sentido.
+// As abas: cinco situações, todas com número; "só sem tarefa" é uma caixinha à parte.
 type Aba = "PENDING" | "ACTIVE" | "DONE" | "REJECTED" | "ALL";
 
 const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
@@ -116,8 +92,7 @@ const ABAS: { valor: Aba; label: string; semTarefa: boolean }[] = [
   { valor: "ALL", label: "Todas", semTarefa: true },
 ];
 
-// A lista ficou enxuta (as respostas moram no painel ao lado), então cabem
-// mais envios por página do que os dez do card antigo.
+  // A lista é enxuta (as respostas moram no painel ao lado), então cabem mais envios por página.
 const TAMANHO_PAGINA = 20;
 
 /** As duas colunas descem juntas e rolam por dentro, como uma caixa de entrada. */
@@ -134,14 +109,9 @@ export default function SolicitacoesPage() {
 }
 
 function Solicitacoes() {
-  // ⚠⚠ O TIME ATIVO VEM DA BARRA (Spec 048, fatia C/D), e não de um
-  // `useSearchParams` aqui: esta rota é estática e o hook derrubaria o build.
-  // Ver `lib/useActiveTeam.tsx`.
-  // ⚠⚠ `active === null` (a barra ainda não resolveu) e `kind: "none"` (ela
-  // resolveu, e não há time) são COISAS DIFERENTES, e confundi-las deixa a tela
-  // em `Loading` para sempre. `listTeamsAll()` no `AppShell` falha em silêncio
-  // de propósito (`.catch(() => {})`): sem esta distinção, uma falha de rede
-  // ali viraria uma fila que nunca carrega, sem erro nenhum na tela.
+  // Time ativo vem da barra: `useSearchParams` aqui quebraria o build da rota estática.
+  // `active === null` (não resolveu) difere de `kind: "none"` (sem time); confundir
+  // os dois deixaria a tela em `Loading` para sempre se a barra falhar.
   const { active, teamName: nomeDoTime } = useActiveTeam();
   const timeAtivo = useActiveTeamId();
   const [aba, setAba] = useState<Aba>("PENDING");
@@ -156,23 +126,18 @@ function Solicitacoes() {
   const [formularios, setFormularios] = useState<{ id: string; title: string }[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [semAcesso, setSemAcesso] = useState(false);
-  // ⚠️ O ENVIO ESCOLHIDO É GUARDADO INTEIRO, e não só o id: aprovar tira o
-  // envio da aba "Pendentes", e o painel ao lado sumiria no meio da conversa
-  // -- levando o "Abrir a tarefa" que acabou de aparecer. Ele é relido pelo
-  // protocolo depois de cada ação (ver `recarregar`).
+  // O envio escolhido é guardado inteiro, não só o id: aprovar o tira da aba
+  // "Pendentes", e o painel sumiria. É relido pelo protocolo depois de cada ação.
   const [escolhido, setEscolhido] = useState<Batch | null>(null);
-  // O escolhido de AGORA, para o `recarregar` em voo não devolver o painel ao
-  // envio anterior (auditoria de 21/10).
+  // O escolhido de agora, para o `recarregar` em voo não devolver o painel ao envio anterior.
   const escolhidoRef = useRef<Batch | null>(null);
   const [rejeitarItem, setRejeitarItem] = useState<string | null>(null);
 
   const abaAtual = ABAS.find((a) => a.valor === aba)!;
   const filtrandoSemTarefa = semTarefa && abaAtual.semTarefa;
 
-  // ⚠️ TROCAR DE TIME ZERA O QUE ERA DO TIME ANTERIOR: o envio do painel (que
-  // seria de outro time), o formulário escolhido (que não existe neste) e a
-  // página. Na renderização, e não num efeito: num efeito a fila buscaria uma
-  // vez com o formulário velho e outra sem ele (revisão de 16/10).
+  // Trocar de time zera envio do painel, formulário escolhido e página. Na
+  // renderização, não num efeito: num efeito a fila buscaria duas vezes.
   const [timeDaFila, setTimeDaFila] = useState(timeAtivo);
   if (timeDaFila !== timeAtivo) {
     setTimeDaFila(timeAtivo);
@@ -181,10 +146,8 @@ function Solicitacoes() {
     setPagina(1);
   }
 
-  // ⚠️ TROCAR DE ABA, BUSCA OU FORMULÁRIO VOLTA À PÁGINA 1 -- a página 3 costuma
-  // não existir no recorte novo. No mesmo clique, e não num efeito depois: o
-  // efeito buscava duas vezes (página velha, depois a 1), e a que respondesse
-  // por último ficava na tela (revisão de 16/10).
+  // Trocar de aba, busca ou formulário volta à página 1, no mesmo clique: num
+  // efeito, buscaria duas vezes e a última resposta venceria.
   function filtrar(mudar: () => void) {
     mudar();
     setPagina(1);
@@ -200,17 +163,12 @@ function Solicitacoes() {
     return () => clearTimeout(t);
   }, [busca]);
 
-  // ⚠️⚠️ SÓ A RESPOSTA DO ÚLTIMO PEDIDO VALE. Trocar de aba com a anterior
-  // ainda em voo deixava a resposta atrasada sobrescrever a nova -- a aba
-  // "Rejeitadas" marcada, com a lista de "Pendentes" embaixo, e um ✓ que
-  // aprovava o que a pessoa achava já ter saído da fila (revisão de 16/10).
+  // Só a resposta do último pedido vale: uma resposta atrasada sobrescreveria a aba nova.
   const ultimoPedido = useRef(0);
 
   const carregar = useCallback(async () => {
-    // ⚠⚠ ESPERA O TIME em vez de buscar sem recorte. Buscar antes mostraria a
-    // fila da organização inteira por um instante -- e aqui isso é pior que numa
-    // lista qualquer: quem tria poderia APROVAR um pedido de outro time no
-    // meio do pisca.
+    // Espera o time: buscar antes mostraria a fila da organização inteira por
+    // um instante, e quem tria poderia aprovar um pedido de outro time.
     if (active === null) return;
     const meu = ++ultimoPedido.current;
     setErro(null);
@@ -248,11 +206,7 @@ function Solicitacoes() {
       }
       setEnvios([]);
     }
-    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time reescreve a query, e sem
-    // isto a fila ficaria a mesma com a URL dizendo outro time.
-    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
-    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
-    // em voo, e o último a responder vencia (defeito de 14/09).
+    // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
   }, [aba, pagina, timeAtivo, active === null, buscaAtiva, formId, filtrandoSemTarefa]);
 
   useEffect(() => {
@@ -300,10 +254,7 @@ function Solicitacoes() {
   return (
     <div>
       <PageHeader
-        /* ⚠⚠ O NOME DO TIME NO TÍTULO (fatia D). A §7 da spec previu
-           exatamente este risco: *"a fila filtrada pode ficar VAZIA e parecer
-           quebrada (...) a tela precisa dizer 'a fila do Marketing está
-           vazia', e não mostrar um vazio sem contexto"*. */
+        /* O nome do time diz que a fila está recortada (vazia não parece quebrada). */
         title={nomeDoTime ? `Solicitações · ${nomeDoTime}` : "Solicitações"}
         count={
           pendentes > 0
@@ -311,10 +262,8 @@ function Solicitacoes() {
             : undefined
         }
         actions={
-          // ---------- 1. as abas, no cabeçalho, junto de "Gerenciar
-          // formulários" (a prancha; pedido dela em 21/10). As duas num grupo
-          // só: quando não cabem ao lado do título (1366px), descem JUNTAS para
-          // a segunda linha, à direita, em vez de o link ficar sozinho.
+          // As abas e "Gerenciar formulários" num grupo só: quando não cabem ao
+          // lado do título, descem juntas.
           <div className="ml-auto flex min-w-0 max-w-full flex-wrap items-center gap-2">
             <div role="tablist" aria-label="Situação" className="flex max-w-full gap-0.5 overflow-x-auto rounded-full border border-border bg-surface-2 p-1">
               {ABAS.map((a) => (
@@ -327,9 +276,7 @@ function Solicitacoes() {
                 />
               ))}
             </div>
-            {/* ⚠️ ESTE BOTÃO APONTAVA PARA `/solicitar` FIXO, e a Spec 043 tornou
-                isso mentira: há N formulários, um por time. Vai para a tela que
-                LISTA os formulários. ⚠️ O TIME VAI JUNTO (14/09). */}
+            {/* Para a tela que lista os formulários, levando o time. */}
             <Link className="btn btn-ghost" href={navHref("/formularios", active)}>
               Gerenciar formulários
             </Link>
@@ -338,8 +285,7 @@ function Solicitacoes() {
       />
 
       {/* ---------- 5. lista | envio escolhido ---------- */}
-      {/* ⚠️ NO CELULAR, UMA COLUNA DE CADA VEZ: escolhido, a lista some e o
-          painel ganha "Voltar". Duas colunas de 180px não cabem nada. */}
+      {/* No celular, uma coluna de cada vez: escolhido, a lista some e o painel ganha "Voltar". */}
       <div className="grid items-start gap-4 md:grid-cols-[minmax(400px,11fr)_minmax(0,13fr)]">
         <section
           aria-label="Envios"
@@ -421,9 +367,7 @@ function Solicitacoes() {
               <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
                 <AnimatePresence initial={false} mode="popLayout">
                   {envios.flatMap((envio, i) => {
-                    // O cabeçalho de dia ("Hoje", "Ontem", a data) entra onde
-                    // o dia muda -- a lista vem do servidor do mais novo ao
-                    // mais velho (a prancha, 21/10).
+                    // O cabeçalho de dia entra onde o dia muda (a lista vem do mais novo ao mais velho).
                     const dia = rotuloDoDia(envio.created_at);
                     const anterior = i > 0 ? rotuloDoDia(envios[i - 1].created_at) : null;
                     return [
@@ -453,7 +397,7 @@ function Solicitacoes() {
             )}
           </div>
 
-          {/* `rotulo` explicito: "Envios", porque os números das abas contam DEMANDAS (R5). */}
+          {/* `rotulo` explícito: "Envios", porque os números das abas contam demandas. */}
           {totalEnvios > TAMANHO_PAGINA && (
             <div className="border-t border-border px-3">
               <Paginacao
@@ -521,9 +465,7 @@ function Aba({
         ativa ? "font-semibold text-ink" : "text-ink-faint hover:text-ink-soft"
       }`}
     >
-      {/* ⚠️ A PÍLULA É UMA SÓ, e desliza (`layoutId`): cinco fundos que
-          piscam um de cada vez dariam a mesma informação sem dizer de onde
-          a seleção veio. */}
+      {/* A pílula é uma só e desliza (`layoutId`), mostrando de onde a seleção veio. */}
       {ativa && (
         <motion.span
           layoutId="fila-aba-ativa"
@@ -550,12 +492,9 @@ function Aba({
 }
 
 /**
- * Uma linha da lista: quem pediu, de onde, e o que pediu.
- *
- * ⚠️ 3. AÇÃO SEM ABRIR (15/10): envio de UMA demanda pendente decide ali
- * mesmo -- o resumo já está na linha. Envio de várias abre o painel e decide
- * uma por uma: aprovar "o envio" de uma vez esconderia que cada demanda é
- * triada separadamente (Spec 043).
+ * Uma linha da lista: quem pediu, de onde, e o que pediu. Envio de uma demanda
+ * pendente decide ali mesmo; de várias abre o painel, porque cada demanda é
+ * triada separadamente.
  */
 function LinhaDoEnvio({
   envio,
@@ -573,18 +512,13 @@ function LinhaDoEnvio({
   const [agindo, setAgindo] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const unico = envio.items.length === 1 ? envio.items[0] : null;
-  // A entrada escalonada do redesign; a saída e a mola continuam da fila.
+  // A entrada escalonada; a saída e a mola continuam da fila.
   const entrada = useEntrada(ordem);
   const temPendente = envio.items.some((i) => i.status === "PENDING");
 
-  // ⚠️ O ✓ DA LISTA SÓ APROVA (decisão dela, 15/10): criar a tarefa fica no
-  // painel, onde se vê o briefing antes. Aprovado sem tarefa, o pedido
-  // aparece em "Só sem tarefa" -- não some.
-  //
-  // ⚠️⚠️ O ✓ FICA DESLIGADO ATÉ A LISTA NOVA CHEGAR, e o segundo clique de um
-  // clique duplo é ignorado: o envio aprovado sai da aba e o de baixo sobe
-  // para o lugar dele -- o segundo clique aprovava o pedido de OUTRA pessoa,
-  // sem ninguém ver (revisão de 16/10).
+  // O ✓ da lista só aprova: criar a tarefa fica no painel, onde se vê o briefing.
+  // Fica desligado até a lista nova chegar: o envio aprovado sai da aba, o de
+  // baixo sobe, e o segundo clique de um clique duplo aprovaria outro pedido.
   async function aprovar(item: BatchItem) {
     setAgindo(true);
     setErro(null);
@@ -603,8 +537,7 @@ function LinhaDoEnvio({
       layout
       {...entrada}
       exit={{ opacity: 0, x: -16, transition: { duration: DUR[2] } }}
-      // A prancha (21/10): a linha é um cartão de cantos 12, desliza 2px no
-      // hover, e a escolhida ganha borda e filete à esquerda no azul.
+      // Cartão de cantos 12, desliza 2px no hover; o escolhido ganha borda e filete azul.
       className={`group relative rounded-xl border transition-[border-color,transform] duration-200 ${
         escolhido ? "border-accent" : "border-transparent hover:translate-x-0.5"
       }`}
@@ -638,7 +571,7 @@ function LinhaDoEnvio({
             )}
           </span>
           <span className="truncate text-[11.5px] text-ink-faint">
-            {/* Por qual formulário entrou (15/10: a fila não dizia). */}
+            {/* Por qual formulário entrou. */}
             {envio.form_title && (
               <>
                 <strong className="font-semibold text-ink-soft">{envio.form_title}</strong> ·{" "}
@@ -656,7 +589,7 @@ function LinhaDoEnvio({
 
       {unico && unico.status === "PENDING" && (
         <div className="relative flex justify-end gap-1.5 px-3.5 pb-3 pl-[58px]">
-          {/* Os botões da prancha: aprovar em teal suave, rejeitar sem fundo. */}
+          {/* Aprovar em teal suave, rejeitar sem fundo. */}
           <button
             type="button"
             className="btn btn-ok"
@@ -702,10 +635,8 @@ function TopicoDaDemanda({ envio, item }: { envio: Batch; item: BatchItem }) {
   const cat = rotuloDaCategoria(item);
   return (
     <span className="flex min-w-0 items-center gap-1.5 text-[12px]">
-      {/* ⚠️ A SITUAÇÃO É UM PONTO (15/10, vista na tela): a etiqueta
-          "Pendente" em toda linha repetia a aba em que a pessoa já está. O
-          nome vai no `title` e no texto para leitor de tela; fora de
-          "pendente", ele também aparece, curto, no fim da linha. */}
+      {/* A situação é um ponto: a etiqueta repetiria a aba. O nome vai no
+          `title` e para leitor de tela; fora de "pendente", aparece no fim da linha. */}
       <span
         title={STATUS_LABEL[item.status]}
         className="h-1.5 w-1.5 shrink-0 rounded-full"
@@ -754,8 +685,7 @@ function PainelDoEnvio({
   onVoltar: () => void;
   onMudou: () => Promise<void>;
 }) {
-  // Com várias demandas, uma de cada vez, por abas: empilhadas, a terceira
-  // ficava fora da tela, longe do nome de quem pediu.
+  // Com várias demandas, uma de cada vez, por abas.
   const [ativa, setAtiva] = useState<string | null>(rejeitarItem ?? demandaInicial(envio));
   const atual = envio.items.find((i) => i.id === ativa) ?? envio.items[0];
   const [protocoloCopiado, setProtocoloCopiado] = useState(false);
@@ -769,15 +699,10 @@ function PainelDoEnvio({
       transition={MOLA}
       className="flex min-h-0 flex-1 flex-col overflow-y-auto"
     >
-      {/* ⚠️⚠️ TUDO AQUI DENTRO É `shrink-0`: o painel rola por dentro, e numa
-          coluna flex quem pode encolher encolhe. A barra das abas tem
-          `overflow-x-auto`, e caixa com overflow pode encolher até ZERO --
-          com um envio de seis demandas e respostas longas as abas sumiam, e
-          só a primeira demanda ficava alcançável (visto em produção, 16/10). */}
+      {/* Tudo aqui dentro é `shrink-0`: o painel rola por dentro, e a barra das
+          abas (`overflow-x-auto`) encolheria até zero numa coluna flex. */}
       <div className="shrink-0 border-b border-border p-5 pb-4">
-        {/* ⚠️ O `md:hidden` FICA NUM DIV EM VOLTA, e não no botão: o `display`
-            do `.btn` vence a classe utilitária, e o "Voltar" aparecia no
-            computador (visto na tela, 15/10). */}
+        {/* O `md:hidden` fica num div em volta: o `display` do `.btn` vence a classe utilitária. */}
         <div className="mb-3 md:hidden">
           <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: "4px 8px" }} onClick={onVoltar}>
             <ArrowLeft aria-hidden size={14} /> Voltar
@@ -795,9 +720,7 @@ function PainelDoEnvio({
           </div>
         </div>
 
-        {/* ⚠️ OS SEPARADORES: `/` entre área e polo é o desenho que ela
-            mandou voltar (revisão de 31/08), e campo `null` não deixa
-            separador pendurado -- cada propriedade só existe se tem valor. */}
+        {/* Campo `null` não deixa separador pendurado: cada propriedade só existe se tem valor. */}
         <dl className="m-0 mt-4">
           {envio.form_title && (
             <Propriedade icone={<FileText size={14} />} rotulo="Formulário">
@@ -840,8 +763,7 @@ function PainelDoEnvio({
           )}
         </dl>
 
-        {/* O aviso âmbar da prancha: quantas ainda pedem decisão, e o que
-            aprovar faz. */}
+        {/* Quantas ainda pedem decisão, e o que aprovar faz. */}
         {pendentes > 0 && (
           <p className="m-0 mt-3 flex items-center gap-2 rounded-[10px] bg-amber-soft px-3 py-2.5 text-[13px] font-semibold text-amber">
             <AlertCircle aria-hidden size={15} className="shrink-0" />
@@ -932,10 +854,8 @@ function SecaoDemanda({
   const [agindo, setAgindo] = useState(false);
   const [rejeitando, setRejeitando] = useState(rejeitarAoAbrir);
   const [menuAberto, setMenuAberto] = useState(false);
-  // ⚠️ O MENU DA SETA É `AnchoredPanel` (fixo), e não `absolute`: o painel
-  // rola por dentro e o recortava -- ela abria e tinha de rolar para ver
-  // (print dela, 15/10). Fixo, ele sobrepõe tudo e abre para cima quando o
-  // botão está no pé da tela.
+  // O menu da seta é `AnchoredPanel` (fixo), não `absolute`: o painel rola por
+  // dentro e o recortaria.
   const { anchorRef: menu, panelRef: painelDoMenu, box: caixaDoMenu } = useAnchoredPanel<HTMLDivElement>(
     menuAberto,
     () => setMenuAberto(false),
@@ -948,16 +868,13 @@ function SecaoDemanda({
   // Esc, clique fora e rolagem: quem fecha o menu é o `useAnchoredPanel`.
   const [justificativa, setJustificativa] = useState("");
   const [marcandoTarefa, setMarcandoTarefa] = useState(false);
-  // ⚠️ GUARDA O ID DA TAREFA RECÉM-CRIADA para oferecer "abrir a tarefa" sem
-  // um segundo request -- é o passo seguinte natural de quem acabou de criar
-  // uma, e sem isso a pessoa teria de procurá-la no quadro.
+  // Id da tarefa recém-criada, para oferecer "abrir a tarefa" sem outro request.
   const [tarefaNova, setTarefaNova] = useState<string | null>(null);
   const [refTarefa, setRefTarefa] = useState("");
   const [copiado, setCopiado] = useState(false);
 
-  // ⚠️ RECARREGA MESMO QUANDO FALHA: uma ação de dois passos (aprovar e
-  // criar a tarefa) pode falhar no segundo com o primeiro já feito, e a tela
-  // continuaria dizendo "pendente" de um pedido aprovado (revisão de 16/10).
+  // Recarrega mesmo quando falha: aprovar e criar a tarefa pode falhar no
+  // segundo passo com o primeiro já feito.
   async function acao(fn: () => Promise<unknown>, msgErro: string) {
     setAgindo(true);
     setErro(null);
@@ -976,10 +893,8 @@ function SecaoDemanda({
   function copiarBriefing() {
     const linhas = [
       `[${cat.titulo}${numeroDaRepeticao(envio.items, item)}] ${item.summary}`,
-      // ⚠️⚠️ TEMPLATE LITERAL COM CAMPO OPCIONAL ESCREVE A STRING "null".
-      // Este texto vai para a área de transferência e daí para o WhatsApp, o
-      // e-mail, a descrição de uma tarefa -- ou seja, o "null" VAZA PARA FORA
-      // do sistema, até o solicitante. Achado pela revisão de 31/08.
+      // Template literal com campo opcional escreveria "null", e este texto sai
+      // do sistema pela área de transferência.
       `Solicitante: ${[
         envio.requester_name,
         envio.requester_email,
@@ -987,8 +902,7 @@ function SecaoDemanda({
       ]
         .filter(Boolean)
         .join(" · ")}`,
-      // ⚠️ A LINHA INTEIRA SOME quando o formulário não pergunta nenhum dos
-      // dois -- "Área:  · Polo: " vazio parece dado perdido.
+      // A linha some quando o formulário não pergunta nenhum dos dois.
       ...(envio.requester_department || envio.requester_polo
         ? [
             [
@@ -1010,9 +924,8 @@ function SecaoDemanda({
   }
 
   return (
-    // A seção da prancha (21/10): um cartão por demanda, com a categoria em
-    // pílula, as respostas numa grade de três colunas (a longa ocupa a linha
-    // inteira) e as ações embaixo.
+    // Um cartão por demanda: categoria em pílula, respostas numa grade de três
+    // colunas (a longa ocupa a linha inteira) e as ações embaixo.
     <div className="flex flex-col gap-3 rounded-xl border border-border bg-surface px-4 py-3.5">
       <div className="flex flex-wrap items-center gap-2">
         <Badge tone="soft" size="sm" color="var(--violet)">
@@ -1072,8 +985,7 @@ function SecaoDemanda({
         <p className="mt-4 flex flex-wrap items-center gap-1.5 text-[12.5px] text-ink-soft">
           <SquareCheckBig aria-hidden size={14} className="text-teal" />
           Tarefa criada em {diaDoEnvio(item.task_created_at)}
-          {/* ⚠️ TRÊS ESTADOS, e cada um diz a verdade sobre o que existe:
-              vinculada e viva (link), vinculada e apagada (sem nome, sem
+          {/* Três estados: vinculada e viva (link), vinculada e apagada (sem
               link), ou só o `task_ref` de texto das marcações antigas. */}
           {item.task_id && item.task_title && (
             <>
@@ -1100,10 +1012,8 @@ function SecaoDemanda({
 
       {/* ---- ações ---- */}
       <div className="mt-1 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-        {/* ⚠️ O ANDAMENTO É UM SELETOR, e não um botão "avançar": volta-se de
-            "concluída" para "em andamento" de propósito. Marcar concluída por
-            engano é comum, e sem a volta a saída seria pedir para alguém mexer
-            no banco. O backend permite os dois sentidos; a tela também. */}
+        {/* Seletor, não botão "avançar": volta-se de "concluída" para "em
+            andamento" de propósito (o backend permite os dois sentidos). */}
         {aceito && (
           <label className="inline-flex items-center gap-1.5">
             <span className="text-[12px] text-ink-faint">Situação</span>
@@ -1129,15 +1039,11 @@ function SecaoDemanda({
           </label>
         )}
 
-        {/* ⚠️ 4. "APROVAR E CRIAR TAREFA" É O CAMINHO PRINCIPAL (15/10): quase
-            todo pedido aceito vira tarefa, e eram dois cliques em dois
-            momentos -- o segundo era o que se esquecia. Os outros dois
-            caminhos moram na seta. Com as demandas em abas, há UM destes
-            por vez na tela -- por isso ele pode ser o azul cheio. */}
+        {/* "Aprovar e criar tarefa" é o caminho principal; os outros dois moram na seta. */}
         {item.status === "PENDING" && !rejeitando && (
           <>
             <div ref={menu} className="relative inline-flex">
-              {/* Teal suave, como a prancha: o azul cheio fica para "Criar". */}
+              {/* Teal suave: o azul cheio fica para "Criar". */}
               <button
                 className="btn btn-ok"
                 disabled={agindo}
@@ -1213,10 +1119,8 @@ function SecaoDemanda({
           </>
         )}
 
-        {/* ⚠️ OS TRÊS ACEITOS, e não só APPROVED (Spec 043, fatia D). A tarefa
-            costuma ser criada quando o trabalho COMEÇA -- ou seja, com o
-            pedido já em andamento. Exigir "aprovada" aqui esconderia o botão
-            exatamente no momento em que ele é usado. */}
+        {/* Os três aceitos, não só APPROVED: a tarefa costuma ser criada com o
+            pedido já em andamento. */}
         {aceito && !item.task_created_at && (
           <button
             className="btn btn-primary"

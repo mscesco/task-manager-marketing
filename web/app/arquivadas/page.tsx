@@ -29,35 +29,18 @@ import { mensagemExclusao } from "@/lib/exclusao";
 import Loading from "@/components/Loading";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
 import Paginacao from "@/components/Paginacao";
-// Tela de arquivadas (Spec 013, fatia 4). Lista paginada de tarefas
-// arquivadas (manuais ou pela varredura) + reativar (volta pra BACKLOG e
-// desarquiva). Pagina de verdade: o conjunto cresce sem fim.
-//
-// Spec 031 (C5): a linha ABRE O TaskDetail, e a exclusao acontece la dentro.
-//
-// ⚠️ Por que nao um botao "Excluir" na linha: tudo que ele precisaria ja existe
-// no TaskDetail -- confirmacao com o nome, contagem de subtarefas diretas,
-// aviso de que nao da pra desfazer, e o portao por `task.delete`. Um segundo
-// caminho de exclusao seria uma segunda copia dessas quatro regras, e a copia
-// que ninguem lembra de atualizar e a que apaga a coisa errada.
-//
-// De quebra resolve o pedido inteiro: da pra abrir, ler descricao, comentarios
-// e subtarefas, e SO ENTAO decidir. Excluir da lista seria cascata cega -- a
-// linha nao mostra que a tarefa leva 6 filhas junto.
+// Tela de arquivadas: lista paginada + reativar (volta pra BACKLOG e
+// desarquiva). A linha abre o TaskDetail, e a exclusão acontece lá dentro: um
+// segundo caminho de exclusão duplicaria as regras de confirmação e permissão.
 
 const PAGE_SIZE = 30;
 
-// ⚠️ RESERVA DO BADGE (fatia 4c-2). O rotulo passou a sair de `coluna.name`;
-// este mapa responde quando a coluna da tarefa nao esta na lista carregada --
-// tarefa de OUTRO quadro (provavel aqui: `/arquivadas` lista o workspace
-// inteiro e as colunas vem do quadro geral), coluna apagada, ou as colunas
-// ainda a caminho. Sem ele o badge ficaria vazio nesses casos.
+// Reserva do badge quando a coluna da tarefa não está na lista carregada
+// (outro quadro, coluna apagada ou colunas ainda a caminho).
 const STATUS_LABEL: Record<string, string> = Object.fromEntries(
   STATUSES.map((s) => [s.key, s.label])
 );
-// Spec 031 (C1a): a cor do BADGE vem de STATUS_TEXT, nao de STATUSES[].color.
-// STATUSES[].color e o token de TRACO (bolinha, borda de coluna) -- como texto
-// ou como fundo sob texto ele reprova AA. Ver Spec 031 §2.2b/§2.2c.
+// A cor do badge vem de STATUS_TEXT: STATUSES[].color é token de traço e reprova AA como texto.
 const STATUS_COLOR: Record<string, string> = STATUS_TEXT;
 
 export default function ArquivadasPage() {
@@ -70,63 +53,38 @@ export default function ArquivadasPage() {
 
 function Arquivadas() {
   const [tasks, setTasks] = useState<Task[] | null>(null);
-  // Fatia 4c-2: o badge de cada linha mostra o NOME da coluna. Em erro fica
-  // `[]` e nao `null` -- a lista NAO espera pelas colunas, porque o badge e
-  // acessorio aqui e o assunto da tela e reativar tarefa.
+  // Nome da coluna no badge. Em erro fica `[]`: a lista não espera pelas colunas.
 
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [erro, setErro] = useState<string | null>(null);
 
-  // --- Suporte ao TaskDetail (Spec 031, C5) --------------------------------
-  // members e projects sao mapas de exibicao (nome do responsavel, nome do
-  // projeto). Carregam em paralelo e NAO bloqueiam a lista: se falharem, o
-  // detalhe abre com os nomes em branco em vez de nao abrir.
+  // --- suporte ao TaskDetail -------------------------------------------------
+  // Mapas de exibição; carregam em paralelo e não bloqueiam a lista.
   const [members, setMembers] = useState<Map<string, { name: string }>>(new Map());
   const [projectNames, setProjectNames] = useState<Map<string, string>>(new Map());
-  // Spec 031 (C14): so tira do seletor e marca a pilula. `members` fica
-  // completo -- tarefa arquivada costuma ter justamente quem ja saiu do time.
+  // Só tira do seletor e marca a pílula; `members` fica completo (arquivada costuma ter quem já saiu).
   const [membrosInativos, setMembrosInativos] = useState<Set<string>>(new Set());
   const router = useRouter();
   const [detalhe, setDetalhe] = useState<Task | null>(null);
-  // ⚠️ `colunas` E O QUE A TELA CONHECE DO QUADRO GERAL; `indice` e o que ela
-  // sabe de TODOS os quadros alcancaveis (fatia 5b-5b). Esta tela nao desenha
-  // colunas -- e uma lista chapada e paginada do workspace inteiro -- entao
-  // aqui o indice serve so ao rotulo do badge. E e justamente aqui que o caso
-  // "nao sei qual coluna" e NORMAL: a tarefa pode viver num quadro que ficou
-  // fora do alcance de quem olha, ou apagado.
+  // `colunas` é o quadro geral; `indice`, todos os quadros alcançáveis (aqui só
+  // para o rótulo do badge).
   const [indice, setIndice] = useState<Map<string, OrigemDaColuna> | null>(null);
-  // Pai da subtarefa aberta DIRETO da lista (04/08).
-  //
-  // ⚠️ Abrindo uma subtarefa arquivada DIRETO da lista -- o caso normal
-  // aqui, porque a lista e chapada e nao mostra hierarquia -- nao havia
-  // nenhuma indicacao de onde ela veio. A mensagem de erro do desarquivar
-  // ("desarquive o pai primeiro") virava uma caca ao tesouro.
-  //
-  // Mesmo padrao ja usado em /tarefa/[id]: UMA chamada, so quando o detalhe
-  // abre. Nao e N+1 na lista.
+  // Pai da subtarefa aberta direto da lista (a lista é chapada e não mostra hierarquia).
   const [paiDoDetalhe, setPaiDoDetalhe] = useState<Task | null>(null);
-  // Spec 033: tarefa que esta sendo DUPLICADA. ⚠️ O `editando` que morava ao
-  // lado saiu na Spec 052 (fatia D): titulo, descricao e links se editam no
-  // proprio detalhe, e o modal so cria e duplica.
+  // Tarefa sendo duplicada (o modal desta tela só duplica).
   const [duplicando, setDuplicando] = useState<Task | null>(null);
   const avisar = useAvisar();
-  // ⚠️ O time ativo vem da barra (Spec 048). Rota estática -- `useSearchParams`
-  // aqui derrubaria o `next build`. Ver `lib/useActiveTeam.tsx`.
+  // Time ativo vem da barra: `useSearchParams` aqui quebraria o build da rota estática.
   const { active, teamName: nomeDoTime } = useActiveTeam();
   const timeAtivo = useActiveTeamId();
 
-  // O indice de colunas de TODOS os quadros alcancaveis, so para o rotulo do
-  // badge -- esta tela nao desenha coluna nenhuma.
+  // O índice de colunas de todos os quadros alcançáveis, só para o rótulo do badge.
   useEffect(() => {
-    // ⚠️ `null` AQUI DE PROPÓSITO: esta tela usa SÓ o `indice`, para o rótulo do
-    // badge de coluna, e o índice é de todos os quadros alcançáveis. Passar o
-    // time recortaria as COLUNAS (que esta tela nem desenha) e não mudaria o
-    // índice -- pedir um time seria fingir que importa.
+    // `null` de propósito: esta tela usa só o `indice`, que é de todos os quadros.
     quadroGeralComIndice(null)
       .then(({ indice: ix }) => setIndice(ix))
-      // ⚠️ FALHA EM SILENCIO, de proposito: o badge cai na reserva por status
-      // e a tela segue funcionando. O assunto desta tela e reativar tarefa.
+      // Falha em silêncio: o badge cai na reserva por status.
       .catch(() => setIndice(new Map()));
   }, []);
 
@@ -138,10 +96,7 @@ function Arquivadas() {
       })
       .catch(() => {});
     listAllProjects({
-      // ROTULAR, nao escolher: este mapa id -> titulo desenha o selo de
-      // projeto no card. Recortar por time apagaria o selo de uma tarefa que
-      // a pessoa ENXERGA, em vez de proteger algo -- a lente do backend ja
-      // limita o que volta. Ver `listProjects` em `lib/api.ts`.
+      // Só rotula (id -> título para o selo de projeto); não recorta por time.
       teamId: null,
     })
       .then((r) => {
@@ -150,22 +105,10 @@ function Arquivadas() {
       .catch(() => {});
   }, []);
 
-  // ⚠️ ESTA TELA BUSCAVA A SUBARVORE AQUI (`listAllTasks`, ate 1000 tarefas
-  // por detalhe aberto) para a contagem da confirmacao de exclusao -- e nada a
-  // lia desde que o `TaskDetail` passou a buscar as proprias filhas (B1). A
-  // contagem continua certa, vinda de la. Saiu em 17/09.
   function abrirDetalhe(t: Task) {
     setDetalhe(t);
-    // ⚠️ Busca o pai SEMPRE, em vez de depender da `pilha`.
-    //
-    // A pilha desta tela NUNCA funcionou: `onAbrirSubtarefa` empilhava e
-    // chamava `abrirDetalhe`, que fazia `setPilha([])` logo em seguida --
-    // React agrupa os dois setters e o ultimo vence. `temVoltar` era sempre
-    // false. Buscar o pai cobre os DOIS casos (navegou de dentro, ou abriu
-    // direto da lista) com um caminho so, e some com o estado que mentia.
-    //
-    // Uma chamada por detalhe aberto, igual /tarefa/[id]. Falha em silencio:
-    // sem o pai a tarefa continua utilizavel, so fica sem o "voltar".
+    // Busca o pai sempre (uma chamada por detalhe aberto), para o "voltar" e
+    // para indicar de onde veio a subtarefa. Falha em silêncio: sem o pai só fica sem o "voltar".
     setPaiDoDetalhe(null);
     if (t.parent_task_id) {
       getTask(t.parent_task_id)
@@ -200,18 +143,13 @@ function Arquivadas() {
   }
 
   useEffect(() => {
-    // ⚠⚠ ESPERA A BARRA RESOLVER o time, e `active === null` ("ainda não sei")
-    // é diferente de `kind: "none"` ("resolveu, e não há time") -- senão uma
-    // falha do `listTeamsAll()` do `AppShell`, que é engolida de propósito,
-    // deixaria esta tela carregando para sempre.
+    // Espera a barra resolver. `active === null` ("ainda não sei") difere de
+    // `kind: "none"` ("sem time"), senão uma falha da barra carregaria para sempre.
     if (active === null) return;
     carregar(1);
-    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a busca, e
-    // volta para a página 1 -- a página 3 do Marketing não existe no Comercial.
+    // Trocar de time refaz a busca e volta para a página 1.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
-    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
-    // em voo, e o último a responder vencia (defeito de 14/09).
+    // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
   }, [timeAtivo, active === null]);
 
 
@@ -220,10 +158,7 @@ function Arquivadas() {
 
   return (
     <div style={{ maxWidth: 1100 }}>
-      {/* ⚠️ O NOME DO TIME, pelo mesmo motivo das outras três telas: lista
-          recortada que não diz pelo quê parece a lista inteira, e quem não
-          encontra uma tarefa arquivada conclui que ela foi apagada -- justamente
-          nesta tela, onde "apagada" é uma coisa que de fato acontece. */}
+      {/* O nome do time diz que a lista está recortada. */}
       <PageHeader
         title={nomeDoTime ? `Arquivadas · ${nomeDoTime}` : "Arquivadas"}
         count={total}
@@ -239,7 +174,6 @@ function Arquivadas() {
           description="Tarefas concluídas ou canceladas antigas aparecem aqui."
         />
       ) : (
-        // Redesign (fatia 7): tabela com colunas, como a prancha.
         <div className="relative overflow-x-auto rounded-xl border border-border bg-surface">
           <table className="w-full border-collapse text-base">
             <thead>
@@ -275,9 +209,7 @@ function Arquivadas() {
         projects={projectNames}
         temVoltar={paiDoDetalhe !== null}
         pai={paiDoDetalhe}
-        // Fica NESTA tela de proposito: o pai tambem esta arquivado, e e aqui
-        // que a pessoa vai desarquiva-lo -- que e o que a mensagem de erro do
-        // desarquivar manda fazer.
+        // Fica nesta tela: o pai também está arquivado, e é aqui que se desarquiva.
         onVoltar={() => {
           if (paiDoDetalhe) abrirDetalhe(paiDoDetalhe);
         }}
@@ -285,8 +217,7 @@ function Arquivadas() {
         onDuplicar={(t) => setDuplicando(t)}
         onAssigneesChange={() => {}}
         onAbrirSubtarefa={(sub) => abrirDetalhe(sub)}
-        // Esta tela E o arquivo: esconder subtarefa arquivada aqui seria
-        // esconder justamente o que a pessoa veio ver.
+        // Esta tela é o arquivo: não esconde subtarefa arquivada.
         mostrarArquivadas
         membrosInativos={membrosInativos}
         onSubtaskUpsert={() => carregar(page)}
@@ -301,9 +232,8 @@ function Arquivadas() {
       <TaskModal
         open={duplicando !== null}
         duplicarDe={duplicando}
-        // A tela de arquivadas nao carrega a arvore: sem filhas conhecidas, a
-        // caixa da D7 nao aparece (criterio 16) e a copia sai so com o pai.
-        // Duplicar uma arquivada COM subarvore se faz pelo quadro.
+        // Esta tela não carrega a árvore: a cópia sai só com o pai. Duplicar com
+        // subárvore se faz pelo quadro.
         filhosDaOrigem={[]}
         defaultProjectId={null}
         // Esta tela nao cria tarefa do zero (`open` exige duplicar).
@@ -313,9 +243,7 @@ function Arquivadas() {
         }}
         onSaved={(t) => {
           if (duplicando) {
-            // ⚠️ NAVEGA pra copia. Esta tela lista SO arquivadas, e a copia
-            // nasce ATIVA -- recarregar a lista aqui nao mostraria nada e a
-            // pessoa ficaria sem nenhum sinal de que a tarefa foi criada.
+            // Navega para a cópia: ela nasce ativa e não apareceria nesta lista.
             setDuplicando(null);
             router.push(`/tarefa/${t.id}`);
             return;
@@ -345,17 +273,8 @@ function LinhaArquivada({
 }: {
   t: Task;
   /**
-   * `Quadro · Coluna`, ou so a coluna quando a tarefa mora no quadro geral.
-   *
-   * ⚠️ `null` E O CASO NORMAL DESTA TELA, e nao um defeito. Ela lista o
-   * workspace inteiro PAGINADO; a tarefa pode viver num quadro fora do alcance
-   * de quem olha, ou apagado. Ali a reserva por status resolve, e por isso
-   * `rotuloDeColuna` devolve `null` em vez de inventar um rotulo.
-   *
-   * ⚠️ Ao contrario do `TaskCard`, aqui a coluna nao decide REGRA nenhuma
-   * (prazo, parada) -- e so um rotulo. Exigir a coluna forcaria esta tela a
-   * esperar os quadros para desenhar a lista, e o assunto dela e reativar
-   * tarefa.
+   * `Quadro · Coluna`, ou só a coluna quando a tarefa mora no quadro geral.
+   * `null` é normal aqui (quadro fora do alcance ou apagado): cai na reserva por status.
    */
   rotuloDaColuna: string | null;
   /** Nome do projeto, se a tarefa tem um e o mapa já chegou. */
@@ -385,14 +304,12 @@ function LinhaArquivada({
     }
   }
 
-  // Redesign (fatia 7): uma linha de tabela; a confirmacao de reativar e o erro
-  // abrem numa segunda linha, abaixo da tarefa.
+  // Uma linha de tabela; a confirmação de reativar e o erro abrem numa segunda linha.
   return (
     <>
       <tr className="border-b border-border transition-colors duration-150 last:border-b-0 hover:bg-surface-2">
         <td className="max-w-[360px] px-3 py-2 align-middle">
-          {/* Spec 031 (C5): o TITULO abre o detalhe -- nao a linha inteira,
-              que ja tem botoes dentro e produziria clique fantasma. */}
+          {/* O título abre o detalhe, não a linha inteira, que tem botões dentro. */}
           <button
             type="button"
             className="tappable block w-full truncate text-left font-semibold text-ink"
@@ -414,10 +331,8 @@ function LinhaArquivada({
         </td>
         <td className="px-3 py-2 align-middle">
           <Badge tone="soft" size="sm" color={STATUS_COLOR[t.status]}>
-            {/* Nome da coluna; reserva no rotulo do status. A COR continua
-                vindo de `STATUS_TEXT` -- `coluna.color` e token de traco e
-                reprova AA como texto (Spec 031 §2.2b); a derivacao acessivel de
-                cor arbitraria nunca foi feita. */}
+            {/* Nome da coluna, ou o rótulo do status. A cor vem de `STATUS_TEXT`:
+                `coluna.color` é token de traço e reprova AA como texto. */}
             {rotuloDaColuna ?? STATUS_LABEL[t.status] ?? t.status}
           </Badge>
         </td>

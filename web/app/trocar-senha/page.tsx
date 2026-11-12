@@ -11,17 +11,9 @@ export default function TrocarSenhaPage() {
   const [confirma, setConfirma] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(false);
-  // Esta tela tem DOIS usos e so atendia um deles:
-  //   1. primeiro acesso -- o AppShell joga a pessoa pra ca e ela NAO pode
-  //      sair (must_change_password bloqueia o resto do produto);
-  //   2. troca voluntaria -- ela clicou "Trocar senha" no /perfil.
-  // No caso 2 nao havia saida nenhuma: sem AppShell, sem link, sem botao.
-  // Quem abriu por engano ficava preso no Voltar do browser.
-  //
-  // `null` = ainda nao sei. Falha da chamada cai em `false` (mostra a saida)
-  // de proposito: se a pessoa for mesmo obrigada, o AppShell do /perfil a
-  // devolve pra ca -- errar pro lado da saida nao abre buraco, errar pro
-  // lado da prisao sim.
+  // Dois usos: primeiro acesso (obrigado, sem saída) e troca voluntária pelo
+  // /perfil. `null` = ainda não sei. Falha da chamada cai em `false` (mostra a
+  // saída) de propósito: se a pessoa for obrigada, o AppShell do /perfil a devolve.
   const [forcado, setForcado] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -51,9 +43,7 @@ export default function TrocarSenhaPage() {
     setCarregando(true);
     try {
       await changePassword(atual, nova);
-      // Volta pra onde a pessoa estava: primeiro acesso cai na tela inicial
-      // (o destino que o login queria -- Spec 058); troca voluntaria volta
-      // pro perfil.
+      // Primeiro acesso cai na tela inicial; troca voluntária volta pro perfil.
       router.replace(forcado === false ? "/perfil" : "/inicio");
     } catch (err) {
       const e = err as ApiError;
@@ -66,7 +56,6 @@ export default function TrocarSenhaPage() {
 
   return (
     <div className="center-screen">
-      {/* Redesign (fatia 6): o mesmo cartão do login (raio 16, sombra). */}
       <form
         onSubmit={trocar}
         className="login-rise flex w-full max-w-[440px] flex-col gap-5 rounded-2xl border border-border bg-surface p-9 shadow-[var(--shadow)]"
@@ -79,9 +68,7 @@ export default function TrocarSenhaPage() {
             <h1 className="m-0 text-[22px] font-extrabold tracking-[-0.02em]">
               {forcado === false ? "Trocar senha" : "Defina sua senha"}
             </h1>
-            {/* Enquanto nao sei (null), o texto do primeiro acesso e o palpite
-                seguro: quem chega aqui obrigado e a maioria, e a frase some
-                sozinha quando a resposta chega. */}
+            {/* Enquanto não sei (null), o texto do primeiro acesso é o palpite seguro. */}
             {forcado !== false && (
               <p className="muted m-0 text-base">
                 Troque a senha provisória por uma sua para continuar.
@@ -112,9 +99,7 @@ export default function TrocarSenhaPage() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* So aparece na troca VOLUNTARIA. Em primeiro acesso nao ha pra
-              onde voltar -- o resto do produto esta bloqueado, e um "Cancelar"
-              que nao cancela nada e pior que nenhum. */}
+          {/* Só na troca voluntária: em primeiro acesso não há para onde voltar. */}
           {forcado === false && (
             <a
               href="/perfil"

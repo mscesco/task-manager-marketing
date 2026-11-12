@@ -1,15 +1,5 @@
 "use client";
-// /formularios — os formulários de solicitação do workspace (Spec 043, fatia C).
-//
-// ⚠️ ATÉ AQUI ELES SÓ EXISTIAM NA API. A fatia A entregou o CRUD e disse, com
-// todas as letras, que ele nascia sem chamador no front; esta é a tela que o
-// chama. Sem ela, "cada equipe cria o seu formulário" significava `curl`.
-//
-// ⚠️ ESTA É A PRIMEIRA METADE DA FATIA C. Aqui se cria, publica e apaga um
-// formulário; montar as SEÇÕES e PERGUNTAS dele é a segunda. A divisão é para
-// você ver um formulário nascer antes de eu escrever o editor inteiro -- e
-// porque um editor de perguntas com arrastar, tipos e condicional é grande o
-// bastante para merecer entrega própria.
+// /formularios: criar, publicar e apagar os formulários de solicitação do workspace.
 
 import { timePadraoDoFormulario, timesQueCriamFormulario } from "@/lib/timesDoFormulario";
 import { useEffect, useState } from "react";
@@ -46,14 +36,11 @@ function Formularios() {
   const [times, setTimes] = useState<Team[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [podeGerir, setPodeGerir] = useState(false);
-  // ⚠️ SEPARADO DE `podeGerir` desde a Spec 049, fatia D: o GESTOR edita e
-  // publica formulário, e NÃO apaga. Um "Excluir" dentro de `podeGerir` seria o
-  // botão que a tela oferece e o servidor recusa.
+  // Separado de `podeGerir`: o gestor edita e publica, mas não apaga.
   const [podeApagar, setPodeApagar] = useState(false);
   const [ocupado, setOcupado] = useState<string | null>(null);
 
-  // ⚠⚠ O time ativo vem da barra (Spec 048). Rota estática: `useSearchParams`
-  // aqui derrubaria o build -- ver `lib/useActiveTeam.tsx`.
+  // Time ativo vem da barra: `useSearchParams` aqui quebraria o build da rota estática.
   const { active, teamName: nomeDoTimeAtivo } = useActiveTeam();
   const timeAtivo = useActiveTeamId();
 
@@ -65,18 +52,13 @@ function Formularios() {
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
-    // ⚠⚠ ESPERA A BARRA RESOLVER o time, em vez de listar sem recorte -- e
-    // `active === null` ("ainda não sei") é diferente de `kind: "none"` ("sei
-    // que não há time"), senão uma falha do `listTeamsAll()` do `AppShell`
-    // deixaria esta tela carregando para sempre.
+    // Espera a barra resolver. `active === null` ("ainda não sei") difere de
+    // `kind: "none"` ("sem time"), senão uma falha da barra carregaria para sempre.
     if (active === null) return;
     listarFormularios(timeAtivo)
       .then(setItens)
       .catch((e: ApiError) => setErro(e.message));
-    // ⚠️ `timeAtivo` NAS DEPENDÊNCIAS: trocar de time tem de refazer a lista.
-    // ⚠️ `active === null` E NÃO `active`: o objeto é NOVO a cada render da
-    // barra, e depender dele refazia o pedido a cada render -- vários pedidos
-    // em voo, e o último a responder vencia (defeito de 14/09).
+    // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
   }, [timeAtivo, active === null]);
 
   useEffect(() => {
@@ -88,8 +70,7 @@ function Formularios() {
       .catch(() => {});
     currentUser()
       .then((me) => {
-        // Spec 049, fatia A: era `solicitation_form.manage`. `podeGerir` desenha
-        // criar e publicar; `form.update` e o que diz "mexer no formulario".
+        // `form.update` desenha criar e publicar.
         setPodeGerir(me.permissions.includes("form.update"));
         setPodeApagar(me.permissions.includes("form.delete"));
       })
@@ -99,15 +80,9 @@ function Formularios() {
       });
   }, []);
 
-  // ⚠⚠ O TIME ATIVO PREENCHE O CAMPO, E NÃO PISA NA ESCOLHA. `atual || ...`
-  // e não `setTime(timeAtivo)`: o efeito roda de novo quando a barra resolve o
-  // time (e a cada troca), e sobrescrever ali apagaria o time que a pessoa
-  // acabou de escolher no formulário aberto.
-  //
-  // ⚠️ E SO ENTRE OS TIMES EM QUE A PESSOA CRIA (08/10). A regra mora em
-  // `lib/timesDoFormulario`: o ativo, se ela cria nele; senao o unico em que
-  // cria; senao nenhum -- nunca "a primeira raiz da lista", o sorteio que a
-  // Spec 046 proibiu. Roda de novo quando os times chegam.
+  // `atual || ...`: o efeito roda de novo quando a barra resolve o time, e não
+  // pode apagar a escolha já feita. Só entre os times em que a pessoa cria
+  // (regra em `lib/timesDoFormulario`).
   useEffect(() => {
     if (times.length === 0) return;
     setTime((atual) => atual || timePadraoDoFormulario(times, timeAtivo));
@@ -131,9 +106,7 @@ function Formularios() {
       setCriando(false);
     } catch (e) {
       const err = e as ApiError;
-      // ⚠️ O BACKEND RECUSA SLUG INVÁLIDO E REPETIDO com mensagem própria, e é
-      // ela que aparece -- reescrever aqui criaria uma segunda versão da regra
-      // que divergiria na primeira mudança.
+      // A mensagem do backend (slug inválido ou repetido) aparece como veio: não duplicar a regra.
       setErroForm(err.message || "Não consegui criar o formulário.");
     } finally {
       setSalvando(false);
@@ -149,9 +122,7 @@ function Formularios() {
         (prev ?? []).map((x) => (x.id === f.id ? atualizado : x))
       );
     } catch (e) {
-      // ⚠️ O 422 AQUI TEM CONTEÚDO: "um formulário sem perguntas não pode ser
-      // publicado". É a mensagem que ensina o próximo passo, então ela aparece
-      // inteira em vez de virar "não consegui".
+      // O 422 ("sem perguntas não pode ser publicado") ensina o próximo passo: mostrar inteiro.
       setErro((e as ApiError).message || "Não consegui mudar a publicação.");
     } finally {
       setOcupado(null);
@@ -159,11 +130,8 @@ function Formularios() {
   }
 
   async function apagar(f: Formulario) {
-    // ⚠️ O AVISO DIZ O QUE ACONTECE COM AS SOLICITAÇÕES, e isso não é zelo: o
-    // soft delete marca o FORMULÁRIO e não toca nelas. Elas continuam na fila
-    // (o `JOIN` é `LEFT`) e continuam legíveis, porque cada uma guarda o texto
-    // das perguntas que respondeu. Quem lê "excluir formulário" imagina o
-    // contrário.
+    // O soft delete marca só o formulário: as solicitações continuam na fila e
+    // legíveis, porque cada uma guarda o texto das perguntas que respondeu.
     const ok = window.confirm(
       `Excluir o formulário “${f.title}”?\n\n` +
         "As solicitações que já chegaram por ele NÃO são apagadas: continuam " +
@@ -193,8 +161,7 @@ function Formularios() {
   return (
     <div>
       <PageHeader
-        /* ⚠️ O NOME DO TIME, pelo mesmo motivo da fila e dos projetos: lista
-           recortada que não diz pelo quê parece a lista inteira. */
+        /* O nome do time diz que a lista está recortada. */
         title={nomeDoTimeAtivo ? `Formulários · ${nomeDoTimeAtivo}` : "Formulários"}
         count={`${itens.length} ${itens.length === 1 ? "formulário" : "formulários"}`}
         actions={
@@ -249,9 +216,7 @@ function Formularios() {
               disabled={salvando}
               onChange={(e) => setSlug(e.target.value)}
             />
-            {/* ⚠️ MOSTRAR A URL INTEIRA, e não só o campo: o slug É o endereço
-                que alguém vai divulgar, e ver `/solicitar/<isto>` na hora de
-                digitar evita descobrir depois que ficou feio no cartaz. */}
+            {/* A URL inteira: o slug é o endereço que alguém vai divulgar. */}
             <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
               O formulário ficará em <code>/solicitar/{slug.trim() || "…"}</code>.
               Só letras minúsculas, números e hífen.
@@ -271,17 +236,12 @@ function Formularios() {
                   Escolha o time…
                 </option>
               )}
-              {/* ⚠️ SO OS TIMES EM QUE A PESSOA CRIA (`can_create_form`, a
-                  pergunta do servidor). Ate 08/10 eram todos os do
-                  workspace, e o gestor do Marketing via o Comercial para
-                  ouvir 403 ao salvar. Subtime entra (decisao dela). */}
+              {/* Só os times em que a pessoa cria (`can_create_form`, decidido pelo servidor). */}
               {timesQueCriamFormulario(times).map((t) => (
                 <option key={t.id} value={t.id}>{t.name}</option>
               ))}
             </select>
-            {/* ⚠️ ESCOLHA DEFINITIVA, e o aviso é obrigatório: o time decide
-                QUEM TRIA as solicitações -- inclusive as que já chegaram --, e
-                por isso o backend recusa trocá-lo depois. */}
+            {/* O time decide quem tria as solicitações, e o backend recusa trocá-lo depois. */}
             <span className="muted" style={{ fontSize: 12, marginTop: 4 }}>
               É o time que vai receber as solicitações na fila.{" "}
               <strong>Não dá para mudar depois.</strong>
@@ -318,8 +278,7 @@ function Formularios() {
           solicitações por um endereço próprio.
         </p>
       ) : (
-        /* Redesign (fatia 7): cards, como a coluna da esquerda da prancha. O
-           editor abre em /formularios/<id>, com esta mesma lista ao lado. */
+        /* O editor abre em /formularios/<id>, com esta mesma lista ao lado. */
         <div className="grid grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
           {itens.map((f) => (
             <div
@@ -328,18 +287,13 @@ function Formularios() {
               style={{ opacity: ocupado === f.id ? 0.6 : 1 }}
             >
               <span className="flex items-start gap-2">
-                {/* ⚠️ O TÍTULO É O LINK PARA O EDITOR, e é a razão de a Camila
-                    ter perguntado "consigo criar mas onde eu edito?" (26/08): a
-                    fatia C1 criava formulários que não tinham para onde ir, e o
-                    primeiro deles bateu em "um formulário sem perguntas não pode
-                    ser publicado" sem nenhum lugar onde pôr perguntas. */}
+                {/* O título é o link para o editor. */}
                 <Link
                   href={`/formularios/${f.id}`}
                   className="min-w-0 flex-1 truncate text-md font-bold text-ink no-underline hover:text-accent"
                 >
                   {f.title}
                 </Link>
-                {/* Redesign (fatia 6): a situação em pílula, teal quando publicado. */}
                 {f.is_published ? (
                   <Badge tone="soft" size="sm" color="var(--teal)" className="shrink-0">
                     Publicado

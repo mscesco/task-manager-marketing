@@ -1,14 +1,7 @@
 "use client";
-// /solicitar/<slug> -- um formulario publicado, direto (Spec 043, fatia B).
-//
-// ⚠️ ESTA E A URL DE DIVULGACAO. A decisao da Camila foi "os dois": a lista em
-// `/solicitar` para quem nao sabe qual usar, e um endereco proprio por
-// formulario para quem manda o link.
-//
-// ⚠️ E ELA RESPONDE MESMO COM UM FORMULARIO SO no workspace. O `/solicitar`
-// abre direto nesse caso, mas o link divulgado nao pode depender de quantos
-// formularios existem hoje -- publicar o segundo nao pode quebrar o cartaz
-// impresso do primeiro.
+// /solicitar/<slug>: um formulário publicado, direto; é a URL de divulgação.
+// Responde mesmo com um formulário só no workspace: o link divulgado não pode
+// depender de quantos formulários existem.
 
 import { useParams } from "next/navigation";
 
