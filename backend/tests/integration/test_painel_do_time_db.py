@@ -277,6 +277,34 @@ async def test_supervisor_nao_ve_o_subtime_vizinho_na_carga(db) -> None:
     assert ("Beto", 1) in [(w.name, w.open_count) for w in p.workload]
 
 
+async def test_filtro_de_subtime_conta_o_que_o_quadro_do_subtime_mostra(db) -> None:
+    """Subtime = internas dele + as da raiz com responsavel dele (as
+    "compartilhadas" do quadro do subtime), subtarefa inclusive. Do SEO: t1, t2,
+    t3, t6, t7 (op) e a subtarefa t9 (sup), mais a interna ts. Fora: as do
+    Marketing sem ninguem do SEO (t4, t5, t8, t10) e a do Comercial com o op (tc)."""
+    m = await _mundo(db)
+    ts = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ger"], team_id=m["seo"], title="ts"
+    )
+    ts.due_date = date(2026, 10, 16)
+    await db.flush()
+
+    p = await _painel(db, m, "ger", under="seo")
+    assert p.counts.done == 0
+    assert p.counts.total == 4  # t2, t3, t9, ts (t1 e de antes da semana)
+    assert [i.title for i in p.counts.oldest_overdue] == ["t1", "t2"]
+    assert _no_prazo_por_dia(p) == {
+        date(2026, 10, 14): 1,  # t3
+        date(2026, 10, 16): 1,  # ts, interna
+        date(2026, 10, 18): 1,  # t9, subtarefa
+    }
+    carga = {w.name: w.open_count for w in p.workload}
+    assert (carga["Op"], carga["Sup"]) == (4, 2)
+
+    # sem o filtro, o Marketing continua igual
+    assert (await _painel(db, m, "ger")).counts.total == 8
+
+
 async def test_desativado_com_tarefa_aberta_continua_na_carga(db) -> None:
     """Trabalho orfao: a conta saiu, as tarefas ficaram -- e seguem contando
     nas atrasadas. A carga tem de mostrar de quem sao."""
