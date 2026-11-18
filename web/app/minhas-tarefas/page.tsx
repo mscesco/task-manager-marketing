@@ -12,7 +12,7 @@ import {
 import AppShell from "@/components/AppShell";
 import EmptyState from "@/components/EmptyState";
 import PageHeader from "@/components/PageHeader";
-import { ChevronRight, CornerDownRight } from "lucide-react";
+import { ChevronRight, CornerDownRight, FolderKanban } from "lucide-react";
 import Avatar from "@/components/Avatar";
 import Badge from "@/components/Badge";
 import { nomeCurto } from "@/lib/people";
@@ -599,6 +599,7 @@ function Minhas() {
     // Quem decide o alerta é a coluna; sem coluna resolvida, sem alerta.
     const dueTone = col ? deadlineTonePorColuna(col, t.due_date, t.is_archived, t.due_time) : null;
     const ids = t.assignee_ids ?? [];
+    const projeto = t.project_id ? projectNames.get(t.project_id) : undefined;
     // Cartão-linha: filete da cor da coluna à esquerda, selos no meio, seta à direita.
     return (
       <FaixaClicavel
@@ -634,6 +635,16 @@ function Minhas() {
             <span className="muted" style={{ fontSize: 12, flexShrink: 0 }}>
               {rotuloDe(t) ?? t.status}
             </span>
+            {projeto && (
+              // Projeto em etiqueta neutra, cortada com reticências; `title` mostra o nome inteiro.
+              <span title={`Projeto: ${projeto}`} style={{ display: "inline-flex", maxWidth: 200, minWidth: 0, flexShrink: 1 }}>
+                <Badge tone="neutral" size="sm" weight="semibold" className="border border-border bg-surface-2 text-ink-soft">
+                  <FolderKanban size={12} strokeWidth={2} aria-hidden style={{ flexShrink: 0, marginRight: 4 }} />
+                  <span className="sr-only">Projeto: </span>
+                  <span className="truncate">{projeto}</span>
+                </Badge>
+              </span>
+            )}
             {t.parent_task_id && (
               // Nomeia a mãe quando o backend a resolveu; senão, rótulo genérico.
               <span
