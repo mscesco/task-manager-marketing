@@ -231,3 +231,95 @@ jobs:
       - name: O alembic responde dentro da imagem
         run: |
           docker run --rm             -e DATABASE_URL="postgresql+asyncpg://x:x@localhost:5432/x"             -e JWT_SECRET_KEY="ci-secret-de-teste-sem-valor-nenhum-0123456789"             -e APP_ENV=development             --entrypoint alembic             task-manager-api:ci heads
+
+  # E2E: Playwright + axe contra API e web de verdade, num banco do zero.
+  # O web roda em `next dev` porque ele repassa /api para a :8000; a CSP de
+  # producao nao aceita a API em outra origem.
+  e2e:
+    name: e2e (playwright + axe)
+    runs-on: ubuntu-latest
+
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: taskmanager_e2e
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d taskmanager_e2e"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/taskmanager_e2e
+      JWT_SECRET_KEY: ci-secret-de-teste-sem-valor-nenhum-0123456789
+      APP_ENV: development
+      E2E_EMAIL: e2e@teste.dev
+      E2E_PASSWORD: senha-do-e2e-sem-valor-123
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: API -- dependencias, migrations e organizacao com admin
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          mkdir -p /tmp/deps && cp pyproject.toml /tmp/deps/ && pip install /tmp/deps
+          alembic upgrade head
+          python -m scripts.provision_workspace \
+            --workspace-name "E2E" --workspace-slug "unifecaf" \
+            --team-name "Marketing" --team-slug "marketing" \
+            --admin-name "Admin E2E" --admin-email "$E2E_EMAIL" \
+            --admin-password "$E2E_PASSWORD"
+
+      - name: API -- sobe na :8000
+        working-directory: backend
+        run: nohup uvicorn app.main:app --port 8000 > /tmp/api.log 2>&1 &
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Web -- dependencias e Chromium
+        working-directory: web
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+
+      - name: Web -- sobe na :3000
+        working-directory: web
+        run: |
+          nohup npx next dev -p 3000 > /tmp/web.log 2>&1 &
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8000/health/ready >/dev/null \
+              && curl -sf -o /dev/null http://localhost:3000/login && exit 0
+            sleep 2
+          done
+          echo "API ou web nao subiram"; tail -50 /tmp/api.log /tmp/web.log; exit 1
+
+      - name: Playwright
+        working-directory: web
+        run: npx playwright test
+
+      - name: Relatorio e logs (so na falha)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e
+          path: |
+            web/playwright-report
+            web/test-results
+            /tmp/api.log
+            /tmp/web.log
+          retention-days: 7

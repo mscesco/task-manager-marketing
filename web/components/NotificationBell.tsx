@@ -131,8 +131,8 @@ export default function NotificationBell() {
       <button
         type="button"
         onClick={alternar}
-        aria-label="Notificacoes"
-        title="Notificacoes"
+        aria-label={unread > 0 ? `Notificações, ${unread > 9 ? "9+" : unread} não lidas` : "Notificações"}
+        title="Notificações"
         className="relative flex h-8 w-8 items-center justify-center rounded-lg text-ink-soft hover:bg-surface-2"
       >
         <svg

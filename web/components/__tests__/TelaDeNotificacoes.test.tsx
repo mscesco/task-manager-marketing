@@ -215,7 +215,7 @@ describe("sino", () => {
     );
     render(<NotificationBell />);
 
-    fireEvent.click(screen.getByLabelText("Notificacoes"));
+    fireEvent.click(screen.getByRole("button", { name: /^Notificações/ }));
     expect((await screen.findByText("Ver todas")).closest("a")?.getAttribute("href")).toBe(
       "/notificacoes",
     );

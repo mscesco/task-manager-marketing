@@ -244,8 +244,6 @@ export default function ListaDeBases() {
                   <Link
                     key={b.id}
                     href={`/bases/${b.id}`}
-                    // O nome acessivel e so o da base; a data e detalhe visual.
-                    aria-label={b.name}
                     className="flex h-full flex-col gap-3 rounded-xl border border-border bg-surface p-4 text-ink no-underline transition-[transform,box-shadow] duration-200 hover:-translate-y-0.5 hover:shadow-[var(--shadow)]"
                   >
                     <span aria-hidden className="grid grid-cols-[1.4fr_1fr_1fr] gap-px overflow-hidden rounded-lg border border-border bg-border">

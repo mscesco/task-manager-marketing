@@ -586,6 +586,9 @@ export default function TaskModal({
       }}
     >
       <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="t-modal-titulo"
         onClick={(e) => e.stopPropagation()}
         onSubmit={salvar}
         // Mata o submit implícito: Enter num input não cria a tarefa (regras em lib/teclasFormulario).
@@ -608,7 +611,7 @@ export default function TaskModal({
         }}
       >
         <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between" }}>
-          <h2 style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
+          <h2 id="t-modal-titulo" style={{ margin: 0, fontSize: 18, letterSpacing: "-0.02em" }}>
             {duplicando ? "Duplicar tarefa" : "Nova tarefa"}
             {!duplicando && nomeDoQuadro && (
               <span

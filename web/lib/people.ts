@@ -23,12 +23,13 @@ export function iniciais(name: string): string {
   return (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
-// Cor estavel derivada do id (mesma pessoa -> mesma cor sempre). Paleta com
-// contraste suficiente para texto branco por cima.
-const AVATAR_CORES = [
-  "#0ea5e9", "#6366f1", "#f59e0b", "#22c55e",
-  "#ef4444", "#a855f7", "#14b8a6", "#ec4899",
+// Cor estavel derivada do id (mesma pessoa -> mesma cor sempre). Todas com
+// contraste AA (4.5:1) para as iniciais brancas; o guardiao e `people.test.ts`.
+export const AVATAR_CORES = [
+  "#0369a1", "#4f46e5", "#b45309", "#15803d",
+  "#dc2626", "#9333ea", "#0f766e", "#be185d",
 ];
+export const AVATAR_SEM_ID = "#737373";
 
 export function corAvatar(id: string): string {
   let h = 0;

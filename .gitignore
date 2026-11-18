@@ -38,3 +38,7 @@ Thumbs.db
 
 # Grafo do graphify (gerado localmente, reconstruivel).
 graphify-out/
+
+# Playwright
+web/test-results/
+web/playwright-report/
