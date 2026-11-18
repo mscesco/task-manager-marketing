@@ -27,12 +27,14 @@ O MUNDO:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime, time
 
 import pytest
 
-from app.db.models import User
+from app.db.models import Solicitation, User
 from app.db.models.enums import TaskStatus
+from app.modules.solicitations.application.form_service import SolicitationFormService
 from app.modules.tasks.application.dashboard_service import DashboardService
 from app.modules.tasks.domain.dashboard import TIMEZONE, Period
 from tests.integration import factories as f
@@ -303,6 +305,25 @@ async def test_filtro_de_subtime_conta_o_que_o_quadro_do_subtime_mostra(db) -> N
 
     # sem o filtro, o Marketing continua igual
     assert (await _painel(db, m, "ger")).counts.total == 8
+
+
+async def test_filtro_de_subtime_mostra_a_fila_da_raiz(db) -> None:
+    """Formulario e do time raiz: filtrar pelo SEO mostra a fila do Marketing.
+    Quem nao ve a fila da raiz (o supervisor) continua sem o card."""
+    m = await _mundo(db)
+    with acting_as(workspace_id=m["ws"], user_id=m["ger"], team_tree=m["arvore"], org_role="ADMIN"):
+        form = await SolicitationFormService(db).criar_formulario(
+            team_id=m["mkt"], slug="arte", title="Arte"
+        )
+    db.add(Solicitation(
+        workspace_id=m["ws"], requester_name="Fulana", requester_email="f@x.com",
+        batch_id=uuid.uuid4(), category="arte", summary="Uma arte", answers=[],
+        form_id=form.id,
+    ))
+    await db.flush()
+
+    assert (await _painel(db, m, "ger", under="seo")).queue.pending == 1
+    assert (await _painel(db, m, "sup", under="seo")).queue is None
 
 
 async def test_desativado_com_tarefa_aberta_continua_na_carga(db) -> None:

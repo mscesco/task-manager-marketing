@@ -91,12 +91,18 @@ class DashboardService:
                 workload = [w for w in workload if w.user_id == assignee_id]
 
         queue = None
-        if _allowed(QUEUE_VERB, under_team_id):
+        # Formulario e do time raiz: num subtime, a fila mostrada e a da raiz.
+        fila = (
+            team_scope.root_of(under_team_id, tenant.team_tree)
+            if under_team_id is not None
+            else None
+        )
+        if _allowed(QUEUE_VERB, fila):
             # Com periodo: as que CHEGARAM nele e seguem pendentes hoje.
             chegada = _instants(period) if period is not None else None
             queue = RequestQueue(
-                pending=await self._queue.count_pending(under_team_id, chegada),
-                oldest_at=await self._queue.oldest_pending_at(under_team_id, chegada),
+                pending=await self._queue.count_pending(fila, chegada),
+                oldest_at=await self._queue.oldest_pending_at(fila, chegada),
             )
 
         return Dashboard(
