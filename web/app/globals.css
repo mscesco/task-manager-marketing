@@ -11,7 +11,7 @@
   --color-ink: #000000;
   --color-ink-soft: #31302e;
   --color-ink-faint: #615d59;
-  --color-accent: #0075de;
+  --color-accent: #0064c2;
   --color-accent-soft: #d6e8fb;
   --color-danger: #dc2626;
   /* Cores de apoio. Espelham `--teal` etc. do :root. */
@@ -61,7 +61,7 @@
   /* Fundo do modo de edição: fundo, e não `opacity`, para não alterar o
      contraste medido dos cards. `--text-faint` aqui dá 5.29: escurecer mais exige remedir. */
   --edicao-fundo: #e9e7e4;
-  --accent: #0075de;     /* o único acento estrutural */
+  --accent: #0064c2;     /* o único acento estrutural; 5.83 surface, 5.21 bg, 4.99 surface-2, 4.66 accent-soft (era #0075de, 3.91 em surface-2) */
   --accent-soft: #d6e8fb;
   --danger: #dc2626;
   /* Texto sobre fundo --danger; no escuro o --danger clareia e branco deixaria de ser legível. */
@@ -615,7 +615,7 @@ button:focus-visible,
     --color-ink: #000000;
     --color-ink-soft: #31302e;
     --color-ink-faint: #615d59;
-    --color-accent: #0075de;
+    --color-accent: #0064c2;
     --color-accent-soft: #d6e8fb;
     --color-danger: #dc2626;
     /* O painel usa `bg-teal`/`stroke-teal` em "Concluídas". */

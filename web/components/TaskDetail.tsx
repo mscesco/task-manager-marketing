@@ -1532,9 +1532,6 @@ export default function TaskDetail({
               ref={painelDatas.anchorRef}
               onClick={() => (abertoDatas ? setAbertoDatas(false) : abrirDatas())}
               disabled={salvandoDatas}
-              aria-label={
-                prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"
-              }
               aria-expanded={abertoDatas}
               title={prazoAtual || inicioAtual ? "Mudar datas" : "Definir datas"}
               style={{
@@ -1565,6 +1562,10 @@ export default function TaskDetail({
                   · início {new Date(inicioAtual + "T00:00:00").toLocaleDateString("pt-BR")}
                 </span>
               )}
+              {/* A acao vai depois do texto visivel: o nome acessivel contem o que se ve. */}
+              <span className="sr-only">
+                {prazoAtual || inicioAtual ? ", mudar datas" : ", definir datas"}
+              </span>
               {/* Sem `ehTopo`: subtarefa herda o projeto, mas tem prazo proprio. */}
               {abertoDatas ? (
                 <X size={11} strokeWidth={2.2} aria-hidden />
@@ -1836,9 +1837,6 @@ export default function TaskDetail({
                   ref={painelProj.anchorRef}
                   onClick={() => setAbertoProj((v) => !v)}
                   disabled={movendoProj}
-                  aria-label={
-                    projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"
-                  }
                   aria-expanded={abertoProj}
                   title={projetoAtual ? "Mudar projeto" : "Adicionar a um projeto"}
                   style={{
@@ -1848,6 +1846,9 @@ export default function TaskDetail({
                   }}
                 >
                   {conteudo}
+                  <span className="sr-only">
+                    {projetoAtual ? ", mudar projeto" : ", adicionar a um projeto"}
+                  </span>
                   {abertoProj ? (
                     <X size={11} strokeWidth={2.2} aria-hidden />
                   ) : projetoAtual ? (

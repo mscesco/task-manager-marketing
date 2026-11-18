@@ -56,7 +56,6 @@ export default function FilterPicker({
       <button
         ref={panel.anchorRef}
         type="button"
-        aria-label={`${label}: ${current?.name ?? allLabel}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => (open ? close() : setOpen(true))}
@@ -64,7 +63,8 @@ export default function FilterPicker({
           current ? "border-accent" : "border-border"
         }`}
       >
-        <span className="text-xs text-ink-faint">{label}</span>
+        {/* O espaço separa rótulo e valor no nome acessível ("Pessoa Ana"). */}
+        <span className="text-xs text-ink-faint">{label}</span>{" "}
         {current && people ? (
           <Avatar id={current.id} name={current.name} size="sm" />
         ) : (

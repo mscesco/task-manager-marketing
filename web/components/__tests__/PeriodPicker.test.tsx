@@ -11,7 +11,7 @@ describe("PeriodPicker", () => {
   it("o atalho escolhe o período e fecha", () => {
     const onChange = vi.fn();
     render(<PeriodPicker value={null} today={HOJE} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Período: Agora" }));
+    fireEvent.click(screen.getByRole("button", { name: "Período Agora" }));
     fireEvent.click(screen.getByRole("button", { name: /Semana passada/ }));
     expect(onChange).toHaveBeenCalledWith({ start: "2026-10-05", end: "2026-10-11" });
     expect(screen.queryByRole("dialog", { name: "Período" })).toBeNull();
@@ -20,7 +20,7 @@ describe("PeriodPicker", () => {
   it("personalizado recusa fim antes do início, e aplica o que vale", () => {
     const onChange = vi.fn();
     render(<PeriodPicker value={null} today={HOJE} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Período: Agora" }));
+    fireEvent.click(screen.getByRole("button", { name: "Período Agora" }));
     fireEvent.change(screen.getByLabelText("De"), { target: { value: "2026-10-05" } });
     fireEvent.change(screen.getByLabelText("Até"), { target: { value: "2026-10-01" } });
     fireEvent.click(screen.getByRole("button", { name: "Aplicar" }));
@@ -38,7 +38,7 @@ describe("PeriodPicker", () => {
     rerender(
       <PeriodPicker value={{ start: "2026-10-12", end: "2026-10-18" }} today={HOJE} onChange={onChange} />
     );
-    expect(screen.getByRole("button", { name: "Período: Esta semana" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Período Esta semana" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Período anterior" }));
     expect(onChange).toHaveBeenCalledWith({ start: "2026-10-05", end: "2026-10-11" });
   });

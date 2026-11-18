@@ -118,7 +118,7 @@ function montar(over: Partial<Task> = {}, onTaskMoved = vi.fn()) {
 }
 
 async function abrirPainel() {
-  fireEvent.click(await screen.findByLabelText(/(Definir|Mudar) datas/));
+  fireEvent.click(await screen.findByRole("button", { name: /(definir|mudar) datas$/ }));
   return {
     inicio: screen.getByLabelText("Data de início") as HTMLInputElement,
     prazo: screen.getByLabelText("Data de entrega") as HTMLInputElement,
@@ -156,7 +156,7 @@ describe("TaskDetail -- a cápsula de datas", () => {
     // mesma caixa, e não a ausência dela -- mesma lição do "nenhum" do projeto.
     montar();
     expect(await screen.findByText(/Sem datas/)).toBeTruthy();
-    expect(screen.getByLabelText("Definir datas")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /definir datas$/ })).toBeTruthy();
   });
 
   it("⚠️ SUBTAREFA também tem datas -- e é diferente do projeto", async () => {
@@ -168,7 +168,7 @@ describe("TaskDetail -- a cápsula de datas", () => {
     // Este teste impede a trava de vir de carona numa refatoração do bloco
     // vizinho (o `ehTopo` do projeto).
     montar({ parent_task_id: "pai", path: "pai.t1", depth: 1 });
-    expect(await screen.findByLabelText("Definir datas")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: /definir datas$/ })).toBeTruthy();
   });
 
   it("⚠️ o painel se anuncia como \"Datas\"", async () => {
@@ -348,7 +348,7 @@ describe("TaskDetail -- a hora do prazo", () => {
 
   it("a pílula mostra a hora ao lado da data, sem os segundos", async () => {
     montar({ due_date: "2026-08-19", due_time: "18:30:00" });
-    const gatilho = await screen.findByLabelText(/Mudar datas/);
+    const gatilho = await screen.findByRole("button", { name: /mudar datas$/ });
     expect(gatilho.textContent).toContain("19/08/2026");
     expect(gatilho.textContent).toContain("18:30");
     expect(gatilho.textContent).not.toContain("18:30:00");

@@ -71,7 +71,6 @@ export default function PeriodPicker({
       <button
         ref={panel.anchorRef}
         type="button"
-        aria-label={`Período: ${label}`}
         aria-haspopup="dialog"
         aria-expanded={open}
         onClick={() => {
@@ -84,7 +83,8 @@ export default function PeriodPicker({
           value ? "border-accent" : "border-border"
         }`}
       >
-        <span className="text-xs text-ink-faint">Período</span>
+        {/* O espaço separa rótulo e valor no nome acessível ("Período Agora"). */}
+        <span className="text-xs text-ink-faint">Período</span>{" "}
         <CalendarRange size={14} className="shrink-0 text-ink-faint" aria-hidden="true" />
         <span className="min-w-0 flex-1 truncate text-left font-semibold">{label}</span>
         <ChevronDown size={14} className="shrink-0 text-ink-faint" aria-hidden="true" />

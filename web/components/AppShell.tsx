@@ -212,12 +212,13 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   const publicado = publishedActiveTeam(contexto, teamsLoaded, search);
   const timeAtivo = contexto.kind === "team" ? contexto.teamId : null;
 
-  // A barra reescreve a URL com o time inferido (`replace`); `teamUrlToWrite`
-  // devolve `null` depois disso, então não há laço.
+  // A barra reescreve a URL com o time inferido; `teamUrlToWrite` devolve `null`
+  // depois disso, então não há laço. `history.replaceState`, não `router.replace`:
+  // a navegação do Next tiraria o <title> da página até o servidor responder.
   const urlComTime = teamUrlToWrite(pathname, contexto, search);
   useEffect(() => {
-    if (urlComTime) router.replace(urlComTime);
-  }, [urlComTime, router]);
+    if (urlComTime) window.history.replaceState(null, "", urlComTime);
+  }, [urlComTime]);
 
   if (loading) return <LoadingScreen />;
 

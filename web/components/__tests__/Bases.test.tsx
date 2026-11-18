@@ -86,7 +86,7 @@ describe("ListaDeBases", () => {
     expect(await screen.findByText("Calendário geral")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Marketing" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Comercial" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Metas" }).getAttribute("href")).toBe("/bases/b2");
+    expect(screen.getByRole("link", { name: /^Metas/ }).getAttribute("href")).toBe("/bases/b2");
 
     fireEvent.click(screen.getByRole("button", { name: "Nova base" }));
     // ⚠️ Uma raiz só onde cria: sem seletor de time, e o Comercial não aparece.
@@ -123,7 +123,7 @@ describe("ListaDeBases", () => {
 
     expect(await screen.findByText(/volta até 15\/10\/2026/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Restaurar" }));
-    expect(await screen.findByRole("link", { name: "Antiga" })).toBeTruthy();
+    expect(await screen.findByRole("link", { name: /^Antiga/ })).toBeTruthy();
     expect(screen.queryByText("Lixeira")).toBeNull();
   });
 });

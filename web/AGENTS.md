@@ -34,6 +34,11 @@ produto — o job de prazo não tem espectador.
 
 ⚠️ **E rode `TZ=UTC npm test`.**
 
+**E2E + axe:** `npx playwright test` com o seu `next dev` de pé e `E2E_EMAIL` /
+`E2E_PASSWORD` de um usuário do banco de dev. As jornadas apagam o que criam
+(título `[e2e] …`); o axe roda nos dois temas e recusa violação séria ou crítica.
+No CI é o job `e2e`, com banco do zero.
+
 ### 0.2. Contraste: WCAG 2 AA, não APCA 👁
 
 A lista original prefere APCA. **Aqui é WCAG 2 AA (4.5)**, porque toda a

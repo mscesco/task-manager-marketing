@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { corAvatar, iniciais } from "@/lib/people";
+import { AVATAR_SEM_ID, corAvatar, iniciais } from "@/lib/people";
 
 /**
  * Avatar circular com iniciais.
@@ -39,7 +39,7 @@ export default function Avatar({
   className?: string;
   style?: CSSProperties;
 }) {
-  const bg = color ?? (id ? corAvatar(id) : "#999");
+  const bg = color ?? (id ? corAvatar(id) : AVATAR_SEM_ID);
   const cls = `inline-flex items-center justify-center rounded-full font-bold text-white shrink-0 select-none ${SIZE[size]} ${className}`
     .replace(/\s+/g, " ")
     .trim();

@@ -23,7 +23,7 @@ function abrir(value: string | null = null) {
       onChange={onChange}
     />
   );
-  fireEvent.click(screen.getByRole("button", { name: /^Pessoa:/ }));
+  fireEvent.click(screen.getByRole("button", { name: /^Pessoa / }));
   return onChange;
 }
 
@@ -32,7 +32,7 @@ describe("FilterPicker", () => {
     render(
       <FilterPicker label="Pessoa" value="u2" allLabel="Todas" options={PESSOAS} onChange={() => {}} />
     );
-    expect(screen.getByRole("button", { name: "Pessoa: João Lima" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Pessoa João Lima" })).toBeTruthy();
   });
 
   it("a busca ignora acento, e escolher devolve o id", () => {
