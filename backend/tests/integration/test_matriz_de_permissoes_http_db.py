@@ -25,6 +25,7 @@ Rota nova sem linha aqui derruba `tests/test_rotas_na_matriz.py`.
 from __future__ import annotations
 
 import asyncio
+import re
 import uuid
 from dataclasses import dataclass
 
@@ -273,8 +274,14 @@ async def _mundo(db) -> dict:
         "visao_padrao_mkt": b_mkt["visao_padrao"],
     }
 
+    # --- outra organizacao, com o proprio ADMIN e uma raiz
+    ws_outra = await f.make_workspace(db, name="WS Outra")
+    raiz_outra = await f.make_team(db, workspace_id=ws_outra, slug="outra-raiz")
+    admin_outra = await f.make_user(db, workspace_id=ws_outra, org_role="ADMIN")
+
     return {
         "ws": ws,
+        "outra_org": (ws_outra, admin_outra, (node(raiz_outra),)),
         "arvore": arvore,
         "atores": {
             "ADMIN": (admin, (), "ADMIN"),
@@ -1019,6 +1026,52 @@ async def test_matriz(db, mundo, linha: Linha, papel: str, esperado) -> None:
         f"obtido {r.status_code} -- {r.text[:300]}"
         + (f"\n  (linha marcada: DIVERGE DO ALVO, {linha.diverge})" if linha.diverge else "")
         + (f"\n  (linha marcada: DEFEITO, {linha.defeito})" if linha.defeito else "")
+    )
+
+
+def _cita_o_mundo(linha: Linha) -> bool:
+    return bool(re.search(r"\{\w+\}", linha.caminho + repr(linha.corpo)))
+
+
+async def _pedir(cli: AsyncClient, linha: Linha, ids: dict):
+    url = _preencher(linha.caminho, ids)
+    if linha.metodo in ("get", "delete"):
+        return await getattr(cli, linha.metodo)(url)
+    return await getattr(cli, linha.metodo)(url, json=_preencher(linha.corpo, ids))
+
+
+def _erro(r) -> tuple:
+    corpo = r.json() if r.headers.get("content-type", "").startswith("application/json") else {}
+    erro = corpo.get("error") if isinstance(corpo, dict) else None
+    return r.status_code, erro.get("code") if isinstance(erro, dict) else None
+
+
+@pytest.mark.parametrize(
+    "linha",
+    [pytest.param(x, id=f"{x.acao}[{x.alvo}]") for x in MATRIZ if _cita_o_mundo(x)],
+)
+async def test_admin_de_outra_organizacao_nao_alcanca_nada(db, mundo, linha: Linha) -> None:
+    """O ADMIN de outra organizacao com um id daqui recebe o mesmo que com um id
+    que nao existe: nem alcanca, nem descobre que existe."""
+    m = mundo
+    ws, user_id, arvore = m["outra_org"]
+    ctx = TenantContext(
+        workspace_id=ws,
+        user_id=user_id,
+        roles=frozenset({"ADMIN"}),
+        permissions=permissions_for_actor(memberships=(), tree=arvore, org_role="ADMIN"),
+        memberships=(),
+        team_tree=arvore,
+        org_role="ADMIN",
+    )
+    inexistentes = {k: str(uuid.uuid4()) for k in m["ids"]}
+    async with _client(db, ctx) as cli:
+        daqui = await _pedir(cli, linha, m["ids"])
+        inexistente = await _pedir(cli, linha, inexistentes)
+    nome = f"{linha.acao} ({linha.alvo})"
+    assert daqui.status_code in (OCULTO, 422), f"{nome}: {daqui.status_code} -- {daqui.text[:300]}"
+    assert _erro(daqui) == _erro(inexistente), (
+        f"{nome}: id daqui {_erro(daqui)} != id inexistente {_erro(inexistente)}"
     )
 
 

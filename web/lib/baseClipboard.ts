@@ -73,10 +73,39 @@ export function copiarFaixa(
   return out.join("\n");
 }
 
-/** O texto colado como grade. Tira a quebra do fim (o Excel sempre põe). */
+/** O texto colado como grade. Tira a quebra do fim (o Excel sempre põe). Célula
+ *  com quebra, TAB ou aspas vem entre aspas (`"a""b"` = `a"b`); aspas que não
+ *  fecham antes de TAB/quebra/fim são texto comum. */
 export function lerGrade(texto: string): string[][] {
-  const linhas = texto.replace(/\r\n?/g, "\n").replace(/\n+$/, "").split("\n");
-  return linhas.map((l) => l.split("\t"));
+  const s = texto.replace(/\r\n?/g, "\n").replace(/\n+$/, "");
+  const grade: string[][] = [[]];
+  let i = 0;
+  for (;;) {
+    let campo: string | null = null;
+    if (s[i] === '"') {
+      let j = i + 1;
+      let v = "";
+      while (j < s.length) {
+        if (s[j] !== '"') v += s[j++];
+        else if (s[j + 1] === '"') (v += '"'), (j += 2);
+        else break;
+      }
+      const fim = j + 1;
+      if (j < s.length && (fim === s.length || s[fim] === "\t" || s[fim] === "\n")) {
+        campo = v;
+        i = fim;
+      }
+    }
+    if (campo === null) {
+      const fim = s.slice(i).search(/[\t\n]/);
+      const ate = fim < 0 ? s.length : i + fim;
+      campo = s.slice(i, ate);
+      i = ate;
+    }
+    grade[grade.length - 1].push(campo);
+    if (i >= s.length) return grade;
+    if (s[i++] === "\n") grade.push([]);
+  }
 }
 
 // Os mesmos tetos do servidor (`ROW_LIMIT` em `row_service.py`,
@@ -118,7 +147,7 @@ export function valorColado(
       return o ? o.id : undefined;
     }
     case "multi_select": {
-      const ids = varios.map(
+      const ids = rotulosDaCelula(coluna, t).map(
         (r) => coluna.options.find((x) => x.label.toLowerCase() === r.toLowerCase())?.id
       );
       return ids.every(Boolean) ? (ids as string[]) : undefined;
@@ -140,12 +169,21 @@ export function valorColado(
   }
 }
 
-/** Os vários valores de uma célula (seleção múltipla, pessoa). */
+/** Os vários valores de uma célula (seleção múltipla, pessoa). Com `;` (o que
+ *  a Base copia) a vírgula é parte do valor; sem `;`, separa (Google Planilhas). */
 export function separarVarios(t: string): string[] {
   return t
-    .split(/\s*[;,\n]\s*/)
+    .split(t.includes(";") ? /\s*[;\n]\s*/ : /\s*[,\n]\s*/)
     .map((x) => x.trim())
     .filter(Boolean);
+}
+
+/** Os rótulos de uma célula de seleção múltipla: o texto inteiro, se já é uma
+ *  opção da coluna ("São Paulo, SP"), senão separado. */
+function rotulosDaCelula(coluna: BaseColumn, texto: string): string[] {
+  const t = texto.trim();
+  const inteiro = coluna.options.some((o) => o.label.toLowerCase() === t.toLowerCase());
+  return inteiro ? [t] : separarVarios(t);
 }
 
 /** Os rótulos colados que a coluna de SELEÇÃO ainda não tem -- a tela os cria
@@ -160,7 +198,7 @@ export function rotulosQueFaltam(
     celulas.forEach((texto, j) => {
       const c = colunas[inicioColuna + j];
       if (!c || (c.type !== "select" && c.type !== "multi_select")) return;
-      const rotulos = c.type === "select" ? [texto.trim()].filter(Boolean) : separarVarios(texto);
+      const rotulos = c.type === "select" ? [texto.trim()].filter(Boolean) : rotulosDaCelula(c, texto);
       for (const r of rotulos) {
         const tem = c.options.some((o) => o.label.toLowerCase() === r.toLowerCase());
         const lista = out.get(c.id) ?? [];
