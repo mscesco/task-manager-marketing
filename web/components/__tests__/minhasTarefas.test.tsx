@@ -582,3 +582,22 @@ describe("Minhas tarefas -- vazia, a barra continua", () => {
     expect(screen.queryByText("Você está em dia")).toBeNull();
   });
 });
+
+describe("minhas-tarefas -- o projeto na lista", () => {
+  it("a linha mostra o projeto da tarefa, com o nome inteiro no title", async () => {
+    const nome = "Campanha de matrículas do segundo semestre de 2026";
+    montarApi([item({ id: "t-proj", title: "Com projeto", project_id: "p1" }), item({ id: "t-sem", title: "Sem projeto" })]);
+    vi.mocked(api.listAllProjects).mockResolvedValue({
+      items: [{ id: "p1", title: nome }] as Project[],
+      total: 1,
+      truncated: false,
+    } as Awaited<ReturnType<typeof api.listAllProjects>>);
+
+    render(<MinhasTarefasPage />);
+    await screen.findByText("Com projeto");
+
+    const tags = await screen.findAllByTitle(`Projeto: ${nome}`);
+    expect(tags).toHaveLength(1);
+    expect(tags[0].textContent).toBe(`Projeto: ${nome}`);
+  });
+});
