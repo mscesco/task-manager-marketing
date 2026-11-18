@@ -18,7 +18,7 @@ test("quadro: criar tarefa, abrir, comentar e achar em Minhas tarefas", async ({
   await semViolacoes(page);
 
   const titulo = tituloE2E("tarefa");
-  await page.getByRole("button", { name: "+ Nova tarefa" }).click();
+  await page.getByRole("button", { name: "+ Nova tarefa" }).first().click() // quadro vazio tem um segundo, no estado vazio;
   const modal = page.getByRole("dialog");
   await semViolacoes(page);
   await modal.getByLabel("Título").fill(titulo);
