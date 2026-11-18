@@ -105,6 +105,40 @@ describe("o que veio do Google Planilhas", () => {
   });
 });
 
+describe("célula com quebra de linha e rótulo com vírgula", () => {
+  it("célula entre aspas guarda a quebra, o TAB e as aspas, sem desalinhar a grade", () => {
+    expect(lerGrade('"linha 1\r\nlinha 2"\tb\r\n"x\ty"\t"diz ""oi"""\r\n')).toEqual([
+      ["linha 1\nlinha 2", "b"],
+      ["x\ty", 'diz "oi"'],
+    ]);
+  });
+
+  it("aspas que não fecham a célula são texto comum", () => {
+    expect(lerGrade('"oi" disse\tb\n"aberta\nc')).toEqual([['"oi" disse', "b"], ['"aberta'], ["c"]]);
+    expect(lerGrade("a\t\n\tb")).toEqual([["a", ""], ["", "b"]]);
+  });
+
+  const multi = col("m", "multi_select", [
+    { id: "sp", label: "São Paulo, SP", color: "blue" },
+    { id: "rj", label: "Rio", color: "red" },
+  ]);
+
+  it("o que a Base copia (com `;`) volta com a vírgula dentro do rótulo", () => {
+    const copiado = copiarFaixa(
+      [linha("r1", { m: ["sp", "rj"] })],
+      [multi],
+      faixaEntre({ linha: 0, coluna: 0 }, { linha: 0, coluna: 0 }),
+      nome
+    );
+    expect(valorColado(multi, copiado, pessoa)).toEqual(["sp", "rj"]);
+    expect(valorColado(multi, "São Paulo, SP", pessoa)).toEqual(["sp"]);
+  });
+
+  it("⚠️ não cria as metades do rótulo como opções novas", () => {
+    expect(rotulosQueFaltam(lerGrade("São Paulo, SP\nSão Paulo, SP; Rio"), [multi], 0).size).toBe(0);
+  });
+});
+
 // A colagem vai em dois pedidos (linhas, depois células): recusar no cliente
 // evita o servidor recusar o segundo depois de o primeiro já ter criado linhas.
 describe("colagemGrandeDemais", () => {
