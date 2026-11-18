@@ -27,12 +27,14 @@ O MUNDO:
 
 from __future__ import annotations
 
+import uuid
 from datetime import date, datetime, time
 
 import pytest
 
-from app.db.models import User
+from app.db.models import Solicitation, User
 from app.db.models.enums import TaskStatus
+from app.modules.solicitations.application.form_service import SolicitationFormService
 from app.modules.tasks.application.dashboard_service import DashboardService
 from app.modules.tasks.domain.dashboard import TIMEZONE, Period
 from tests.integration import factories as f
@@ -275,6 +277,53 @@ async def test_supervisor_nao_ve_o_subtime_vizinho_na_carga(db) -> None:
     with como("ger", m["mkt"], "MANAGER"):
         p = await DashboardService(db).build(m["mkt"], at=AGORA)
     assert ("Beto", 1) in [(w.name, w.open_count) for w in p.workload]
+
+
+async def test_filtro_de_subtime_conta_o_que_o_quadro_do_subtime_mostra(db) -> None:
+    """Subtime = internas dele + as da raiz com responsavel dele (as
+    "compartilhadas" do quadro do subtime), subtarefa inclusive. Do SEO: t1, t2,
+    t3, t6, t7 (op) e a subtarefa t9 (sup), mais a interna ts. Fora: as do
+    Marketing sem ninguem do SEO (t4, t5, t8, t10) e a do Comercial com o op (tc)."""
+    m = await _mundo(db)
+    ts = await f.make_task(
+        db, workspace_id=m["ws"], created_by=m["ger"], team_id=m["seo"], title="ts"
+    )
+    ts.due_date = date(2026, 10, 16)
+    await db.flush()
+
+    p = await _painel(db, m, "ger", under="seo")
+    assert p.counts.done == 0
+    assert p.counts.total == 4  # t2, t3, t9, ts (t1 e de antes da semana)
+    assert [i.title for i in p.counts.oldest_overdue] == ["t1", "t2"]
+    assert _no_prazo_por_dia(p) == {
+        date(2026, 10, 14): 1,  # t3
+        date(2026, 10, 16): 1,  # ts, interna
+        date(2026, 10, 18): 1,  # t9, subtarefa
+    }
+    carga = {w.name: w.open_count for w in p.workload}
+    assert (carga["Op"], carga["Sup"]) == (4, 2)
+
+    # sem o filtro, o Marketing continua igual
+    assert (await _painel(db, m, "ger")).counts.total == 8
+
+
+async def test_filtro_de_subtime_mostra_a_fila_da_raiz(db) -> None:
+    """Formulario e do time raiz: filtrar pelo SEO mostra a fila do Marketing.
+    Quem nao ve a fila da raiz (o supervisor) continua sem o card."""
+    m = await _mundo(db)
+    with acting_as(workspace_id=m["ws"], user_id=m["ger"], team_tree=m["arvore"], org_role="ADMIN"):
+        form = await SolicitationFormService(db).criar_formulario(
+            team_id=m["mkt"], slug="arte", title="Arte"
+        )
+    db.add(Solicitation(
+        workspace_id=m["ws"], requester_name="Fulana", requester_email="f@x.com",
+        batch_id=uuid.uuid4(), category="arte", summary="Uma arte", answers=[],
+        form_id=form.id,
+    ))
+    await db.flush()
+
+    assert (await _painel(db, m, "ger", under="seo")).queue.pending == 1
+    assert (await _painel(db, m, "sup", under="seo")).queue is None
 
 
 async def test_desativado_com_tarefa_aberta_continua_na_carga(db) -> None:

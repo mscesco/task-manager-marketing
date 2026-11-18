@@ -201,6 +201,31 @@ def _sob_o_time(
     return _time_efetivo_em({team_id} | team_scope.descendants(team_id, tree))
 
 
+def _sob_o_time_no_painel(
+    team_id: uuid.UUID, tree: tuple[TeamNode, ...]
+) -> ColumnElement[bool]:
+    """O recorte do painel: o mesmo do quadro do subtime (`Board.tsx`).
+
+    Num subtime, alem das internas, entram as da raiz com algum responsavel do
+    subtime (as "compartilhadas"), subtarefa inclusive: ela herda o time da mae.
+    """
+    proprio = _sob_o_time(team_id, tree)
+    if not team_scope.is_subteam(team_id, tree):
+        return proprio
+    membros = select(UserTeam.user_id).where(
+        UserTeam.team_id.in_({team_id} | team_scope.descendants(team_id, tree))
+    )
+    compartilhada = and_(
+        _time_efetivo_em({team_scope.root_of(team_id, tree)}),
+        exists().where(
+            TaskAssignment.task_id == Task.id,
+            TaskAssignment.workspace_id == Task.workspace_id,
+            TaskAssignment.user_id.in_(membros),
+        ),
+    )
+    return or_(proprio, compartilhada)
+
+
 class TaskRepository(BaseRepository[Task]):
     """Acesso a dados de tasks, escopado ao tenant corrente."""
 
@@ -1231,7 +1256,7 @@ class TaskRepository(BaseRepository[Task]):
         if visible is not None:
             base = base.where(_lente_de_time(visible))
         if under_team_id is not None:
-            base = base.where(_sob_o_time(under_team_id, tenant.team_tree))
+            base = base.where(_sob_o_time_no_painel(under_team_id, tenant.team_tree))
         if assignee_id is not None:
             base = base.where(
                 exists().where(
