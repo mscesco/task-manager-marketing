@@ -69,7 +69,6 @@ function projeto(over: Partial<Project> = {}): Project {
     title: "Vestibular 2027",
     description: "",
     status: "ACTIVE",
-    priority: "MEDIUM",
     start_date: null,
     due_date: null,
     team_id: "team-1",
@@ -77,6 +76,8 @@ function projeto(over: Partial<Project> = {}): Project {
     completed_at: null,
     created_at: "2026-08-01T12:00:00Z",
     updated_at: "2026-08-01T12:00:00Z",
+    category: null,
+    tags: [],
     // Os botões vêm do servidor, no time do projeto.
     can_update: true,
     can_delete: true,
@@ -192,5 +193,20 @@ describe("Projeto -- excluir", () => {
     expect(await screen.findByRole("alert")).toBeTruthy();
     expect(screen.getByText(/não pode excluir este projeto/i)).toBeTruthy();
     expect(replace).not.toHaveBeenCalled();
+  });
+});
+
+describe("Projeto -- editar em modal", () => {
+  it("fechar devolve o foco ao lápis, e não à página", async () => {
+    montar();
+    const lapis = await screen.findByLabelText("Editar projeto");
+    lapis.focus();
+    fireEvent.click(lapis);
+    await screen.findByRole("dialog", { name: "Editar projeto" });
+    // O `autoFocus` levou o foco para o Título: é dele que o foco tem de voltar.
+    expect(document.activeElement).not.toBe(lapis);
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(lapis);
   });
 });

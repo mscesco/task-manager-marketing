@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
@@ -8,7 +8,11 @@ import PageHeader from "@/components/PageHeader";
 import { Esqueleto } from "@/components/Loading";
 import Entrada from "@/components/Entrada";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
-import { CalendarClock, Plus } from "lucide-react";
+import { CalendarClock, Plus, Search, Tags } from "lucide-react";
+import GerenciarRotulos from "@/components/GerenciarRotulos";
+import { SeloDeRotulo } from "@/components/CampoDeRotulos";
+import { agruparPorCategoria, casaBusca, usosDosRotulos } from "@/lib/projetos";
+import { corDaOpcao } from "@/lib/baseTable";
 import { dataParaTela } from "@/lib/baseTable";
 import { diaNoWorkspace } from "@/lib/prazo";
 import {
@@ -39,6 +43,7 @@ export default function ProjetosPage() {
 function Projetos() {
   const [items, setItems] = useState<Project[] | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [busca, setBusca] = useState("");
 
   const [criando, setCriando] = useState(false);
   const [podeCriar, setPodeCriar] = useState(false);
@@ -56,6 +61,11 @@ function Projetos() {
   // O nome vem da barra (`teamName`), a mesma árvore que resolveu o time ativo.
   const { active, teamName: nomeDoTime } = useActiveTeam();
 
+  const [gerenciando, setGerenciando] = useState(false);
+  // Renomear ou recolorir no gerenciador muda o que os cards mostram: recarrega ao fechar.
+  const [versao, setVersao] = useState(0);
+  const mudouRotulos = useRef(false);
+
   useEffect(() => {
     // Espera a barra resolver; buscar antes mostraria projetos de todos os times por um instante.
     if (active === null) return;
@@ -63,7 +73,7 @@ function Projetos() {
       .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
     // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
-  }, [timeAtivo, active === null]);
+  }, [timeAtivo, active === null, versao]);
 
   useEffect(() => {
     // `rootsForPerson` precisa da árvore e dos vínculos de quem olha.
@@ -112,6 +122,20 @@ function Projetos() {
 
   if (erro) return <div className="error-box" style={{ maxWidth: 480 }}>{erro}</div>;
   if (!items) return <Esqueleto forma="linhas" rotulo="Carregando projetos" />;
+
+  const grupos = agruparPorCategoria(items.filter((p) => casaBusca(p, busca)));
+  // Sem nenhuma categoria em uso, a página fica sem títulos de seção.
+  const comSecoes = grupos.some((g) => g.categoria !== null);
+  const novoProjeto = podeCriar && !criando && !busca.trim() && (
+    <button
+      type="button"
+      onClick={() => setCriando(true)}
+      className="flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-border bg-transparent text-sm font-semibold text-ink-faint transition-colors duration-200 hover:border-accent hover:bg-accent-soft hover:text-accent"
+    >
+      <Plus size={22} aria-hidden />
+      Novo projeto
+    </button>
+  );
 
   return (
     <div>
@@ -222,24 +246,75 @@ function Projetos() {
           }
         />
       ) : (
-        /* Sem progresso nem avatares: a lista de projetos não traz esses dados. */
-        <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
-          <Entrada>
-            {items.map((p) => (
-              <CartaoDeProjeto key={p.id} p={p} />
-            ))}
-          </Entrada>
-          {podeCriar && !criando && (
-            <button
-              type="button"
-              onClick={() => setCriando(true)}
-              className="flex min-h-[150px] flex-col items-center justify-center gap-2 rounded-xl border-[1.5px] border-dashed border-border bg-transparent text-sm font-semibold text-ink-faint transition-colors duration-200 hover:border-accent hover:bg-accent-soft hover:text-accent"
-            >
-              <Plus size={22} aria-hidden />
-              Novo projeto
-            </button>
+        <>
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 max-w-[420px] flex-1">
+              <Search aria-hidden size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+              <input
+                className="input w-full"
+                type="search"
+                aria-label="Buscar projetos"
+                placeholder="Buscar por nome, categoria ou tag"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                style={{ paddingLeft: 34 }}
+              />
+            </div>
+            {/* O catálogo é do time olhado; sem time escolhido não há qual mostrar. */}
+            {timeAtivo && (podeCriar || items.some((p) => p.can_update)) && (
+              <button type="button" className="btn" onClick={() => setGerenciando(true)}>
+                <Tags size={15} aria-hidden /> Categorias e tags
+              </button>
+            )}
+          </div>
+          {gerenciando && timeAtivo && (
+            <GerenciarRotulos
+              teamId={timeAtivo}
+              usos={usosDosRotulos(items)}
+              onMudou={() => (mudouRotulos.current = true)}
+              onFechar={() => {
+                setGerenciando(false);
+                if (mudouRotulos.current) setVersao((v) => v + 1);
+                mudouRotulos.current = false;
+              }}
+            />
           )}
-        </div>
+          {grupos.length === 0 ? (
+            <p className="muted text-sm" role="status">
+              Nenhum projeto encontrado para “{busca.trim()}”.
+            </p>
+          ) : (
+            grupos.map((g, i) => (
+              <section
+                key={g.categoria?.id ?? "sem"}
+                aria-label={comSecoes ? (g.categoria?.name ?? "Sem categoria") : undefined}
+                className="mb-6"
+              >
+                {comSecoes && (
+                  <h2 className="m-0 mb-3 flex items-center gap-2 text-sm font-bold text-ink-soft">
+                    <span
+                      aria-hidden
+                      className="size-2 shrink-0 rounded-full"
+                      // A cor vem da categoria; "Sem categoria" fica com a borda.
+                      style={{ background: g.categoria ? corDaOpcao(g.categoria.color) : "var(--border)" }}
+                    />
+                    {g.categoria?.name ?? "Sem categoria"}
+                    <span className="font-semibold text-ink-faint">{g.projetos.length}</span>
+                  </h2>
+                )}
+                {/* Sem progresso nem avatares: a lista de projetos não traz esses dados. */}
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
+                  <Entrada>
+                    {g.projetos.map((p) => (
+                      <CartaoDeProjeto key={p.id} p={p} />
+                    ))}
+                  </Entrada>
+                  {i === grupos.length - 1 && novoProjeto}
+                </div>
+              </section>
+            ))
+          )}
+        </>
       )}
     </div>
   );
@@ -271,6 +346,13 @@ function CartaoDeProjeto({ p }: { p: Project }) {
           title={resumo}
         >
           {resumo}
+        </span>
+      )}
+      {p.tags.length > 0 && (
+        <span className="flex flex-wrap gap-1">
+          {p.tags.map((t) => (
+            <SeloDeRotulo key={t.id} rotulo={t} />
+          ))}
         </span>
       )}
       <span className="mt-auto flex items-center gap-3 text-xs text-ink-faint">

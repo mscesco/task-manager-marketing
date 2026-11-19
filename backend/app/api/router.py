@@ -27,6 +27,12 @@ from app.modules.tasks.api.comment_router import router as comment_router
 from app.modules.tasks.api.dashboard_router import router as dashboard_router
 from app.modules.tasks.api.links_router import router as links_router
 from app.modules.tasks.api.me_router import router as me_router
+from app.modules.tasks.api.project_labels_router import (
+    categories_router as project_categories_router,
+)
+from app.modules.tasks.api.project_labels_router import (
+    tags_router as project_tags_router,
+)
 from app.modules.tasks.api.projects_router import router as projects_router
 from app.modules.tasks.api.system_router import router as system_router
 from app.modules.tasks.api.tasks_router import router as tasks_router
@@ -43,6 +49,8 @@ api_v1_router.include_router(auth_router)
 api_v1_router.include_router(workspaces_router)
 api_v1_router.include_router(members_router)
 api_v1_router.include_router(projects_router)
+api_v1_router.include_router(project_categories_router)
+api_v1_router.include_router(project_tags_router)
 api_v1_router.include_router(me_router)
 api_v1_router.include_router(dashboard_router)
 api_v1_router.include_router(tasks_router)

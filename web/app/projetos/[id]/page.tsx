@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { Columns3, LayoutDashboard, Pencil } from "lucide-react";
+import { Columns3, LayoutDashboard, Pencil, X } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import Board from "@/components/Board";
-import Card from "@/components/Card";
+import CaixaDeDialogo from "@/components/CaixaDeDialogo";
+import { useAvisar } from "@/components/Toasts";
 import PageHeader from "@/components/PageHeader";
 import ResumoDoProjeto from "@/components/ResumoDoProjeto";
 import { useActiveTeam } from "@/lib/useActiveTeam";
@@ -12,6 +13,7 @@ import SobreOProjeto from "@/components/SobreOProjeto";
 import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import LinksDoItem from "@/components/LinksDoItem";
+import CampoDeRotulos, { SeloDeRotulo } from "@/components/CampoDeRotulos";
 import {
   getProject,
   getProjectLinks,
@@ -34,7 +36,6 @@ import {
   type RascunhoLink,
 } from "@/lib/links";
 import {
-  PRIORITY_LABEL,
   PROJECT_STATUS,
   PROJECT_STATUS_COLOR,
   PROJECT_STATUS_LABEL,
@@ -43,7 +44,6 @@ import {
 import Loading from "@/components/Loading";
 import { withTeam } from "@/lib/activeTeam";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-const PRIORITY_KEYS = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 // YYYY-MM-DD -> DD/MM/YYYY sem passar por Date (evita o parse UTC que
 // erra o dia em UTC-3). String pura, zero timezone.
@@ -160,7 +160,16 @@ function Projeto() {
         />
         {PROJECT_STATUS_LABEL[project.status] || project.status}
       </span>
-      <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
+      {editavel && project.team_id ? (
+        <RotulosNaMeta project={project} onSalvo={setProject} />
+      ) : (
+        <>
+          {project.category && <SeloDeRotulo rotulo={project.category} />}
+          {project.tags.map((t) => (
+            <SeloDeRotulo key={t.id} rotulo={t} />
+          ))}
+        </>
+      )}
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {/* Os links do projeto, só com o nome, na mesma linha da meta. */}
@@ -171,7 +180,7 @@ function Projeto() {
   // O lápis e o que fica abaixo do cabeçalho são os mesmos nas duas vistas:
   // no resumo a página os desenha; no quadro, entrega ao `Board`.
   const lapis =
-    editavel && !editando ? (
+    editavel ? (
       <button
         type="button"
         className="btn btn-ghost"
@@ -191,7 +200,12 @@ function Projeto() {
           {erroExcluir}
         </div>
       )}
-      {editavel && editando ? (
+      {metaDoProjeto}
+      {/* Sem descrição, sem bloco. */}
+      {project.description && project.description.trim().length > 0 && (
+        <SobreOProjeto texto={project.description} />
+      )}
+      {editavel && editando && (
         <EditPanel
           project={project}
           excluivel={excluivel}
@@ -207,14 +221,6 @@ function Projeto() {
             setEditando(false);
           }}
         />
-      ) : (
-        <>
-          {metaDoProjeto}
-          {/* Sem descrição, sem bloco. */}
-          {project.description && project.description.trim().length > 0 && (
-            <SobreOProjeto texto={project.description} />
-          )}
-        </>
       )}
     </div>
   );
@@ -315,7 +321,6 @@ function EditPanel({
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
-  const [priority, setPriority] = useState<string>(project.priority || "MEDIUM");
   const [startDate, setStartDate] = useState(project.start_date ?? "");
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
   const [salvando, setSalvando] = useState(false);
@@ -344,7 +349,6 @@ function EditPanel({
         title: t,
         description,
         status,
-        priority,
         ...(startDate ? { start_date: startDate } : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
       };
@@ -362,8 +366,66 @@ function EditPanel({
     }
   }
 
+  // Fechar sem salvar pergunta antes de jogar fora o que foi digitado.
+  const mudou =
+    title !== project.title ||
+    description !== (project.description ?? "") ||
+    status !== project.status ||
+    startDate !== (project.start_date ?? "") ||
+    dueDate !== (project.due_date ?? "") ||
+    linksParaEnviar(links, rascunhoLinks) !== null;
+  function pedirFechar() {
+    if (salvando) return;
+    if (mudou && !window.confirm("Descartar as alterações do projeto?")) return;
+    onCancel();
+  }
+
+  // Ao fechar, o foco volta para quem abriu (o lápis). Lido na renderização:
+  // num efeito já seria o Título, que o `autoFocus` focou antes.
+  const [quemAbriu] = useState(() => document.activeElement as HTMLElement | null);
+  useEffect(() => () => quemAbriu?.focus?.(), [quemAbriu]);
+
+  const caixaRef = useRef<HTMLDivElement>(null);
+  // O Tab circula dentro da caixa: sem isto, ele sai para a página escurecida atrás.
+  function prenderTab(e: KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab" || !caixaRef.current) return;
+    const focaveis = caixaRef.current.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [contenteditable="true"], [tabindex]:not([tabindex="-1"])',
+    );
+    if (!focaveis.length) return;
+    const primeiro = focaveis[0];
+    const ultimo = focaveis[focaveis.length - 1];
+    if (e.shiftKey && document.activeElement === primeiro) {
+      e.preventDefault();
+      ultimo.focus();
+    } else if (!e.shiftKey && document.activeElement === ultimo) {
+      e.preventDefault();
+      primeiro.focus();
+    }
+  }
+
   return (
-    <Card className="mb-[18px] flex flex-col gap-3">
+    <CaixaDeDialogo
+      ariaLabel="Editar projeto"
+      largura={640}
+      caixaRef={caixaRef}
+      acimaDeModal={false}
+      onEsc={pedirFechar}
+      onFundo={pedirFechar}
+    >
+    <div className="flex flex-col gap-3" onKeyDown={prenderTab}>
+      <div className="flex items-center justify-between">
+        <h2 className="m-0 text-lg font-bold">Editar projeto</h2>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          aria-label="Fechar"
+          onClick={pedirFechar}
+          style={{ padding: 4, height: 28, lineHeight: 0 }}
+        >
+          <X size={16} aria-hidden />
+        </button>
+      </div>
       <div className="field">
         <span className="label">Título</span>
         <input
@@ -421,21 +483,6 @@ function EditPanel({
           </select>
         </div>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <span className="label">Prioridade</span>
-          <select
-            className="input"
-            value={priority}
-            disabled={salvando}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            {PRIORITY_KEYS.map((p) => (
-              <option key={p} value={p}>{PRIORITY_LABEL[p] || p}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <div className="field" style={{ flex: 1, minWidth: 160 }}>
           <span className="label">Início</span>
           <input
             className="input"
@@ -456,8 +503,8 @@ function EditPanel({
           />
         </div>
       </div>
-      <span className="muted" style={{ fontSize: 12 }}>
-        Datas só podem ser alteradas, não removidas (limitação atual do backend).
+      <span className="muted -mt-1 text-xs">
+        Início e prazo podem ser trocados, mas ainda não apagados.
       </span>
       {erroForm && <div className="error-box">{erroForm}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -477,7 +524,7 @@ function EditPanel({
           type="button"
           className="btn btn-ghost"
           disabled={salvando}
-          onClick={onCancel}
+          onClick={pedirFechar}
         >
           Cancelar
         </button>
@@ -490,6 +537,49 @@ function EditPanel({
           {salvando ? "Salvando…" : "Salvar"}
         </button>
       </div>
-    </Card>
+    </div>
+    </CaixaDeDialogo>
+  );
+}
+
+/** Categoria e tags na linha de meta: quem edita o projeto troca ali mesmo, e salva ao escolher. */
+function RotulosNaMeta({
+  project,
+  onSalvo,
+}: {
+  project: Project;
+  onSalvo: (p: Project) => void;
+}) {
+  const avisar = useAvisar();
+  const [salvando, setSalvando] = useState(false);
+  async function salvar(patch: ProjectUpdateInput) {
+    setSalvando(true);
+    try {
+      onSalvo(await updateProject(project.id, patch));
+    } catch (e) {
+      avisar((e as ApiError).message || "Não consegui salvar.");
+    } finally {
+      setSalvando(false);
+    }
+  }
+  return (
+    <>
+      <CampoDeRotulos
+        kind="categories"
+        titulo="Categoria"
+        teamId={project.team_id!}
+        valor={project.category ? [project.category] : []}
+        onChange={(v) => salvar({ category_id: v[0]?.id ?? null })}
+        desabilitado={salvando}
+      />
+      <CampoDeRotulos
+        kind="tags"
+        titulo="Tags"
+        teamId={project.team_id!}
+        valor={project.tags}
+        onChange={(v) => salvar({ tag_ids: v.map((t) => t.id) })}
+        desabilitado={salvando}
+      />
+    </>
   );
 }

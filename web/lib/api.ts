@@ -1419,7 +1419,6 @@ export type Project = {
   title: string;
   description: string;
   status: ProjectStatus;
-  priority: string;
   start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
@@ -1428,10 +1427,23 @@ export type Project = {
   created_by: string;
   created_at: string;
   updated_at: string;
+  category: ProjectLabel | null;
+  /** Em ordem alfabética, como vêm do servidor. */
+  tags: ProjectLabel[];
   // Botões do projeto, calculados pelo servidor no time do projeto. Obrigatórios.
   can_update: boolean;
   can_delete: boolean;
 };
+
+/** Categoria ou tag de projeto: do time raiz do projeto, com a cor da paleta da Base. */
+export type ProjectLabel = {
+  id: string;
+  team_id: string;
+  name: string;
+  color: BaseOptionColor;
+};
+
+export type ProjectLabelKind = "categories" | "tags";
 
 // ---- Links com nome (projeto e tarefa).
 
@@ -1551,7 +1563,6 @@ export type ProjectCreateInput = {
   title: string;
   description?: string;
   status?: ProjectStatus;
-  priority?: string;
   start_date?: string | null;
   due_date?: string | null;
   team_id?: string; // omitido -> resolve o time raiz
@@ -1567,7 +1578,6 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
       team_id,
       description: input.description ?? "",
       ...(input.status ? { status: input.status } : {}),
-      ...(input.priority ? { priority: input.priority } : {}),
       ...(input.start_date !== undefined ? { start_date: input.start_date } : {}),
       ...(input.due_date !== undefined ? { due_date: input.due_date } : {}),
     },
@@ -1578,9 +1588,12 @@ export type ProjectUpdateInput = {
   title?: string;
   description?: string;
   status?: ProjectStatus;
-  priority?: string;
   start_date?: string | null;
   due_date?: string | null;
+  /** `null` tira a categoria; ausente não mexe. */
+  category_id?: string | null;
+  /** A lista inteira; ausente não mexe. */
+  tag_ids?: string[];
 };
 
 export async function updateProject(
@@ -1593,6 +1606,36 @@ export async function updateProject(
 /** Apaga um projeto (soft delete). Não toca nas tarefas: elas só perdem a tag do projeto na tela. */
 export async function deleteProject(id: string): Promise<Project> {
   return api<Project>(`/api/v1/projects/${id}`, { method: "DELETE" });
+}
+
+/** O catálogo do time raiz de `teamId`; sem ele, o de todas as raízes que a pessoa vê. */
+export async function listProjectLabels(
+  kind: ProjectLabelKind,
+  teamId?: string | null,
+): Promise<ProjectLabel[]> {
+  const q = teamId ? `?team_id=${encodeURIComponent(teamId)}` : "";
+  return api<ProjectLabel[]>(`/api/v1/project-${kind}${q}`);
+}
+
+/** `team_id` pode ser um subtime: o servidor grava na raiz dele. */
+export async function createProjectLabel(
+  kind: ProjectLabelKind,
+  input: { team_id: string; name: string; color: BaseOptionColor },
+): Promise<ProjectLabel> {
+  return api<ProjectLabel>(`/api/v1/project-${kind}`, { method: "POST", body: input });
+}
+
+export async function updateProjectLabel(
+  kind: ProjectLabelKind,
+  id: string,
+  patch: { name?: string; color?: BaseOptionColor },
+): Promise<ProjectLabel> {
+  return api<ProjectLabel>(`/api/v1/project-${kind}/${id}`, { method: "PATCH", body: patch });
+}
+
+/** Apagar a categoria deixa os projetos sem categoria; apagar a tag a tira dos projetos. */
+export async function deleteProjectLabel(kind: ProjectLabelKind, id: string): Promise<void> {
+  await api<void>(`/api/v1/project-${kind}/${id}`, { method: "DELETE" });
 }
 
 

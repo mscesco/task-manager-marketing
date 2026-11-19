@@ -9,16 +9,20 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, Query, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import SessionDep, UoWDep
-from app.db.models.enums import PriorityLevel, ProjectStatus
+from app.db.models import Project
+from app.db.models.enums import ProjectStatus
 from app.modules.auth.api.dependencies import TenantContextDep, require_permission
 from app.modules.tasks.api.schemas import (
     ProjectCreateRequest,
+    ProjectLabelResponse,
     ProjectListResponse,
     ProjectResponse,
     ProjectUpdateRequest,
 )
+from app.modules.tasks.application.project_label_service import labels_for
 from app.modules.tasks.application.project_service import (
     CreateProjectCommand,
     ProjectFilters,
@@ -28,6 +32,23 @@ from app.modules.tasks.application.project_service import (
 from app.shared.pagination import PageParams
 
 router = APIRouter(prefix="/projects", tags=["projects"])
+
+
+async def _respostas(session: AsyncSession, projects: list[Project]) -> list[ProjectResponse]:
+    """ProjectResponse com a categoria e as tags de cada projeto."""
+    labels = await labels_for(session, projects)
+    respostas = []
+    for p in projects:
+        categoria, tags = labels[p.id]
+        respostas.append(
+            ProjectResponse.model_validate(p).model_copy(
+                update={
+                    "category": categoria and ProjectLabelResponse.model_validate(categoria),
+                    "tags": [ProjectLabelResponse.model_validate(t) for t in tags],
+                }
+            )
+        )
+    return respostas
 
 
 # --------------------------------------------------------
@@ -40,7 +61,6 @@ async def list_projects(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     project_status: ProjectStatus | None = Query(None, alias="status"),
-    priority: PriorityLevel | None = None,
     include_archived: bool = False,
     team_id: uuid.UUID | None = Query(
         None,
@@ -58,13 +78,12 @@ async def list_projects(
         params=PageParams(page=page, size=size),
         filters=ProjectFilters(
             status=project_status,
-            priority=priority,
             include_archived=include_archived,
             team_id=team_id,
         ),
     )
     return ProjectListResponse(
-        items=[ProjectResponse.model_validate(p) for p in page_result.items],
+        items=await _respostas(session, list(page_result.items)),
         total=page_result.total,
         page=page_result.page,
         size=page_result.size,
@@ -82,7 +101,7 @@ async def get_project(
     Pessoal alheio devolve 404 (privacy-preserving), nao 403.
     """
     project = await ProjectService(session).get(project_id)
-    return ProjectResponse.model_validate(project)
+    return (await _respostas(session, [project]))[0]
 
 
 # --------------------------------------------------------
@@ -108,13 +127,15 @@ async def create_project(
             team_id=payload.team_id,
             description=payload.description,
             status=payload.status,
-            priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            category_id=payload.category_id,
+            tag_ids=tuple(payload.tag_ids),
         )
     )
+    resposta = (await _respostas(uow.session, [project]))[0]
     await uow.commit()
-    return ProjectResponse.model_validate(project)
+    return resposta
 
 
 @router.patch(
@@ -137,13 +158,16 @@ async def update_project(
             title=payload.title,
             description=payload.description,
             status=payload.status,
-            priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
+            set_category="category_id" in payload.model_fields_set,
+            category_id=payload.category_id,
+            tag_ids=None if payload.tag_ids is None else tuple(payload.tag_ids),
         ),
     )
+    resposta = (await _respostas(uow.session, [project]))[0]
     await uow.commit()
-    return ProjectResponse.model_validate(project)
+    return resposta
 
 
 @router.delete(

@@ -17,6 +17,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     ForeignKeyConstraint,
+    Index,
     Integer,
     String,
     Text,
@@ -66,6 +67,12 @@ class Project(
             ondelete="RESTRICT",
             name="project_team",
         ),
+        ForeignKeyConstraint(
+            ["category_id", "workspace_id"],
+            ["project_category.id", "project_category.workspace_id"],
+            ondelete="RESTRICT",
+            name="project_category_fk",
+        ),
         # So o projeto apagado pode ficar sem time.
         CheckConstraint(
             "team_id IS NOT NULL OR deleted_at IS NOT NULL",
@@ -86,12 +93,6 @@ class Project(
         server_default=ProjectStatus.PLANNING.value,
         default=ProjectStatus.PLANNING,
     )
-    priority: Mapped[PriorityLevel] = mapped_column(
-        Enum(PriorityLevel, name="priority_level", create_type=False),
-        nullable=False,
-        server_default=PriorityLevel.MEDIUM.value,
-        default=PriorityLevel.MEDIUM,
-    )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(
@@ -102,6 +103,85 @@ class Project(
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         PG_UUID(as_uuid=True), nullable=True
     )
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), nullable=True
+    )
+
+
+class _ProjectLabel(UUIDPrimaryKeyMixin, TimestampMixin):
+    """Colunas comuns de categoria e tag: do time raiz dos projetos, nome e cor."""
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    team_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    #: Um nome de `OPTION_COLORS` (a paleta das opcoes da Base).
+    color: Mapped[str] = mapped_column(String(16), nullable=False)
+
+
+class ProjectCategory(_ProjectLabel, Base):
+    """Categoria de projeto: agrupa a lista de Projetos. Um projeto tem no maximo uma."""
+
+    __tablename__ = "project_category"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_project_category_id_workspace"),
+        UniqueConstraint("team_id", "name", name="uq_project_category_team_name"),
+        ForeignKeyConstraint(
+            ["team_id", "workspace_id"],
+            ["team.id", "team.workspace_id"],
+            ondelete="RESTRICT",
+            name="project_category_team",
+        ),
+    )
+
+
+class ProjectTag(_ProjectLabel, Base):
+    """Tag de projeto. Um projeto tem varias (`project_tag_link`)."""
+
+    __tablename__ = "project_tag"
+    __table_args__ = (
+        UniqueConstraint("id", "workspace_id", name="uq_project_tag_id_workspace"),
+        UniqueConstraint("team_id", "name", name="uq_project_tag_team_name"),
+        ForeignKeyConstraint(
+            ["team_id", "workspace_id"],
+            ["team.id", "team.workspace_id"],
+            ondelete="RESTRICT",
+            name="project_tag_team",
+        ),
+    )
+
+
+class ProjectTagLink(UUIDPrimaryKeyMixin, Base):
+    """Pivot projeto<->tag. Apagar a tag tira o vinculo (CASCADE)."""
+
+    __tablename__ = "project_tag_link"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "workspace_id"],
+            ["project.id", "project.workspace_id"],
+            ondelete="CASCADE",
+            name="project_tag_link_project",
+        ),
+        ForeignKeyConstraint(
+            ["tag_id", "workspace_id"],
+            ["project_tag.id", "project_tag.workspace_id"],
+            ondelete="CASCADE",
+            name="project_tag_link_tag",
+        ),
+        UniqueConstraint("project_id", "tag_id", name="uq_project_tag_link"),
+        Index("ix_project_tag_link_tag", "tag_id"),
+    )
+
+    workspace_id: Mapped[uuid.UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("workspace.id", ondelete="RESTRICT"),
+        nullable=False,
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
+    tag_id: Mapped[uuid.UUID] = mapped_column(PG_UUID(as_uuid=True), nullable=False)
 
 class Task(
     UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, ArchivableMixin, Base
