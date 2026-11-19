@@ -590,6 +590,7 @@ class TaskRepository(BaseRepository[Task]):
 
         # UPDATE 2: descendentes. `subpath(path, old_depth + 1)` corta o path antigo
         # inteiro, rotulo da task incluido (o indice do subpath comeca em 0).
+        # As apagadas vao junto: senao o `path` delas fica com o pai antigo.
         await self.session.execute(
             text(
                 """
@@ -601,7 +602,6 @@ class TaskRepository(BaseRepository[Task]):
                 WHERE path <@ CAST(:old_path AS ltree)
                   AND id <> :task_id
                   AND workspace_id = :tenant_id
-                  AND deleted_at IS NULL
                 """
             ),
             {

@@ -8,6 +8,7 @@ from sqlalchemy import text
 from app.modules.tasks.application.task_service import (
     CreateTaskCommand,
     MoveTaskCommand,
+    RelocateCommand,
     TaskService,
 )
 from app.shared.exceptions.base import BusinessRuleError
@@ -93,6 +94,59 @@ async def test_move_reparent_reescreve_subtree(db) -> None:
     _, b_path = await _dp(b.id)
     assert a_depth == 1 and a_path.startswith(b_path + ".")
     assert af_depth == 2 and af_path.startswith(a_path + ".")
+
+
+async def test_move_leva_a_subtarefa_apagada(db) -> None:
+    """A subtarefa na lixeira acompanha o pai; caso real em produção (19/11)."""
+    ctx, proj, team = await _admin_proj(db)
+    with acting_as(**ctx):
+        svc = TaskService(db)
+        avo = await svc.create(CreateTaskCommand(
+            title="avo",
+            project_id=proj,
+            team_id=team,
+            assignee_ids=[ctx["user_id"]]),
+        )
+        pai = await svc.create(
+            CreateTaskCommand(
+                title="pai",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=avo.id,
+                assignee_ids=[ctx["user_id"]],
+            )
+        )
+        apagada = await svc.create(
+            CreateTaskCommand(
+                title="apagada",
+                project_id=proj,
+                team_id=team,
+                parent_task_id=pai.id,
+                assignee_ids=[ctx["user_id"]],
+            )
+        )
+        await db.execute(
+            text("UPDATE task SET deleted_at = NOW() WHERE id = :i"), {"i": apagada.id}
+        )
+        # Mover tarefa (Spec 062) sem mae: a subtarefa vira principal no quadro.
+        await svc.relocate(
+            task_id=pai.id,
+            command=RelocateCommand(board_id=avo.board_id),
+            dry_run=False,
+        )
+
+    row = (
+        await db.execute(
+            text(
+                "SELECT t.depth, t.path::text, p.path::text FROM task t"
+                " JOIN task p ON p.id = t.parent_task_id WHERE t.id = :i"
+            ),
+            {"i": apagada.id},
+        )
+    ).one()
+    depth, path, path_do_pai = row
+    assert path == f"{path_do_pai}.t{apagada.id.hex}"
+    assert depth == 1
 
 
 async def test_move_ciclo_e_auto_pai_409(db) -> None:
