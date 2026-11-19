@@ -19,6 +19,10 @@ from app.core.tenant import require_tenant
 from app.db.models import Project, Task
 from app.db.models.enums import PriorityLevel, ProjectStatus
 from app.modules.auth.domain import team_scope
+from app.modules.tasks.application.project_label_service import (
+    set_category,
+    set_tags,
+)
 from app.modules.tasks.domain.dates import validate_dates
 from app.modules.tasks.infrastructure.project_repository import ProjectRepository
 from app.shared.exceptions.base import (
@@ -44,6 +48,8 @@ class CreateProjectCommand:
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    category_id: uuid.UUID | None = None
+    tag_ids: tuple[uuid.UUID, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +62,10 @@ class UpdateProjectCommand:
     priority: PriorityLevel | None = None
     start_date: date | None = None
     due_date: date | None = None
+    #: `category_id` so vale com `set_category` (None ali tira a categoria).
+    set_category: bool = False
+    category_id: uuid.UUID | None = None
+    tag_ids: tuple[uuid.UUID, ...] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +138,8 @@ class ProjectService:
         # workspace_id e injetado pelo BaseRepository.add.
         self._repo.add(project)
         await self._session.flush()
+        await set_category(self._session, project, command.category_id)
+        await set_tags(self._session, project, list(command.tag_ids))
 
         logger.info(
             "project.created",
@@ -234,6 +246,11 @@ class ProjectService:
 
         if command.priority is not None:
             project.priority = command.priority
+
+        if command.set_category:
+            await set_category(self._session, project, command.category_id)
+        if command.tag_ids is not None:
+            await set_tags(self._session, project, list(command.tag_ids))
 
         if command.status is not None and command.status != project.status:
             if command.status == ProjectStatus.COMPLETED:

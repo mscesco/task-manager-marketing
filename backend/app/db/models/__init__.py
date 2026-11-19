@@ -28,7 +28,13 @@ from app.db.models.enums import (
     UserTeamRole,
 )
 from app.db.models.notifications import Notification, NotificationMute
-from app.db.models.operational import Project, Task
+from app.db.models.operational import (
+    Project,
+    ProjectCategory,
+    ProjectTag,
+    ProjectTagLink,
+    Task,
+)
 from app.db.models.organization import Team, User, UserTeam, Workspace
 from app.db.models.rate_limit import RateLimitHit
 from app.db.models.solicitations import (
@@ -46,6 +52,9 @@ __all__ = [  # noqa: RUF022 -- agrupado por assunto, de proposito
     "UserTeam",
     # Operacional
     "Project",
+    "ProjectCategory",
+    "ProjectTag",
+    "ProjectTagLink",
     "Task",
     # Quadro
     "Board",

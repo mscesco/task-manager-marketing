@@ -29,6 +29,30 @@ _DESCRIPTION_MAX = 100_000
 # =========================================================
 # PROJECT
 # =========================================================
+class ProjectLabelResponse(BaseModel):
+    """Categoria ou tag de projeto (do time raiz)."""
+
+    model_config = {"from_attributes": True}
+
+    id: uuid.UUID
+    team_id: uuid.UUID
+    name: str
+    color: str
+
+
+class ProjectLabelCreateRequest(BaseModel):
+    """`team_id` pode ser um subtime: o catalogo e sempre o da raiz dele."""
+
+    team_id: uuid.UUID
+    name: str = Field(min_length=1, max_length=60)
+    color: str = Field(default="gray", max_length=16)
+
+
+class ProjectLabelUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=60)
+    color: str | None = Field(default=None, max_length=16)
+
+
 class ProjectResponse(BaseModel):
     """Representacao de um projeto na API."""
 
@@ -48,6 +72,9 @@ class ProjectResponse(BaseModel):
     created_by: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    # Montados pelo router (`labels_for`): o model nao tem esses atributos.
+    category: ProjectLabelResponse | None = None
+    tags: list[ProjectLabelResponse] = []
 
     # Permissao no time do projeto, nao o papel global do `/auth/me`.
     @computed_field  # type: ignore[prop-decorator]
@@ -71,6 +98,8 @@ class ProjectCreateRequest(BaseModel):
     priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
+    category_id: uuid.UUID | None = None
+    tag_ids: list[uuid.UUID] = Field(default_factory=list, max_length=50)
 
 
 class ProjectUpdateRequest(BaseModel):
@@ -82,6 +111,10 @@ class ProjectUpdateRequest(BaseModel):
     priority: PriorityLevel | None = None
     start_date: date | None = None
     due_date: date | None = None
+    #: `null` tira a categoria; ausente nao mexe (o router olha o `model_fields_set`).
+    category_id: uuid.UUID | None = None
+    #: A lista inteira; ausente nao mexe, `[]` tira todas.
+    tag_ids: list[uuid.UUID] | None = Field(default=None, max_length=50)
 
 
 class LinkIn(BaseModel):

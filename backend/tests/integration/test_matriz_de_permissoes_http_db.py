@@ -36,7 +36,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
 from app.core.tenant import Membership, TenantContext
-from app.db.models import BaseTable, Solicitation, User
+from app.db.models import (
+    BaseTable,
+    ProjectCategory,
+    ProjectTag,
+    Solicitation,
+    User,
+)
 from app.db.models.boards import Board, BoardColumn
 from app.db.models.enums import TaskStatus
 from app.modules.auth.domain.permissions import permissions_for_actor
@@ -214,6 +220,17 @@ async def _mundo(db) -> dict:
     projeto_com = await f.make_project(
         db, workspace_id=ws, created_by=alvo_com, team_id=com
     )
+    rotulos = {}
+    for chave, model, time in (
+        ("cat_mkt", ProjectCategory, mkt),
+        ("cat_com", ProjectCategory, com),
+        ("tag_mkt", ProjectTag, mkt),
+        ("tag_com", ProjectTag, com),
+    ):
+        rotulo = model(workspace_id=ws, team_id=time, name="R", color="gray")
+        db.add(rotulo)
+        await db.flush()
+        rotulos[chave] = rotulo.id
 
     # --- formularios pelo servico, e uma solicitacao cada
     with acting_as(workspace_id=ws, user_id=admin, team_tree=arvore, org_role="ADMIN"):
@@ -321,6 +338,7 @@ async def _mundo(db) -> dict:
                 "cancelado_secundario": cancelado_secundario,
                 "tarefa_mkt": tarefa_mkt.id, "tarefa_com": tarefa_com.id,
                 "projeto_mkt": projeto_mkt, "projeto_com": projeto_com,
+                **rotulos,
                 "form_mkt": form_mkt.id, "form_com": form_com.id,
                 "sol_mkt": sol_mkt, "sol_com": sol_com,
                 "comentario": comentario.id,
@@ -755,6 +773,33 @@ MATRIZ: tuple[Linha, ...] = (
     Linha("project.delete", "do Comercial", "delete", f"{T}/projects/{{projeto_com}}",
           None,
           (OK, NEGADO, OCULTO, NEGADO, NEGADO, NEGADO)),
+    # ---------------------------------------------------------- categoria e tag
+    # Sem verbo proprio: `project.update` no time raiz (ver acima). Fora da lente,
+    # criar e 422 (como `project.create`) e editar/apagar e 404.
+    *(
+        linha
+        for tipo, chave in (("categories", "cat"), ("tags", "tag"))
+        for linha in (
+            Linha(f"project.{tipo}", "criar no Marketing", "post", f"{T}/project-{tipo}",
+                  {"team_id": "{mkt}", "name": "Nova"},
+                  (OK, OK, OK, OK, NEGADO, OK)),
+            Linha(f"project.{tipo}", "criar no Comercial", "post", f"{T}/project-{tipo}",
+                  {"team_id": "{com}", "name": "Nova"},
+                  (OK, OK, 422, 422, 422, NEGADO)),
+            Linha(f"project.{tipo}", "renomear do Marketing", "patch",
+                  f"{T}/project-{tipo}/{{{chave}_mkt}}", {"name": "Outro"},
+                  (OK, OK, OK, OK, NEGADO, OK)),
+            Linha(f"project.{tipo}", "renomear do Comercial", "patch",
+                  f"{T}/project-{tipo}/{{{chave}_com}}", {"name": "Outro"},
+                  (OK, OK, OCULTO, OCULTO, OCULTO, NEGADO)),
+            Linha(f"project.{tipo}", "apagar do Marketing", "delete",
+                  f"{T}/project-{tipo}/{{{chave}_mkt}}", None,
+                  (OK, OK, OK, OK, NEGADO, OK)),
+            Linha(f"project.{tipo}", "apagar do Comercial", "delete",
+                  f"{T}/project-{tipo}/{{{chave}_com}}", None,
+                  (OK, OK, OCULTO, OCULTO, OCULTO, NEGADO)),
+        )
+    ),
     # ---------------------------------------------------------- links
     # Sem verbo proprio: tem de bater com `task.update`/`project.update` acima.
     Linha("task.links", "ler os da do Marketing", "get",
