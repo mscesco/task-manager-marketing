@@ -44,6 +44,7 @@ export default function CampoDeRotulos({
   desabilitado?: boolean;
 }) {
   const multiplo = kind === "tags";
+  const vazio = multiplo ? "Tag" : "Categoria";
   const avisar = useAvisar();
   const [aberto, setAberto] = useState(false);
   // `null` = ainda não buscado; busca ao abrir a primeira vez.
@@ -69,19 +70,29 @@ export default function CampoDeRotulos({
   }
 
   return (
-    <div ref={anchorRef} className="flex min-h-8 flex-wrap items-center gap-1.5">
-      {valor.map((r) => (
-        <SeloDeRotulo key={r.id} rotulo={r} />
-      ))}
+    <div ref={anchorRef} className="inline-flex">
+      {/* A própria pílula é o botão; vazio, um "+ Categoria" discreto. */}
       <button
         type="button"
-        className="btn btn-ghost text-xs"
+        className="inline-flex min-h-6 flex-wrap items-center gap-1 rounded-md px-1 py-0.5 text-xs font-semibold text-ink-faint transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-60"
         disabled={desabilitado}
         onClick={abrir}
-        aria-label={valor.length ? `Trocar ${titulo.toLowerCase()}` : `Escolher ${titulo.toLowerCase()}`}
+        aria-haspopup="dialog"
+        aria-label={
+          valor.length
+            ? `${titulo}: ${valor.map((r) => r.name).join(", ")}. Alterar`
+            : `Adicionar ${vazio.toLowerCase()}`
+        }
       >
-        <Plus size={13} aria-hidden="true" />
-        {valor.length ? "Trocar" : "Escolher"}
+        {valor.map((r) => (
+          <SeloDeRotulo key={r.id} rotulo={r} />
+        ))}
+        {(multiplo || valor.length === 0) && (
+          <span className="inline-flex items-center gap-0.5">
+            <Plus size={13} aria-hidden="true" />
+            {valor.length === 0 && vazio}
+          </span>
+        )}
       </button>
       {aberto && box && catalogo && (
         <EditorDeEscolha

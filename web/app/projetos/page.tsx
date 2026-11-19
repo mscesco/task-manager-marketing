@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppShell from "@/components/AppShell";
 import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
@@ -8,9 +8,10 @@ import PageHeader from "@/components/PageHeader";
 import { Esqueleto } from "@/components/Loading";
 import Entrada from "@/components/Entrada";
 import { useActiveTeam, useActiveTeamId } from "@/lib/useActiveTeam";
-import { CalendarClock, Plus, Search } from "lucide-react";
+import { CalendarClock, Plus, Search, Tags } from "lucide-react";
+import GerenciarRotulos from "@/components/GerenciarRotulos";
 import { SeloDeRotulo } from "@/components/CampoDeRotulos";
-import { agruparPorCategoria, casaBusca } from "@/lib/projetos";
+import { agruparPorCategoria, casaBusca, usosDosRotulos } from "@/lib/projetos";
 import { corDaOpcao } from "@/lib/baseTable";
 import { dataParaTela } from "@/lib/baseTable";
 import { diaNoWorkspace } from "@/lib/prazo";
@@ -60,6 +61,11 @@ function Projetos() {
   // O nome vem da barra (`teamName`), a mesma árvore que resolveu o time ativo.
   const { active, teamName: nomeDoTime } = useActiveTeam();
 
+  const [gerenciando, setGerenciando] = useState(false);
+  // Renomear ou recolorir no gerenciador muda o que os cards mostram: recarrega ao fechar.
+  const [versao, setVersao] = useState(0);
+  const mudouRotulos = useRef(false);
+
   useEffect(() => {
     // Espera a barra resolver; buscar antes mostraria projetos de todos os times por um instante.
     if (active === null) return;
@@ -67,7 +73,7 @@ function Projetos() {
       .then((r) => setItems(r.items))
       .catch((e: ApiError) => setErro(e.message));
     // `active === null`, não `active`: o objeto é novo a cada render e refaria o pedido.
-  }, [timeAtivo, active === null]);
+  }, [timeAtivo, active === null, versao]);
 
   useEffect(() => {
     // `rootsForPerson` precisa da árvore e dos vínculos de quem olha.
@@ -241,18 +247,38 @@ function Projetos() {
         />
       ) : (
         <>
-          <div className="relative mb-5 max-w-[420px]">
-            <Search aria-hidden size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
-            <input
-              className="input w-full"
-              type="search"
-              aria-label="Buscar projetos"
-              placeholder="Buscar por nome, categoria ou tag"
-              value={busca}
-              onChange={(e) => setBusca(e.target.value)}
-              style={{ paddingLeft: 34 }}
-            />
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <div className="relative min-w-0 max-w-[420px] flex-1">
+              <Search aria-hidden size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-faint" />
+              <input
+                className="input w-full"
+                type="search"
+                aria-label="Buscar projetos"
+                placeholder="Buscar por nome, categoria ou tag"
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                style={{ paddingLeft: 34 }}
+              />
+            </div>
+            {/* O catálogo é do time olhado; sem time escolhido não há qual mostrar. */}
+            {timeAtivo && (podeCriar || items.some((p) => p.can_update)) && (
+              <button type="button" className="btn" onClick={() => setGerenciando(true)}>
+                <Tags size={15} aria-hidden /> Categorias e tags
+              </button>
+            )}
           </div>
+          {gerenciando && timeAtivo && (
+            <GerenciarRotulos
+              teamId={timeAtivo}
+              usos={usosDosRotulos(items)}
+              onMudou={() => (mudouRotulos.current = true)}
+              onFechar={() => {
+                setGerenciando(false);
+                if (mudouRotulos.current) setVersao((v) => v + 1);
+                mudouRotulos.current = false;
+              }}
+            />
+          )}
           {grupos.length === 0 ? (
             <p className="muted text-sm" role="status">
               Nenhum projeto encontrado para “{busca.trim()}”.

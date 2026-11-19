@@ -30,7 +30,7 @@ describe("CampoDeRotulos", () => {
     render(
       <CampoDeRotulos kind="categories" titulo="Categoria" teamId="seo" valor={[]} onChange={onChange} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Escolher categoria" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar categoria" }));
     fireEvent.click(await screen.findByRole("option", { name: /Eventos/ }));
 
     expect(api.listProjectLabels).toHaveBeenCalledWith("categories", "seo");
@@ -45,7 +45,7 @@ describe("CampoDeRotulos", () => {
     render(
       <CampoDeRotulos kind="categories" titulo="Categoria" teamId="mkt" valor={[]} onChange={onChange} />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Escolher categoria" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar categoria" }));
     fireEvent.change(await screen.findByRole("textbox", { name: "Buscar ou criar opção" }), {
       target: { value: "Campanhas" },
     });
@@ -64,7 +64,7 @@ describe("CampoDeRotulos", () => {
     vi.mocked(api.listProjectLabels).mockResolvedValue([FEIRA, EVENTOS]);
     const onChange = vi.fn();
     render(<CampoDeRotulos kind="tags" titulo="Tags" teamId="mkt" valor={[]} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "Escolher tags" }));
+    fireEvent.click(screen.getByRole("button", { name: "Adicionar tag" }));
     fireEvent.click(await screen.findByRole("option", { name: /Feira/ }));
     fireEvent.click(screen.getByRole("option", { name: /Eventos/ }));
     expect(onChange).not.toHaveBeenCalled();

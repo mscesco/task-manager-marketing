@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Project, ProjectLabel } from "@/lib/api";
-import { agruparPorCategoria, casaBusca } from "@/lib/projetos";
+import { agruparPorCategoria, casaBusca, usosDosRotulos } from "@/lib/projetos";
 
 const rotulo = (id: string, name: string): ProjectLabel => ({
   id,
@@ -84,5 +84,18 @@ describe("casaBusca", () => {
 
   it("não casa o que não está em lugar nenhum", () => {
     expect(casaBusca(p, "formatura")).toBe(false);
+  });
+});
+
+describe("usosDosRotulos", () => {
+  it("conta categoria e tags de cada projeto pelo id", () => {
+    const feira = rotulo("t1", "Feira");
+    const usos = usosDosRotulos([
+      projeto({ id: "1", category: EVENTOS, tags: [feira] }),
+      projeto({ id: "2", category: EVENTOS }),
+      projeto({ id: "3", tags: [feira] }),
+    ]);
+    expect(usos.get("c1")).toBe(2);
+    expect(usos.get("t1")).toBe(2);
   });
 });

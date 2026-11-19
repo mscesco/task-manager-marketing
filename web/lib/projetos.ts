@@ -38,3 +38,14 @@ export function agruparPorCategoria(projetos: readonly Project[]): GrupoDeProjet
   );
   return sem.length ? [...grupos, { categoria: null, projetos: sem }] : grupos;
 }
+
+/** Quantos projetos usam cada categoria e cada tag, pelo id. */
+export function usosDosRotulos(projetos: readonly Project[]): Map<string, number> {
+  const usos = new Map<string, number>();
+  for (const p of projetos) {
+    for (const r of p.category ? [p.category, ...p.tags] : p.tags) {
+      usos.set(r.id, (usos.get(r.id) ?? 0) + 1);
+    }
+  }
+  return usos;
+}
