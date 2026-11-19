@@ -143,7 +143,8 @@ const confere = crypto.timingSafeEqual(
             <strong>409 e 422</strong>: o pedido veio errado; a mensagem diz o campo.
           </li>
           <li>
-            <strong>429</strong>: chamadas demais em pouco tempo; espere um pouco.
+            <strong>429</strong>: tentativas demais em pouco tempo. Só acontece no login e nas rotas
+            do formulário público de solicitação.
           </li>
         </ul>
         <p className="m-0">

@@ -179,7 +179,7 @@ async def create_task(
     assignee_ids = await CollaborationService(uow.session).assignee_ids_for(task)
     evento = await webhooks.evento_de_tarefa(uow.session, "task.created", task)
     await uow.commit()
-    webhooks.emitir_se(evento)
+    webhooks.emitir(evento)
     return TaskListItem.model_validate(task).model_copy(
         update={"assignee_ids": assignee_ids}
     )
@@ -223,7 +223,7 @@ async def duplicate_task(
     )
     evento = await webhooks.evento_de_tarefa(uow.session, "task.created", resultado.task)
     await uow.commit()
-    webhooks.emitir_se(evento)
+    webhooks.emitir(evento)
     return TaskDuplicateResponse.model_validate(resultado.task).model_copy(
         update={
             "assignee_ids": assignee_ids,
@@ -281,7 +281,7 @@ async def update_task(
             uow.session, "task.moved", task, coluna_anterior=antes.column_id
         )
     await uow.commit()
-    webhooks.emitir_se(evento)
+    webhooks.emitir(evento)
     return TaskResponse.model_validate(task)
 
 
@@ -319,6 +319,7 @@ async def relocate_task(
     A rota confere o verbo de editar a origem; criar no destino e conferido no
     servico.
     """
+    antes = await AvisosDaTarefa(uow.session).retrato(task_id)
     resultado = await TaskService(uow.session).relocate(
         task_id=task_id,
         command=RelocateCommand(
@@ -329,7 +330,14 @@ async def relocate_task(
         dry_run=payload.dry_run,
     )
     if not payload.dry_run:
+        evento = None
+        movida = resultado.task
+        if movida is not None and antes is not None and movida.column_id != antes.column_id:
+            evento = await webhooks.evento_de_tarefa(
+                uow.session, "task.moved", movida, coluna_anterior=antes.column_id
+            )
         await uow.commit()
+        webhooks.emitir(evento)
     return TaskRelocateResponse(
         task=(
             TaskResponse.model_validate(resultado.task)

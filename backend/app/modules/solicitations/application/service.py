@@ -275,7 +275,7 @@ class SolicitationService:
         await uow.commit()
         for solicitation in criadas:
             await self.session.refresh(solicitation)
-            webhooks.emitir_se(
+            webhooks.emitir(
                 await webhooks.evento_de_solicitacao(
                     self.session, "solicitation.created", solicitation
                 )
@@ -544,7 +544,7 @@ class SolicitationService:
         solicitation.task_marked_by_user_id = tenant.user_id
         evento = await webhooks.evento_de_tarefa(self.session, "task.created", tarefa)
         await uow.commit()
-        webhooks.emitir_se(evento)
+        webhooks.emitir(evento)
         await self.session.refresh(solicitation)
         return solicitation, tarefa
 
@@ -678,7 +678,7 @@ class SolicitationService:
 
     async def _webhook_de_status(self, solicitation: Solicitation, anterior: str) -> None:
         """Depois do commit: os webhooks de quem pediu "mudou de status"."""
-        webhooks.emitir_se(
+        webhooks.emitir(
             await webhooks.evento_de_solicitacao(
                 self.session,
                 "solicitation.status_changed",

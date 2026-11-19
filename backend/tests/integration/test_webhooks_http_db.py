@@ -337,3 +337,62 @@ async def test_tarefa_sem_webhook_nao_muda_nada(db, entrega) -> None:
     assert entrega.recebidos == []
     assert await db.scalar(select(WebhookDelivery)) is None
     assert await db.scalar(select(Task)) is not None
+
+
+async def test_mover_para_outro_quadro_avisa(db, entrega) -> None:
+    """O "Mover…" do detalhe (relocate) troca a coluna também."""
+    m = await _setup(db)
+    eventos = await f.make_board(db, workspace_id=m["ws"], team_id=m["marketing"], name="Eventos")
+    destino = str(eventos.id)  # lido antes: a prévia deixa os objetos da sessão vencidos
+    async with cliente(db, m["ger"]) as cli:
+        await _hook(cli, m["marketing"], events=["task.moved"])
+        tarefa = await _tarefa(cli, m["marketing"], m["ger"].user_id)
+        previa = await cli.post(
+            f"/api/v1/tasks/{tarefa['id']}/relocate",
+            json={"board_id": destino, "dry_run": True},
+        )
+        assert previa.status_code == 200, previa.text
+        await entrega.rodar()
+        assert entrega.recebidos == []  # a prévia não grava nem avisa
+
+        r = await cli.post(
+            f"/api/v1/tasks/{tarefa['id']}/relocate", json={"board_id": destino}
+        )
+        assert r.status_code == 200, r.text
+    await entrega.rodar()
+    assert len(entrega.recebidos) == 1
+    data = json.loads(entrega.recebidos[0].content)["data"]
+    assert data["board_id"] == destino
+    assert data["previous_column"]["id"] == tarefa["column_id"]
+
+
+async def test_nenhuma_conexao_do_banco_aberta_enquanto_espera_o_destino(
+    db, entrega, monkeypatch
+) -> None:
+    """Um destino lento não pode segurar o pool: o POST sai com a sessão fechada."""
+    m = await _setup(db)
+    abertas = 0
+    vistas_no_post: list[int] = []
+
+    @contextlib.asynccontextmanager
+    async def _sessao_contada():
+        nonlocal abertas
+        abertas += 1
+        try:
+            yield db
+        finally:
+            abertas -= 1
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        vistas_no_post.append(abertas)
+        return httpx.Response(200)
+
+    transporte = httpx.MockTransport(_handler)
+    monkeypatch.setattr(webhooks, "_abrir_sessao", _sessao_contada)
+    monkeypatch.setattr(webhooks, "_cliente_http", lambda: httpx.AsyncClient(transport=transporte))
+    async with cliente(db, m["ger"]) as cli:
+        await _hook(cli, m["marketing"])
+        await _tarefa(cli, m["marketing"], m["ger"].user_id)
+    await entrega.rodar()
+    assert vistas_no_post == [0]
+    assert (await db.scalar(select(WebhookDelivery))).status_code == 200

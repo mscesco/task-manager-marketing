@@ -212,7 +212,8 @@ async def testar(
 ) -> WebhookDelivery:
     """Manda um `ping` na hora (a tela espera o resultado)."""
     hook = await _do_dono(session, ctx, webhook_id)
-    return await _enviar(session, hook, "ping", {"message": "Teste do gerenciador de tarefas."})
+    r = await _post(hook.url, hook.secret, "ping", {"message": "Teste do gerenciador de tarefas."})
+    return await _registrar(session, hook, "ping", r)
 
 
 # ------------------------------------------------------------ eventos
@@ -299,11 +300,6 @@ async def evento_de_solicitacao(
     return Evento(pedido.workspace_id, tipo, form.team_id, None, data)
 
 
-def emitir_se(evento: Evento | None) -> None:
-    if evento is not None:
-        emitir(evento)
-
-
 # ------------------------------------------------------------ entrega
 
 #: Trocáveis nos testes: onde a entrega agenda, abre sessão, resolve nome e faz o POST.
@@ -330,9 +326,10 @@ _cliente_http: Callable[[], httpx.AsyncClient] = lambda: httpx.AsyncClient(  # n
 )
 
 
-def emitir(evento: Evento) -> None:
-    """Chame depois do commit. Não espera a entrega nem levanta."""
-    _agendar(_entregar(evento))
+def emitir(evento: Evento | None) -> None:
+    """Chame depois do commit. Não espera a entrega nem levanta. `None`: nada sai."""
+    if evento is not None:
+        _agendar(_entregar(evento))
 
 
 async def _entregar(evento: Evento) -> None:
@@ -347,9 +344,24 @@ async def _entregar(evento: Evento) -> None:
                     )
                 )
             ).scalars()
-            for hook in list(hooks):
-                if await _dona_recebe(session, hook, evento):
-                    await _enviar(session, hook, evento.tipo, evento.data)
+            destinos = [
+                (h.id, h.url, h.secret)
+                for h in list(hooks)
+                if await _dona_recebe(session, h, evento)
+            ]
+        if not destinos:
+            return
+        # Nenhuma conexão do banco aberta enquanto espera os destinos: um destino
+        # lento não pode segurar o pool (15 por processo) e travar as telas.
+        resultados = [
+            (hid, await _post(url, segredo, evento.tipo, evento.data))
+            for hid, url, segredo in destinos
+        ]
+        async with _abrir_sessao() as session:
+            for hid, r in resultados:
+                hook = await session.get(Webhook, hid)
+                if hook is not None:  # apagado durante o envio
+                    await _registrar(session, hook, evento.tipo, r)
             await session.commit()
     except Exception:
         # Nunca derruba quem emitiu; a falha de cada entrega já fica no histórico.
@@ -389,9 +401,17 @@ async def _endereco_interno(url: str) -> str | None:
     return None
 
 
-async def _enviar(
-    session: AsyncSession, hook: Webhook, tipo: str, data: dict[str, Any]
-) -> WebhookDelivery:
+@dataclass(frozen=True, slots=True)
+class _Resultado:
+    entrega_id: uuid.UUID
+    status_code: int | None
+    erro: str | None
+    duracao_ms: int
+    quando: datetime
+
+
+async def _post(url: str, segredo: str, tipo: str, data: dict[str, Any]) -> _Resultado:
+    """Chama o destino. Sem banco: pode levar até `TEMPO_LIMITE`."""
     entrega_id = uuid.uuid4()
     corpo = json.dumps(
         {
@@ -403,15 +423,15 @@ async def _enviar(
         default=str,
         ensure_ascii=False,
     ).encode()
-    assinatura = hmac.new(hook.secret.encode(), corpo, hashlib.sha256).hexdigest()
+    assinatura = hmac.new(segredo.encode(), corpo, hashlib.sha256).hexdigest()
     inicio = time.monotonic()
     codigo: int | None = None
-    erro = await _endereco_interno(hook.url)
+    erro = await _endereco_interno(url)
     if erro is None:
         try:
             async with _cliente_http() as cli:
                 r = await cli.post(
-                    hook.url,
+                    url,
                     content=corpo,
                     headers={
                         "Content-Type": "application/json",
@@ -428,19 +448,32 @@ async def _enviar(
             erro = f"O destino não respondeu em {TEMPO_LIMITE:.0f} s."
         except Exception as exc:  # DNS, TLS, conexão recusada...
             erro = f"Falha de conexão: {type(exc).__name__}."
+    return _Resultado(
+        entrega_id,
+        codigo,
+        erro,
+        int((time.monotonic() - inicio) * 1000),
+        # Do Python: o `now()` do banco é o da transação, igual para todas as entregas dela.
+        datetime.now(UTC),
+    )
+
+
+async def _registrar(
+    session: AsyncSession, hook: Webhook, tipo: str, r: _Resultado
+) -> WebhookDelivery:
+    """Grava a entrega no histórico e a conta de falhas do webhook."""
     entrega = WebhookDelivery(
-        id=entrega_id,
+        id=r.entrega_id,
         webhook_id=hook.id,
         event=tipo,
-        status_code=codigo,
-        error=erro,
-        duration_ms=int((time.monotonic() - inicio) * 1000),
-        # Do Python: o `now()` do banco é o da transação, igual para todas as entregas dela.
-        delivered_at=datetime.now(UTC),
+        status_code=r.status_code,
+        error=r.erro,
+        duration_ms=r.duracao_ms,
+        delivered_at=r.quando,
     )
     session.add(entrega)
     if tipo != "ping":
-        hook.consecutive_failures = 0 if erro is None else hook.consecutive_failures + 1
+        hook.consecutive_failures = 0 if r.erro is None else hook.consecutive_failures + 1
         if hook.consecutive_failures >= FALHAS_PARA_DESLIGAR:
             hook.is_active = False
     await session.flush()
