@@ -1,7 +1,7 @@
 // /projetos: a criação segue o time ativo e só oferece times em que a pessoa cria.
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import ProjetosPage from "@/app/projetos/page";
 import type { CurrentUser, Project, Team } from "@/lib/api";
@@ -76,10 +76,10 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
   };
 }
 
-function montar() {
+function montar(items: Project[] = []) {
   vi.mocked(api.listProjects).mockResolvedValue({
-    items: [],
-    total: 0,
+    items,
+    total: items.length,
     page: 1,
     size: 100,
   });
@@ -234,5 +234,37 @@ describe("/projetos -- só oferece o time em que a pessoa CRIA", () => {
     // Um tique para o `then` da busca assentar antes de afirmar a ausência.
     await new Promise((r) => setTimeout(r, 0));
     expect(screen.queryByText("+ Novo projeto")).toBeNull();
+  });
+});
+
+describe("/projetos -- seções por categoria e busca", () => {
+  const cat = (id: string, name: string) => ({ id, team_id: COM, name, color: "blue" as const });
+  const LISTA = [
+    projeto({ id: "1", title: "Sem nada" }),
+    projeto({ id: "2", title: "Feira", category: cat("c1", "Eventos"), tags: [cat("t1", "Mídia paga")] }),
+    projeto({ id: "3", title: "Black Friday", category: cat("c2", "Campanhas") }),
+  ];
+
+  it("uma seção por categoria, em ordem, e sem categoria por último; a tag no card", async () => {
+    montar(LISTA);
+    await screen.findByText("Feira");
+    const secoes = screen.getAllByRole("region");
+    expect(secoes.map((s) => s.getAttribute("aria-label"))).toEqual([
+      "Campanhas",
+      "Eventos",
+      "Sem categoria",
+    ]);
+    expect(within(secoes[1]).getByText("Mídia paga")).toBeTruthy();
+  });
+
+  it("a busca acha pela tag, sem acento, e diz quando não acha nada", async () => {
+    montar(LISTA);
+    const campo = await screen.findByRole("searchbox", { name: "Buscar projetos" });
+    fireEvent.change(campo, { target: { value: "midia" } });
+    expect(screen.getByText("Feira")).toBeTruthy();
+    expect(screen.queryByText("Black Friday")).toBeNull();
+
+    fireEvent.change(campo, { target: { value: "formatura" } });
+    expect(screen.getByRole("status").textContent).toContain("formatura");
   });
 });

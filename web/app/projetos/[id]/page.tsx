@@ -427,10 +427,8 @@ function EditPanel({
             ))}
           </select>
         </div>
-      </div>
-      {/* Só projeto vivo tem time; o catálogo é o da raiz dele. */}
-      {project.team_id && (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        {/* Só projeto vivo tem time; o catálogo é o da raiz dele. */}
+        {project.team_id && (
           <div className="field" style={{ flex: 1, minWidth: 160 }}>
             <span className="label">Categoria</span>
             <CampoDeRotulos
@@ -442,17 +440,19 @@ function EditPanel({
               desabilitado={salvando}
             />
           </div>
-          <div className="field" style={{ flex: 1, minWidth: 160 }}>
-            <span className="label">Tags</span>
-            <CampoDeRotulos
-              kind="tags"
-              titulo="Tags"
-              teamId={project.team_id}
-              valor={tags}
-              onChange={setTags}
-              desabilitado={salvando}
-            />
-          </div>
+        )}
+      </div>
+      {project.team_id && (
+        <div className="field">
+          <span className="label">Tags</span>
+          <CampoDeRotulos
+            kind="tags"
+            titulo="Tags"
+            teamId={project.team_id}
+            valor={tags}
+            onChange={setTags}
+            desabilitado={salvando}
+          />
         </div>
       )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
