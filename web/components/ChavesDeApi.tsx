@@ -2,10 +2,11 @@
 // Aba "Chaves de API" da página de desenvolvedor (Spec 065): criar, ver uma vez, revogar.
 
 import { useEffect, useState } from "react";
-import { Copy, KeyRound, Plus } from "lucide-react";
+import { KeyRound, Plus } from "lucide-react";
 import Badge from "@/components/Badge";
 import EmptyState from "@/components/EmptyState";
 import Loading from "@/components/Loading";
+import SegredoUmaVez from "@/components/SegredoUmaVez";
 import { useAvisar } from "@/components/Toasts";
 import {
   createApiKey,
@@ -79,7 +80,14 @@ export default function ChavesDeApi() {
         />
       )}
 
-      {nova && <ChaveRecemCriada chave={nova} onPronto={() => setNova(null)} />}
+      {nova && (
+        <SegredoUmaVez
+          titulo="Sua chave nova. Guarde agora: depois ela não aparece de novo."
+          rotulo="Chave de API"
+          valor={nova}
+          onPronto={() => setNova(null)}
+        />
+      )}
 
       {chaves.length === 0 ? (
         !criando && (
@@ -194,43 +202,6 @@ function FormularioDeChave({
         </button>
       </div>
     </form>
-  );
-}
-
-function ChaveRecemCriada({ chave, onPronto }: { chave: string; onPronto: () => void }) {
-  const [copiada, setCopiada] = useState(false);
-
-  async function copiar() {
-    try {
-      await navigator.clipboard.writeText(chave);
-      setCopiada(true);
-    } catch {
-      setCopiada(false);
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-2.5 rounded-lg border border-accent bg-accent-soft p-4" role="status">
-      <strong className="text-sm">Sua chave nova. Guarde agora: depois ela não aparece de novo.</strong>
-      <div className="flex flex-wrap gap-2">
-        <input
-          className="input min-w-0 flex-1 font-mono text-xs"
-          readOnly
-          value={chave}
-          aria-label="Chave de API"
-          onFocus={(e) => e.currentTarget.select()}
-        />
-        <button type="button" className="btn" onClick={() => void copiar()}>
-          <Copy size={14} aria-hidden />
-          {copiada ? "Copiada" : "Copiar"}
-        </button>
-      </div>
-      <div>
-        <button type="button" className="btn btn-ghost" onClick={onPronto} style={{ padding: "2px 0" }}>
-          Pronto, já guardei
-        </button>
-      </div>
-    </div>
   );
 }
 

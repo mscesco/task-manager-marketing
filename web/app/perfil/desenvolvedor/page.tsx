@@ -8,10 +8,14 @@ import AppShell from "@/components/AppShell";
 import ChavesDeApi from "@/components/ChavesDeApi";
 import PageHeader from "@/components/PageHeader";
 import Tabs, { type Tab } from "@/components/Tabs";
+import WebhooksDoDev from "@/components/WebhooksDoDev";
 
-type Aba = "chaves";
+type Aba = "chaves" | "webhooks";
 
-const ABAS: readonly Tab<Aba>[] = [{ id: "chaves", label: "Chaves de API" }];
+const ABAS: readonly Tab<Aba>[] = [
+  { id: "chaves", label: "Chaves de API" },
+  { id: "webhooks", label: "Webhooks" },
+];
 
 function abaDoEndereco(): Aba {
   const h = window.location.hash.slice(1);
@@ -41,6 +45,7 @@ export default function DesenvolvedorPage() {
         <Tabs tabs={ABAS} active={aba} onSelect={escolher} aria-label="Seções" group="dev" />
         <div role="tabpanel" aria-label={ABAS.find((a) => a.id === aba)?.label} className="pt-5">
           {aba === "chaves" && <ChavesDeApi />}
+          {aba === "webhooks" && <WebhooksDoDev />}
         </div>
       </div>
     </AppShell>
