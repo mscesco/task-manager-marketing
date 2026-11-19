@@ -38,7 +38,7 @@ STATEMENTS: tuple[str, ...] = (
     );
     """,
     "ALTER TABLE ONLY public.api_key ADD CONSTRAINT api_key_pkey PRIMARY KEY (id);",
-    "ALTER TABLE ONLY public.api_key ADD CONSTRAINT api_key_key_hash_key UNIQUE (key_hash);",
+    "ALTER TABLE ONLY public.api_key ADD CONSTRAINT uq_api_key_key_hash UNIQUE (key_hash);",
     """
     ALTER TABLE ONLY public.api_key
         ADD CONSTRAINT api_key_workspace_id_fkey FOREIGN KEY (workspace_id)
