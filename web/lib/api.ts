@@ -1638,6 +1638,39 @@ export async function deleteProjectLabel(kind: ProjectLabelKind, id: string): Pr
   await api<void>(`/api/v1/project-${kind}/${id}`, { method: "DELETE" });
 }
 
+// ---- Chaves de API (Spec 065): da própria pessoa, só com o login da tela.
+
+export type ApiKey = {
+  id: string;
+  name: string;
+  /** O começo da chave (`tm_a1b2c3d`), para reconhecer qual é. */
+  prefix: string;
+  read_only: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+/** Validade em dias; `null` = sem validade. */
+export type ApiKeyDays = 30 | 90 | 365 | null;
+
+export async function listApiKeys(): Promise<ApiKey[]> {
+  return api<ApiKey[]>("/api/v1/me/api-keys");
+}
+
+/** A resposta traz a chave inteira (`key`), que não aparece de novo. */
+export async function createApiKey(input: {
+  name: string;
+  read_only: boolean;
+  days: ApiKeyDays;
+}): Promise<ApiKey & { key: string }> {
+  return api<ApiKey & { key: string }>("/api/v1/me/api-keys", { method: "POST", body: input });
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  await api<void>(`/api/v1/me/api-keys/${id}`, { method: "DELETE" });
+}
+
 
 // ---- Usuário logado, memoizado; limpa no clearTokens. O AppShell usa getMe() direto (revalida a sessão).
 let _me: CurrentUser | undefined; // undefined = ainda nao buscado
