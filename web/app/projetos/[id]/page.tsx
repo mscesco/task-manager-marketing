@@ -12,6 +12,7 @@ import SobreOProjeto from "@/components/SobreOProjeto";
 import EditorDeDescricao from "@/components/EditorDeDescricaoAdiado";
 import EditorDeLinks from "@/components/EditorDeLinks";
 import LinksDoItem from "@/components/LinksDoItem";
+import CampoDeRotulos, { SeloDeRotulo } from "@/components/CampoDeRotulos";
 import {
   getProject,
   getProjectLinks,
@@ -21,6 +22,7 @@ import {
   ApiError,
   type LinkItem,
   type Project,
+  type ProjectLabel,
   type ProjectStatus,
   type ProjectUpdateInput,
 } from "@/lib/api";
@@ -158,6 +160,10 @@ function Projeto() {
         />
         {PROJECT_STATUS_LABEL[project.status] || project.status}
       </span>
+      {project.category && <SeloDeRotulo rotulo={project.category} />}
+      {project.tags.map((t) => (
+        <SeloDeRotulo key={t.id} rotulo={t} />
+      ))}
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {/* Os links do projeto, só com o nome, na mesma linha da meta. */}
@@ -312,6 +318,10 @@ function EditPanel({
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
+  const [categoria, setCategoria] = useState<ProjectLabel[]>(
+    project.category ? [project.category] : [],
+  );
+  const [tags, setTags] = useState<ProjectLabel[]>(project.tags);
   const [startDate, setStartDate] = useState(project.start_date ?? "");
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
   const [salvando, setSalvando] = useState(false);
@@ -340,6 +350,8 @@ function EditPanel({
         title: t,
         description,
         status,
+        category_id: categoria[0]?.id ?? null,
+        tag_ids: tags.map((t) => t.id),
         ...(startDate ? { start_date: startDate } : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
       };
@@ -416,6 +428,33 @@ function EditPanel({
           </select>
         </div>
       </div>
+      {/* Só projeto vivo tem time; o catálogo é o da raiz dele. */}
+      {project.team_id && (
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <span className="label">Categoria</span>
+            <CampoDeRotulos
+              kind="categories"
+              titulo="Categoria"
+              teamId={project.team_id}
+              valor={categoria}
+              onChange={setCategoria}
+              desabilitado={salvando}
+            />
+          </div>
+          <div className="field" style={{ flex: 1, minWidth: 160 }}>
+            <span className="label">Tags</span>
+            <CampoDeRotulos
+              kind="tags"
+              titulo="Tags"
+              teamId={project.team_id}
+              valor={tags}
+              onChange={setTags}
+              desabilitado={salvando}
+            />
+          </div>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <div className="field" style={{ flex: 1, minWidth: 160 }}>
           <span className="label">Início</span>

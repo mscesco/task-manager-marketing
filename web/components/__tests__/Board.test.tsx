@@ -140,6 +140,8 @@ function project(id: string, team_id: string | null): Project {
     created_by: ANA,
     created_at: "2026-07-01T12:00:00Z",
     updated_at: "2026-07-01T12:00:00Z",
+    category: null,
+    tags: [],
     can_update: true,
     can_delete: true,
   };

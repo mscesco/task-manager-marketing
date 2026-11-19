@@ -67,6 +67,8 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
     created_by: "user-1",
     created_at: "2026-09-14T12:00:00Z",
     updated_at: "2026-09-14T12:00:00Z",
+    category: null,
+    tags: [],
     // Os botões vêm do servidor, no time do projeto.
     can_update: true,
     can_delete: true,
