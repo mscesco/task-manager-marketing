@@ -9,6 +9,7 @@ from app.api.health import router as health_router
 from app.modules.auth.api.router import router as auth_router
 from app.modules.bases.api.router import router as bases_router
 from app.modules.developer.api.router import router as api_keys_router
+from app.modules.developer.api.router import webhooks_router
 from app.modules.notifications.api.preferences_router import (
     router as notification_preferences_router,
 )
@@ -54,6 +55,7 @@ api_v1_router.include_router(project_categories_router)
 api_v1_router.include_router(project_tags_router)
 api_v1_router.include_router(me_router)
 api_v1_router.include_router(api_keys_router)
+api_v1_router.include_router(webhooks_router)
 api_v1_router.include_router(dashboard_router)
 api_v1_router.include_router(tasks_router)
 api_v1_router.include_router(boards_router)

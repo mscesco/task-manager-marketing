@@ -20,7 +20,7 @@ from app.db.models.collaboration import (
     TaskWatcher,
     TimeEntry,
 )
-from app.db.models.developer import ApiKey
+from app.db.models.developer import ApiKey, Webhook, WebhookDelivery
 from app.db.models.enums import (
     ColumnSemantic,
     PriorityLevel,
@@ -79,6 +79,8 @@ __all__ = [  # noqa: RUF022 -- agrupado por assunto, de proposito
     "NotificationMute",
     # Acesso pela API
     "ApiKey",
+    "Webhook",
+    "WebhookDelivery",
     # Freios de tentativa
     "RateLimitHit",
     # Solicitacoes (formulario publico)
