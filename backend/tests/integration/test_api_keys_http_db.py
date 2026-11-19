@@ -160,3 +160,15 @@ async def test_ate_dez_ativas(db) -> None:
         r = await cli.post("/api/v1/me/api-keys", json={"name": "Décima primeira"})
     assert r.status_code in (409, 422), r.text
     assert "10 chaves" in r.text
+
+
+async def test_referencia_so_para_quem_entrou_e_sem_rotas_de_sistema(db) -> None:
+    m = await _setup(db)
+    chave = await _chave(db, m["ger"], read_only=True)
+    async with cliente(db) as cli:
+        assert (await cli.get("/api/v1/dev/openapi")).status_code == 401
+        r = await cli.get("/api/v1/dev/openapi", headers=_h(chave))
+    assert r.status_code == 200
+    caminhos = r.json()["paths"]
+    assert "/api/v1/tasks" in caminhos
+    assert not any(p.startswith("/api/v1/system") for p in caminhos)

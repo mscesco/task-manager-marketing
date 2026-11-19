@@ -1,7 +1,6 @@
 # Spec 065 — Página de desenvolvedor: API, chaves e webhooks
 
-**Status:** rascunho de 19/11/2026. As decisões 1 a 6 são respostas dela; as
-marcadas **(padrão)** são propostas minhas, à espera do "ok" ou da troca.
+**Status:** aprovada por ela em 19/11/2026 (decisões 1 a 7 e os padrões) e entregue no PR #156.
 
 Pedido dela (19/11): "|FEAT| Página de desenvolvedor: instruções de API,
 webhooks e integrações externas".

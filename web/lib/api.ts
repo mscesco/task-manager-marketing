@@ -1735,6 +1735,42 @@ export async function pingWebhook(id: string): Promise<WebhookDelivery> {
   return api<WebhookDelivery>(`/api/v1/me/webhooks/${id}/ping`, { method: "POST" });
 }
 
+/** Endereço da API para os exemplos do guia: o configurado, ou o próprio site (proxy `/api`). */
+export function urlBaseDaApi(): string {
+  return API_URL || window.location.origin;
+}
+
+/** O OpenAPI da API, só para quem entrou e sem as rotas de sistema. */
+export async function getOpenApi(): Promise<OpenApi> {
+  return api<OpenApi>("/api/v1/dev/openapi");
+}
+
+export type OpenApiSchema = {
+  type?: string;
+  format?: string;
+  $ref?: string;
+  items?: OpenApiSchema;
+  anyOf?: OpenApiSchema[];
+  enum?: unknown[];
+  properties?: Record<string, OpenApiSchema>;
+  required?: string[];
+  description?: string;
+  title?: string;
+};
+
+export type OpenApiOperation = {
+  tags?: string[];
+  summary?: string;
+  description?: string;
+  parameters?: { name: string; in: string; required?: boolean; schema?: OpenApiSchema; description?: string }[];
+  requestBody?: { content?: Record<string, { schema?: OpenApiSchema }> };
+};
+
+export type OpenApi = {
+  paths: Record<string, Record<string, OpenApiOperation>>;
+  components?: { schemas?: Record<string, OpenApiSchema> };
+};
+
 
 // ---- Usuário logado, memoizado; limpa no clearTokens. O AppShell usa getMe() direto (revalida a sessão).
 let _me: CurrentUser | undefined; // undefined = ainda nao buscado

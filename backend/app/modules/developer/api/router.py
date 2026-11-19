@@ -7,10 +7,10 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Response, status
+from fastapi import APIRouter, Request, Response, status
 
 from app.core.deps import SessionDep, UoWDep
-from app.modules.auth.api.dependencies import ScreenLoginDep
+from app.modules.auth.api.dependencies import ScreenLoginDep, TenantContextDep
 from app.modules.developer.api.schemas import (
     ApiKeyCreatedResponse,
     ApiKeyCreateRequest,
@@ -126,3 +126,17 @@ async def testar_webhook(
     resposta = WebhookDeliveryResponse.model_validate(entrega)
     await uow.commit()
     return resposta
+
+
+dev_router = APIRouter(prefix="/dev", tags=["developer"])
+
+
+@dev_router.get("/openapi")
+async def referencia(request: Request, _: TenantContextDep) -> dict:
+    """O mapa da API para a aba Referência: só para quem entrou, sem as rotas
+    de sistema (as do n8n, por token). O `/docs` público segue desligado em produção."""
+    schema = request.app.openapi()
+    caminhos = {
+        p: ops for p, ops in schema.get("paths", {}).items() if not p.startswith("/api/v1/system")
+    }
+    return {**schema, "paths": caminhos}

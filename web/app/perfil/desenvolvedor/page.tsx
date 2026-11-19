@@ -6,15 +6,19 @@ import { useEffect, useState } from "react";
 import { ChevronLeft } from "lucide-react";
 import AppShell from "@/components/AppShell";
 import ChavesDeApi from "@/components/ChavesDeApi";
+import GuiaDaApi from "@/components/GuiaDaApi";
 import PageHeader from "@/components/PageHeader";
+import ReferenciaDaApi from "@/components/ReferenciaDaApi";
 import Tabs, { type Tab } from "@/components/Tabs";
 import WebhooksDoDev from "@/components/WebhooksDoDev";
 
-type Aba = "chaves" | "webhooks";
+type Aba = "guia" | "chaves" | "webhooks" | "referencia";
 
 const ABAS: readonly Tab<Aba>[] = [
+  { id: "guia", label: "Guia" },
   { id: "chaves", label: "Chaves de API" },
   { id: "webhooks", label: "Webhooks" },
+  { id: "referencia", label: "Referência" },
 ];
 
 function abaDoEndereco(): Aba {
@@ -44,8 +48,10 @@ export default function DesenvolvedorPage() {
         <PageHeader title="Desenvolvedor" />
         <Tabs tabs={ABAS} active={aba} onSelect={escolher} aria-label="Seções" group="dev" />
         <div role="tabpanel" aria-label={ABAS.find((a) => a.id === aba)?.label} className="pt-5">
+          {aba === "guia" && <GuiaDaApi irPara={escolher} />}
           {aba === "chaves" && <ChavesDeApi />}
           {aba === "webhooks" && <WebhooksDoDev />}
+          {aba === "referencia" && <ReferenciaDaApi />}
         </div>
       </div>
     </AppShell>
