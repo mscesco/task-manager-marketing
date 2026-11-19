@@ -51,6 +51,12 @@ FORA_POR_DESENHO: dict[tuple[str, str], str] = {
     ("post", "/api/v1/notifications/read-all"): "os proprios avisos",
     ("post", "/api/v1/notifications/{}/read"): "os proprios avisos",
     ("put", "/api/v1/me/notification-preferences"): "as proprias preferencias",
+    ("post", "/api/v1/me/api-keys"): "as proprias chaves; test_api_keys_http_db",
+    ("delete", "/api/v1/me/api-keys/{}"): "as proprias chaves; test_api_keys_http_db",
+    ("post", "/api/v1/me/webhooks"): "os proprios webhooks; test_webhooks_http_db",
+    ("patch", "/api/v1/me/webhooks/{}"): "os proprios webhooks; test_webhooks_http_db",
+    ("delete", "/api/v1/me/webhooks/{}"): "os proprios webhooks; test_webhooks_http_db",
+    ("post", "/api/v1/me/webhooks/{}/ping"): "os proprios webhooks; test_webhooks_http_db",
     # Ja anotados no topo da matriz.
     ("post", "/api/v1/bases/{}/redo"): "depende da pilha da pessoa, nao do papel",
     ("patch", "/api/v1/tasks/{}/comments/{}"): "autoria, nao permissao",

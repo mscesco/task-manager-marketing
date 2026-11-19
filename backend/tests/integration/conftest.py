@@ -215,6 +215,15 @@ def cliente(
 
 
 @pytest.fixture(autouse=True)
+def _webhook_nao_sai(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Sem isto, toda tarefa criada nos testes agendaria uma entrega numa sessao
+    de verdade. Quem testa a entrega troca o `_agendar` (test_webhooks_http_db)."""
+    from app.modules.developer.application import webhooks
+
+    monkeypatch.setattr(webhooks, "_agendar", lambda coro: coro.close())
+
+
+@pytest.fixture(autouse=True)
 def _limpa_o_app_compartilhado() -> Iterator[None]:
     yield
     global _clientes_abertos

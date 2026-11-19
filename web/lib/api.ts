@@ -1638,6 +1638,139 @@ export async function deleteProjectLabel(kind: ProjectLabelKind, id: string): Pr
   await api<void>(`/api/v1/project-${kind}/${id}`, { method: "DELETE" });
 }
 
+// ---- Chaves de API (Spec 065): da própria pessoa, só com o login da tela.
+
+export type ApiKey = {
+  id: string;
+  name: string;
+  /** O começo da chave (`tm_a1b2c3d`), para reconhecer qual é. */
+  prefix: string;
+  read_only: boolean;
+  expires_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+};
+
+/** Validade em dias; `null` = sem validade. */
+export type ApiKeyDays = 30 | 90 | 365 | null;
+
+export async function listApiKeys(): Promise<ApiKey[]> {
+  return api<ApiKey[]>("/api/v1/me/api-keys");
+}
+
+/** A resposta traz a chave inteira (`key`), que não aparece de novo. */
+export async function createApiKey(input: {
+  name: string;
+  read_only: boolean;
+  days: ApiKeyDays;
+}): Promise<ApiKey & { key: string }> {
+  return api<ApiKey & { key: string }>("/api/v1/me/api-keys", { method: "POST", body: input });
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  await api<void>(`/api/v1/me/api-keys/${id}`, { method: "DELETE" });
+}
+
+// ---- Webhooks (Spec 065): da própria pessoa, só com o login da tela.
+
+export type WebhookEvent =
+  | "task.created"
+  | "task.moved"
+  | "solicitation.created"
+  | "solicitation.status_changed";
+
+export type Webhook = {
+  id: string;
+  url: string;
+  team_id: string;
+  board_id: string | null;
+  events: WebhookEvent[];
+  is_active: boolean;
+  consecutive_failures: number;
+  created_at: string;
+};
+
+export type WebhookDelivery = {
+  id: string;
+  event: WebhookEvent | "ping";
+  /** `null` = o destino nem respondeu. */
+  status_code: number | null;
+  error: string | null;
+  duration_ms: number;
+  delivered_at: string;
+};
+
+export async function listWebhooks(): Promise<Webhook[]> {
+  return api<Webhook[]>("/api/v1/me/webhooks");
+}
+
+/** A resposta traz o segredo da assinatura (`secret`), que não aparece de novo. */
+export async function createWebhook(input: {
+  url: string;
+  team_id: string;
+  board_id: string | null;
+  events: WebhookEvent[];
+}): Promise<Webhook & { secret: string }> {
+  return api<Webhook & { secret: string }>("/api/v1/me/webhooks", { method: "POST", body: input });
+}
+
+/** `is_active: true` religa e zera a conta de falhas. */
+export async function updateWebhook(
+  id: string,
+  input: { url?: string; events?: WebhookEvent[]; is_active?: boolean },
+): Promise<Webhook> {
+  return api<Webhook>(`/api/v1/me/webhooks/${id}`, { method: "PATCH", body: input });
+}
+
+export async function deleteWebhook(id: string): Promise<void> {
+  await api<void>(`/api/v1/me/webhooks/${id}`, { method: "DELETE" });
+}
+
+export async function listWebhookDeliveries(id: string): Promise<WebhookDelivery[]> {
+  return api<WebhookDelivery[]>(`/api/v1/me/webhooks/${id}/deliveries`);
+}
+
+/** Manda um `ping` agora e devolve como foi. */
+export async function pingWebhook(id: string): Promise<WebhookDelivery> {
+  return api<WebhookDelivery>(`/api/v1/me/webhooks/${id}/ping`, { method: "POST" });
+}
+
+/** Endereço da API para os exemplos do guia: o configurado, ou o próprio site (proxy `/api`). */
+export function urlBaseDaApi(): string {
+  return API_URL || window.location.origin;
+}
+
+/** O OpenAPI da API, só para quem entrou e sem as rotas de sistema. */
+export async function getOpenApi(): Promise<OpenApi> {
+  return api<OpenApi>("/api/v1/dev/openapi");
+}
+
+export type OpenApiSchema = {
+  type?: string;
+  format?: string;
+  $ref?: string;
+  items?: OpenApiSchema;
+  anyOf?: OpenApiSchema[];
+  enum?: unknown[];
+  properties?: Record<string, OpenApiSchema>;
+  required?: string[];
+  description?: string;
+  title?: string;
+};
+
+export type OpenApiOperation = {
+  tags?: string[];
+  summary?: string;
+  description?: string;
+  parameters?: { name: string; in: string; required?: boolean; schema?: OpenApiSchema; description?: string }[];
+  requestBody?: { content?: Record<string, { schema?: OpenApiSchema }> };
+};
+
+export type OpenApi = {
+  paths: Record<string, Record<string, OpenApiOperation>>;
+  components?: { schemas?: Record<string, OpenApiSchema> };
+};
+
 
 // ---- Usuário logado, memoizado; limpa no clearTokens. O AppShell usa getMe() direto (revalida a sessão).
 let _me: CurrentUser | undefined; // undefined = ainda nao buscado
