@@ -133,7 +133,6 @@ function project(id: string, team_id: string | null): Project {
     title: `Projeto ${id}`,
     description: "",
     status: "ACTIVE" as Project["status"],
-    priority: "MEDIUM",
     start_date: null,
     due_date: null,
     completed_at: null,

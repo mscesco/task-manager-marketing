@@ -321,8 +321,6 @@ export default function ResumoDoProjeto({
                 <span>{dataParaTela(project.due_date)}</span>
               </>
             )}
-            <span className="text-ink-faint">Prioridade</span>
-            <span>{PRIORITY_LABEL[project.priority] || project.priority}</span>
           </div>
         </Cartao>
       </Entrada>

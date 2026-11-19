@@ -69,7 +69,6 @@ function projeto(over: Partial<Project> = {}): Project {
     title: "Vestibular 2027",
     description: "",
     status: "ACTIVE",
-    priority: "MEDIUM",
     start_date: null,
     due_date: null,
     team_id: "team-1",

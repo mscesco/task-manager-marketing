@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import SessionDep, UoWDep
 from app.db.models import Project
-from app.db.models.enums import PriorityLevel, ProjectStatus
+from app.db.models.enums import ProjectStatus
 from app.modules.auth.api.dependencies import TenantContextDep, require_permission
 from app.modules.tasks.api.schemas import (
     ProjectCreateRequest,
@@ -61,7 +61,6 @@ async def list_projects(
     page: int = Query(1, ge=1),
     size: int = Query(20, ge=1, le=100),
     project_status: ProjectStatus | None = Query(None, alias="status"),
-    priority: PriorityLevel | None = None,
     include_archived: bool = False,
     team_id: uuid.UUID | None = Query(
         None,
@@ -79,7 +78,6 @@ async def list_projects(
         params=PageParams(page=page, size=size),
         filters=ProjectFilters(
             status=project_status,
-            priority=priority,
             include_archived=include_archived,
             team_id=team_id,
         ),
@@ -129,7 +127,6 @@ async def create_project(
             team_id=payload.team_id,
             description=payload.description,
             status=payload.status,
-            priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
             category_id=payload.category_id,
@@ -161,7 +158,6 @@ async def update_project(
             title=payload.title,
             description=payload.description,
             status=payload.status,
-            priority=payload.priority,
             start_date=payload.start_date,
             due_date=payload.due_date,
             set_category="category_id" in payload.model_fields_set,

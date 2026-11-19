@@ -34,7 +34,6 @@ import {
   type RascunhoLink,
 } from "@/lib/links";
 import {
-  PRIORITY_LABEL,
   PROJECT_STATUS,
   PROJECT_STATUS_COLOR,
   PROJECT_STATUS_LABEL,
@@ -43,7 +42,6 @@ import {
 import Loading from "@/components/Loading";
 import { withTeam } from "@/lib/activeTeam";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
-const PRIORITY_KEYS = ["LOW", "MEDIUM", "HIGH", "URGENT"];
 
 // YYYY-MM-DD -> DD/MM/YYYY sem passar por Date (evita o parse UTC que
 // erra o dia em UTC-3). String pura, zero timezone.
@@ -160,7 +158,6 @@ function Projeto() {
         />
         {PROJECT_STATUS_LABEL[project.status] || project.status}
       </span>
-      <span>Prioridade: {PRIORITY_LABEL[project.priority] || project.priority}</span>
       {project.start_date && <span>Início: {dataBR(project.start_date)}</span>}
       {project.due_date && <span>Prazo: {dataBR(project.due_date)}</span>}
       {/* Os links do projeto, só com o nome, na mesma linha da meta. */}
@@ -315,7 +312,6 @@ function EditPanel({
   const [tentouSalvar, setTentouSalvar] = useState(false);
   const [description, setDescription] = useState(project.description ?? "");
   const [status, setStatus] = useState<ProjectStatus>(project.status);
-  const [priority, setPriority] = useState<string>(project.priority || "MEDIUM");
   const [startDate, setStartDate] = useState(project.start_date ?? "");
   const [dueDate, setDueDate] = useState(project.due_date ?? "");
   const [salvando, setSalvando] = useState(false);
@@ -344,7 +340,6 @@ function EditPanel({
         title: t,
         description,
         status,
-        priority,
         ...(startDate ? { start_date: startDate } : {}),
         ...(dueDate ? { due_date: dueDate } : {}),
       };
@@ -417,19 +412,6 @@ function EditPanel({
           >
             {PROJECT_STATUS.map((s) => (
               <option key={s.key} value={s.key}>{s.label}</option>
-            ))}
-          </select>
-        </div>
-        <div className="field" style={{ flex: 1, minWidth: 160 }}>
-          <span className="label">Prioridade</span>
-          <select
-            className="input"
-            value={priority}
-            disabled={salvando}
-            onChange={(e) => setPriority(e.target.value)}
-          >
-            {PRIORITY_KEYS.map((p) => (
-              <option key={p} value={p}>{PRIORITY_LABEL[p] || p}</option>
             ))}
           </select>
         </div>

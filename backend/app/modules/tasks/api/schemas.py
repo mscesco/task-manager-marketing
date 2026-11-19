@@ -63,7 +63,6 @@ class ProjectResponse(BaseModel):
     title: str
     description: str
     status: ProjectStatus
-    priority: PriorityLevel
     start_date: date | None
     due_date: date | None
     completed_at: datetime | None
@@ -95,7 +94,6 @@ class ProjectCreateRequest(BaseModel):
     team_id: uuid.UUID
     description: str = Field(default="", max_length=_DESCRIPTION_MAX)
     status: ProjectStatus = ProjectStatus.PLANNING
-    priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
     category_id: uuid.UUID | None = None
@@ -108,7 +106,6 @@ class ProjectUpdateRequest(BaseModel):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=_DESCRIPTION_MAX)
     status: ProjectStatus | None = None
-    priority: PriorityLevel | None = None
     start_date: date | None = None
     due_date: date | None = None
     #: `null` tira a categoria; ausente nao mexe (o router olha o `model_fields_set`).

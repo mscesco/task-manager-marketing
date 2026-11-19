@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.core.tenant import require_tenant
 from app.db.models import Project, Task
-from app.db.models.enums import PriorityLevel, ProjectStatus
+from app.db.models.enums import ProjectStatus
 from app.modules.auth.domain import team_scope
 from app.modules.tasks.application.project_label_service import (
     set_category,
@@ -45,7 +45,6 @@ class CreateProjectCommand:
     team_id: uuid.UUID
     description: str = ""
     status: ProjectStatus = ProjectStatus.PLANNING
-    priority: PriorityLevel = PriorityLevel.MEDIUM
     start_date: date | None = None
     due_date: date | None = None
     category_id: uuid.UUID | None = None
@@ -59,7 +58,6 @@ class UpdateProjectCommand:
     title: str | None = None
     description: str | None = None
     status: ProjectStatus | None = None
-    priority: PriorityLevel | None = None
     start_date: date | None = None
     due_date: date | None = None
     #: `category_id` so vale com `set_category` (None ali tira a categoria).
@@ -73,7 +71,6 @@ class ProjectFilters:
     """Filtros de listagem."""
 
     status: ProjectStatus | None = None
-    priority: PriorityLevel | None = None
     #: Nenhuma rota grava mais `is_archived=True`; o filtro segue porque o front manda.
     include_archived: bool = False
     #: Recorte por time: casa o time e seus descendentes. ``None`` = so a lente.
@@ -126,7 +123,6 @@ class ProjectService:
             title=title,
             description=command.description,
             status=command.status,
-            priority=command.priority,
             start_date=command.start_date,
             due_date=command.due_date,
             created_by=tenant.user_id,
@@ -183,8 +179,6 @@ class ProjectService:
         extra_filters = []
         if filters.status is not None:
             extra_filters.append(Project.status == filters.status)
-        if filters.priority is not None:
-            extra_filters.append(Project.priority == filters.priority)
         if not filters.include_archived:
             extra_filters.append(Project.is_archived.is_(False))
 
@@ -243,9 +237,6 @@ class ProjectService:
 
         if command.description is not None:
             project.description = command.description
-
-        if command.priority is not None:
-            project.priority = command.priority
 
         if command.set_category:
             await set_category(self._session, project, command.category_id)

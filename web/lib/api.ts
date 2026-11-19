@@ -1419,7 +1419,6 @@ export type Project = {
   title: string;
   description: string;
   status: ProjectStatus;
-  priority: string;
   start_date: string | null;
   due_date: string | null;
   completed_at: string | null;
@@ -1551,7 +1550,6 @@ export type ProjectCreateInput = {
   title: string;
   description?: string;
   status?: ProjectStatus;
-  priority?: string;
   start_date?: string | null;
   due_date?: string | null;
   team_id?: string; // omitido -> resolve o time raiz
@@ -1567,7 +1565,6 @@ export async function createProject(input: ProjectCreateInput): Promise<Project>
       team_id,
       description: input.description ?? "",
       ...(input.status ? { status: input.status } : {}),
-      ...(input.priority ? { priority: input.priority } : {}),
       ...(input.start_date !== undefined ? { start_date: input.start_date } : {}),
       ...(input.due_date !== undefined ? { due_date: input.due_date } : {}),
     },
@@ -1578,7 +1575,6 @@ export type ProjectUpdateInput = {
   title?: string;
   description?: string;
   status?: ProjectStatus;
-  priority?: string;
   start_date?: string | null;
   due_date?: string | null;
 };

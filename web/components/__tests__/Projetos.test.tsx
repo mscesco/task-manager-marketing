@@ -60,7 +60,6 @@ function projeto(over: Partial<Project> & { id: string; title: string }): Projec
   return {
     description: "",
     status: "PLANNING",
-    priority: "MEDIUM",
     start_date: null,
     due_date: null,
     completed_at: null,

@@ -93,12 +93,6 @@ class Project(
         server_default=ProjectStatus.PLANNING.value,
         default=ProjectStatus.PLANNING,
     )
-    priority: Mapped[PriorityLevel] = mapped_column(
-        Enum(PriorityLevel, name="priority_level", create_type=False),
-        nullable=False,
-        server_default=PriorityLevel.MEDIUM.value,
-        default=PriorityLevel.MEDIUM,
-    )
     start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(

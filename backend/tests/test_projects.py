@@ -12,4 +12,3 @@ def test_project_filters_default_excludes_archived() -> None:
     f = ProjectFilters()
     assert f.include_archived is False
     assert f.status is None
-    assert f.priority is None

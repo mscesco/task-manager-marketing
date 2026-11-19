@@ -40,7 +40,6 @@ describe("createProject: o corpo que realmente sai", () => {
       title: "Campanha",
       description: "corpo",
       status: "ACTIVE",
-      priority: "HIGH",
       start_date: "2026-08-01",
       due_date: "2026-09-01",
       team_id: "team-crm",
@@ -50,13 +49,12 @@ describe("createProject: o corpo que realmente sai", () => {
       team_id: "team-crm",
       description: "corpo",
       status: "ACTIVE",
-      priority: "HIGH",
       start_date: "2026-08-01",
       due_date: "2026-09-01",
     });
   });
 
-  it("só o mínimo: status, prioridade e datas ausentes não viajam", async () => {
+  it("só o mínimo: status e datas ausentes não viajam", async () => {
     await createProject({ title: "Campanha", team_id: "team-crm" });
     expect(corpoEnviado()).toEqual({
       title: "Campanha",
