@@ -180,7 +180,7 @@ function Projeto() {
   // O lápis e o que fica abaixo do cabeçalho são os mesmos nas duas vistas:
   // no resumo a página os desenha; no quadro, entrega ao `Board`.
   const lapis =
-    editavel && !editando ? (
+    editavel ? (
       <button
         type="button"
         className="btn btn-ghost"
@@ -380,11 +380,10 @@ function EditPanel({
     onCancel();
   }
 
-  // Ao fechar, o foco volta para quem abriu (o lápis).
-  useEffect(() => {
-    const quemAbriu = document.activeElement as HTMLElement | null;
-    return () => quemAbriu?.focus?.();
-  }, []);
+  // Ao fechar, o foco volta para quem abriu (o lápis). Lido na renderização:
+  // num efeito já seria o Título, que o `autoFocus` focou antes.
+  const [quemAbriu] = useState(() => document.activeElement as HTMLElement | null);
+  useEffect(() => () => quemAbriu?.focus?.(), [quemAbriu]);
 
   const caixaRef = useRef<HTMLDivElement>(null);
   // O Tab circula dentro da caixa: sem isto, ele sai para a página escurecida atrás.

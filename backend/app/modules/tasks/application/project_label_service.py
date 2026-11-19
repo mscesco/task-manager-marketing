@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
+from datetime import UTC, datetime
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -237,6 +238,8 @@ async def set_tags(
         ProjectTagLink(workspace_id=project.workspace_id, project_id=project.id, tag_id=t)
         for t in ids
     )
+    # As tags moram em outra tabela: sem isto, o "atualizado em" do projeto nao muda.
+    project.updated_at = datetime.now(UTC)
     await session.flush()
 
 

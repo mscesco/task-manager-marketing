@@ -199,3 +199,13 @@ async def test_apagar_categoria_e_tag_solta_o_projeto(db) -> None:
         projeto = (await cli.get(url)).json()
     assert projeto["category"] is None
     assert projeto["tags"] == []
+
+
+async def test_trocar_so_as_tags_atualiza_o_atualizado_em(db) -> None:
+    m = await _setup(db)
+    async with cliente(db, m["ger"]) as cli:
+        tag = (await _criar(cli, "tags", m["marketing"], "Feira")).json()
+        url = f"/api/v1/projects/{m['projeto']}"
+        antes = (await cli.get(url)).json()["updated_at"]
+        depois = (await cli.patch(url, json={"tag_ids": [tag["id"]]})).json()["updated_at"]
+    assert depois > antes

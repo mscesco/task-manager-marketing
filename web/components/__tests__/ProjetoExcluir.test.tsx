@@ -195,3 +195,18 @@ describe("Projeto -- excluir", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 });
+
+describe("Projeto -- editar em modal", () => {
+  it("fechar devolve o foco ao lápis, e não à página", async () => {
+    montar();
+    const lapis = await screen.findByLabelText("Editar projeto");
+    lapis.focus();
+    fireEvent.click(lapis);
+    await screen.findByRole("dialog", { name: "Editar projeto" });
+    // O `autoFocus` levou o foco para o Título: é dele que o foco tem de voltar.
+    expect(document.activeElement).not.toBe(lapis);
+    fireEvent.click(screen.getByRole("button", { name: "Fechar" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(lapis);
+  });
+});
