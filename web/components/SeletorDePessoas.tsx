@@ -12,7 +12,8 @@ import Avatar from "@/components/Avatar";
 import { nomeCurto } from "@/lib/people";
 import type { PessoaOferecida } from "@/lib/seguidores";
 
-type Posicao = { top: number; left: number; maxAltura: number };
+// Para cima, o painel se prende pelo pé: a busca encolhe a lista e ele fica colado no `+`.
+type Posicao = { top?: number; bottom?: number; left: number; maxAltura: number };
 
 const LARGURA = 300;
 const MARGEM = 12;
@@ -66,7 +67,7 @@ export default function SeletorDePessoas({
     const maxAltura = Math.max(160, Math.min(360, paraCima ? acima : abaixo));
     setPos({
       left: Math.max(MARGEM, Math.min(r.left, window.innerWidth - LARGURA - MARGEM)),
-      top: paraCima ? Math.max(MARGEM, r.top - maxAltura - 6) : r.bottom + 6,
+      ...(paraCima ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
       maxAltura,
     });
   }, []);
@@ -146,7 +147,8 @@ export default function SeletorDePessoas({
           className="fixed z-[70] rounded-lg border border-border bg-surface p-2 shadow-card"
           // Posição e altura medidas em runtime (por isso inline); invisível até medir.
           style={{
-            top: pos?.top ?? 0,
+            top: pos ? pos.top : 0,
+            bottom: pos?.bottom,
             left: pos?.left ?? 0,
             width: LARGURA,
             maxWidth: "calc(100vw - 24px)",
