@@ -47,6 +47,8 @@ class TenantContext:
     team_tree: tuple[TeamNode, ...] = ()
     #: Papel na organizacao, que nao depende de time. `None` = nenhum.
     org_role: str | None = None
+    #: Entrou por chave de API, nao pelo login da tela (Spec 065).
+    via_api_key: bool = False
 
     def has_permission_in(
         self, permission: str, team_id: uuid.UUID | None

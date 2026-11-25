@@ -10,7 +10,7 @@ import uuid
 from collections.abc import Callable
 from typing import Annotated
 
-from fastapi import Depends
+from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.deps import SessionDep
@@ -25,6 +25,7 @@ from app.modules.auth.infrastructure.security import (
     decode_token,
     token_version_of,
 )
+from app.modules.developer.application import api_keys
 from app.modules.users.infrastructure.membership_repository import (
     MembershipRepository,
 )
@@ -38,24 +39,36 @@ from app.shared.exceptions.base import (
 # para a resposta seguir o formato de erro padrao da app.
 _bearer_scheme = HTTPBearer(auto_error=False)
 
+#: O que uma chave "só leitura" pode chamar.
+_SO_LEITURA = frozenset({"GET", "HEAD", "OPTIONS"})
+
 
 async def get_tenant_context(
+    request: Request,
     credentials: Annotated[
         HTTPAuthorizationCredentials | None, Depends(_bearer_scheme)
     ],
     session: SessionDep,
 ) -> TenantContext:
-    """Resolve o TenantContext da requisicao e popula o ContextVar."""
+    """Resolve o TenantContext da requisicao e popula o ContextVar.
+
+    Aceita o token do login ou uma chave de API (`tm_...`, Spec 065). A chave
+    passa pelas mesmas conferencias de pessoa ativa e permissao.
+    """
     if credentials is None or not credentials.credentials:
         raise AuthenticationError("Credenciais ausentes.")
 
-    payload = decode_token(credentials.credentials, expected_type=TokenType.ACCESS)
-
-    try:
-        user_id = uuid.UUID(payload["sub"])
-        workspace_id = uuid.UUID(payload["ws"])
-    except (KeyError, ValueError) as exc:
-        raise AuthenticationError("Token malformado.") from exc
+    chave = None
+    if credentials.credentials.startswith(api_keys.PREFIXO):
+        chave = await api_keys.reconhecer(session, credentials.credentials)
+        user_id, workspace_id = chave.user_id, chave.workspace_id
+    else:
+        payload = decode_token(credentials.credentials, expected_type=TokenType.ACCESS)
+        try:
+            user_id = uuid.UUID(payload["sub"])
+            workspace_id = uuid.UUID(payload["ws"])
+        except (KeyError, ValueError) as exc:
+            raise AuthenticationError("Token malformado.") from exc
 
     membership_repo = MembershipRepository(session)
     membership = await membership_repo.get_membership(
@@ -67,13 +80,16 @@ async def get_tenant_context(
         raise AuthenticationError("Usuario inativo.")
 
     # Token emitido antes de troca de senha, reset ou logout morreu.
-    if token_version_of(payload) != membership.token_version:
+    if chave is None and token_version_of(payload) != membership.token_version:
         raise AuthenticationError("Sessao revogada. Faca login novamente.")
 
     # Gate de troca obrigatoria: toda rota de negocio passa aqui. As rotas que
     # precisam funcionar com a pendencia usam get_user_allowing_pending.
     if membership.must_change_password:
         raise PasswordChangeRequiredError()
+
+    if chave is not None and chave.read_only and request.method not in _SO_LEITURA:
+        raise AuthorizationError("Esta chave de API é só de leitura.")
 
     # Permissao = papeis de time (com o time) + papel de organizacao (sem time).
     memberships = tuple(
@@ -96,6 +112,7 @@ async def get_tenant_context(
         memberships=memberships,
         team_tree=team_tree,
         org_role=membership.org_role,
+        via_api_key=chave is not None,
     )
 
     # Escopo da task asyncio da requisicao; nao precisa reset.
@@ -168,6 +185,29 @@ def require_any_permission(*permissions: str) -> Callable[..., TenantContext]:
 
 
 TenantContextDep = Annotated[TenantContext, Depends(get_tenant_context)]
+
+
+def require_screen_login(
+    context: Annotated[TenantContext, Depends(get_tenant_context)],
+) -> TenantContext:
+    """So o login da tela: chave de API nao cria chave (uma chave vazada criaria
+    outra para sobreviver a revogacao)."""
+    if context.via_api_key:
+        raise AuthorizationError("Isto exige o login da tela, não uma chave de API.")
+    return context
+
+
+ScreenLoginDep = Annotated[TenantContext, Depends(require_screen_login)]
+
+
+def key_only_reads(
+    request: Request,
+    context: Annotated[TenantContext, Depends(get_tenant_context)],
+) -> None:
+    """Para routers de conta: chave de API consulta, nao altera. Criar pessoa ou
+    resetar senha devolve uma senha provisoria, com a qual a chave se perpetuaria."""
+    if context.via_api_key and request.method not in _SO_LEITURA:
+        raise AuthorizationError("Alterar pessoas exige o login da tela, não uma chave de API.")
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 
