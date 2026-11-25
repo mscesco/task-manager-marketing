@@ -31,6 +31,7 @@ from app.modules.auth.infrastructure.security import (
     generate_temporary_password,
     hash_password,
 )
+from app.modules.developer.application import api_keys
 from app.modules.notifications.application.notification_emitter import (
     NotificationEmitter,
 )
@@ -369,7 +370,8 @@ class MemberService:
         return ProvisionedMember(user=user, temporary_password=temporary_password)
 
     async def reset_password(self, *, user_id: uuid.UUID) -> ProvisionedMember:
-        """Gera nova senha provisoria, exige a troca e derruba as sessoes ativas.
+        """Gera nova senha provisoria, exige a troca, derruba as sessoes ativas e revoga
+        as chaves de API.
 
         Vale para a propria conta (sem checar alcance). Conta desativada: 409.
         """
@@ -397,6 +399,9 @@ class MemberService:
         user.password_expires_at = _temp_password_expiry()
         # Derruba as sessoes ativas (resposta a conta vazada).
         user.token_version += 1
+        await api_keys.revogar_todas(
+            self._session, user_id=user_id, workspace_id=require_tenant().workspace_id
+        )
 
         logger.info(
             "member.password_reset",

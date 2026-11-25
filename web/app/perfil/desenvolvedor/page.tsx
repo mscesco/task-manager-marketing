@@ -1,5 +1,5 @@
 "use client";
-// Página de desenvolvedor (Spec 065): guia da API, chaves, webhooks e referência.
+// Página de desenvolvedor (Spec 065): guia da API, chaves e referência.
 // Mora dentro do perfil; a aba aberta fica no `#` do endereço, para dar link direto.
 
 import { useEffect, useState } from "react";
@@ -10,14 +10,12 @@ import GuiaDaApi from "@/components/GuiaDaApi";
 import PageHeader from "@/components/PageHeader";
 import ReferenciaDaApi from "@/components/ReferenciaDaApi";
 import Tabs, { type Tab } from "@/components/Tabs";
-import WebhooksDoDev from "@/components/WebhooksDoDev";
 
-type Aba = "guia" | "chaves" | "webhooks" | "referencia";
+type Aba = "guia" | "chaves" | "referencia";
 
 const ABAS: readonly Tab<Aba>[] = [
   { id: "guia", label: "Guia" },
   { id: "chaves", label: "Chaves de API" },
-  { id: "webhooks", label: "Webhooks" },
   { id: "referencia", label: "Referência" },
 ];
 
@@ -50,7 +48,6 @@ export default function DesenvolvedorPage() {
         <div role="tabpanel" aria-label={ABAS.find((a) => a.id === aba)?.label} className="pt-5">
           {aba === "guia" && <GuiaDaApi irPara={escolher} />}
           {aba === "chaves" && <ChavesDeApi />}
-          {aba === "webhooks" && <WebhooksDoDev />}
           {aba === "referencia" && <ReferenciaDaApi />}
         </div>
       </div>

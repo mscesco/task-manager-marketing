@@ -22,7 +22,6 @@ from app.db.models import (
     Team,
 )
 from app.db.unit_of_work import UnitOfWork
-from app.modules.developer.application import webhooks
 from app.modules.solicitations.domain.briefing import (
     briefing,
     titulo_da_tarefa,
@@ -275,11 +274,6 @@ class SolicitationService:
         await uow.commit()
         for solicitation in criadas:
             await self.session.refresh(solicitation)
-            webhooks.emitir(
-                await webhooks.evento_de_solicitacao(
-                    self.session, "solicitation.created", solicitation
-                )
-            )
         return criadas
 
     # ------------------------------------------------------------
@@ -542,9 +536,7 @@ class SolicitationService:
         solicitation.task_id = tarefa.id
         solicitation.task_created_at = datetime.now(UTC)
         solicitation.task_marked_by_user_id = tenant.user_id
-        evento = await webhooks.evento_de_tarefa(self.session, "task.created", tarefa)
         await uow.commit()
-        webhooks.emitir(evento)
         await self.session.refresh(solicitation)
         return solicitation, tarefa
 
@@ -676,17 +668,6 @@ class SolicitationService:
             return
         await aviso_de_status.avisar(aviso)
 
-    async def _webhook_de_status(self, solicitation: Solicitation, anterior: str) -> None:
-        """Depois do commit: os webhooks de quem pediu "mudou de status"."""
-        webhooks.emitir(
-            await webhooks.evento_de_solicitacao(
-                self.session,
-                "solicitation.status_changed",
-                solicitation,
-                status_anterior=anterior,
-            )
-        )
-
     async def andar(
         self, uow: UnitOfWork, command: AndarCommand
     ) -> Solicitation:
@@ -721,7 +702,6 @@ class SolicitationService:
         await uow.commit()
         await self.session.refresh(solicitation)
         await self._avisar_status(aviso)
-        await self._webhook_de_status(solicitation, anterior)
         return solicitation
 
     async def review(
@@ -761,5 +741,4 @@ class SolicitationService:
         await uow.commit()
         await self.session.refresh(solicitation)
         await self._avisar_status(aviso)
-        await self._webhook_de_status(solicitation, anterior)
         return solicitation

@@ -217,7 +217,7 @@ function Perfil() {
             <div className="flex min-w-0 flex-1 flex-col gap-1">
               <h2 className="m-0 text-md font-semibold">Desenvolvedor</h2>
               <p className="muted m-0 text-sm">
-                Chaves de API, webhooks e o guia para ligar o gerenciador a outros sistemas.
+                Chaves de API e o guia para ligar o gerenciador a outros sistemas.
               </p>
             </div>
             <a href="/perfil/desenvolvedor" className="btn">

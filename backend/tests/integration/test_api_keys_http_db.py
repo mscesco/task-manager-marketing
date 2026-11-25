@@ -144,6 +144,42 @@ async def test_chave_nao_mexe_em_chave(db) -> None:
     assert r.status_code == 403
 
 
+async def test_chave_consulta_pessoas_mas_nao_altera(db) -> None:
+    """Criar conta devolve senha provisória: com ela a chave se perpetuaria."""
+    m = await _setup(db)
+    chave = await _chave(db, m["ger"])
+    nova = {
+        "name": "Nova",
+        "email": "nova@t.dev",
+        "team_id": str(m["marketing"]),
+        "role": "MANAGER",
+    }
+    async with cliente(db) as cli:
+        assert (await cli.get("/api/v1/members", headers=_h(chave))).status_code == 200
+        r = await cli.post("/api/v1/members", json=nova, headers=_h(chave))
+        assert r.status_code == 403 and "login da tela" in r.text
+        reset = f"/api/v1/members/{m['outra'].user_id}/reset-password"
+        r = await cli.post(reset, headers=_h(chave))
+        assert r.status_code == 403 and "login da tela" in r.text
+    assert await db.scalar(select(User.id).where(User.email == "nova@t.dev")) is None
+
+
+async def test_reset_de_senha_revoga_as_chaves_da_conta(db) -> None:
+    m = await _setup(db)
+    chave = await _chave(db, m["ger"])
+    de_outra = await _chave(db, m["outra"])
+    async with cliente(db, m["ger"]) as cli:
+        r = await cli.post(f"/api/v1/members/{m['ger'].user_id}/reset-password")
+        assert r.status_code == 200, r.text
+    # Sem a troca pendente, para provar que o 401 é da revogação.
+    await db.execute(
+        update(User).where(User.id == m["ger"].user_id).values(must_change_password=False)
+    )
+    async with cliente(db) as cli:
+        assert (await cli.get("/api/v1/me/assignments", headers=_h(chave))).status_code == 401
+        assert (await cli.get("/api/v1/me/assignments", headers=_h(de_outra))).status_code == 200
+
+
 async def test_nao_revoga_a_chave_de_outra_pessoa(db) -> None:
     m = await _setup(db)
     await _chave(db, m["outra"])

@@ -15,6 +15,7 @@ from app.core.deps import SessionDep, UoWDep
 from app.db.models import User
 from app.modules.auth.api.dependencies import (
     TenantContextDep,
+    key_only_reads,
     require_any_permission,
     require_permission,
 )
@@ -38,7 +39,9 @@ from app.modules.users.application.member_service import (
     MemberService,
 )
 
-router = APIRouter(prefix="/members", tags=["members"])
+router = APIRouter(
+    prefix="/members", tags=["members"], dependencies=[Depends(key_only_reads)]
+)
 
 
 @router.get("", response_model=MemberListResponse)

@@ -113,6 +113,21 @@ async def revogar(session: AsyncSession, ctx: TenantContext, key_id: uuid.UUID) 
     await session.flush()
 
 
+async def revogar_todas(
+    session: AsyncSession, *, user_id: uuid.UUID, workspace_id: uuid.UUID
+) -> None:
+    """No reset de senha por quem administra: a conta pode ter sido invadida."""
+    await session.execute(
+        update(ApiKey)
+        .where(
+            ApiKey.workspace_id == workspace_id,
+            ApiKey.user_id == user_id,
+            ApiKey.revoked_at.is_(None),
+        )
+        .values(revoked_at=datetime.now(UTC))
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ChaveReconhecida:
     user_id: uuid.UUID

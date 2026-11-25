@@ -1,6 +1,7 @@
-# Spec 065 — Página de desenvolvedor: API, chaves e webhooks
+# Spec 065 — Página de desenvolvedor: API e chaves
 
 **Status:** aprovada por ela em 19/11/2026 (decisões 1 a 7 e os padrões) e entregue no PR #156.
+**25/11:** os webhooks saíram da entrega, a pedido dela. Fica só a API.
 
 Pedido dela (19/11): "|FEAT| Página de desenvolvedor: instruções de API,
 webhooks e integrações externas".
@@ -18,18 +19,13 @@ webhooks e integrações externas".
 
 ## Decisões (19/11, dela)
 
-1. **Tudo:** guia, chaves de API e webhooks configuráveis.
-2. **Todos usam.** Cada pessoa cria as próprias chaves e webhooks, que agem
-   com as permissões **dela**.
+1. Guia, chaves de API e referência.
+2. **Todos usam.** Cada pessoa cria as próprias chaves, que agem com as
+   permissões **dela**.
 3. **Chave só leitura ou leitura e escrita**, escolhido ao criar.
 4. **Validade escolhida ao criar:** 30, 90 (padrão) ou 365 dias, ou sem
    validade.
-5. **Webhook só recebe o que o dono vê:** escolhe um time (e, se quiser, um
-   quadro) entre os que enxerga. Eventos: **tarefa criada**, **tarefa
-   movida de coluna** (inclui concluir), **solicitação recebida** e
-   **solicitação mudou de status**.
-6. **Uma tentativa só** por evento; a falha fica no histórico.
-7. Mora **dentro do perfil**; a referência das rotas é **gerada da própria
+5. Mora **dentro do perfil**; a referência das rotas é **gerada da própria
    API** e só aparece para quem entrou.
 
 ## O que entrega
@@ -39,7 +35,7 @@ webhooks e integrações externas".
 No `/perfil`, um cartão novo **"Desenvolvedor"** com um texto curto e o botão
 **"Abrir"**, que leva a `/perfil/desenvolvedor` **(padrão: página própria,
 porque o guia e a referência são longos demais para um cartão)**. A página
-tem quatro abas: **Guia**, **Chaves de API**, **Webhooks** e **Referência**.
+tem três abas: **Guia**, **Chaves de API** e **Referência**.
 
 ### Chaves de API
 
@@ -53,44 +49,22 @@ tem quatro abas: **Guia**, **Chaves de API**, **Webhooks** e **Referência**.
   todas as regras de time, lente e permissão valem sem código novo.
 - **Só leitura** recusa qualquer coisa que não seja `GET` (403 "Esta chave é
   só de leitura").
-- **(padrão) Chave não mexe em chave nem webhook, nem em senha.** Essas
+- **(padrão) Chave não mexe em chave nem em senha.** Essas
   rotas exigem o login da tela. Uma chave vazada não consegue criar outra
   para se perpetuar.
+- **Chave consulta pessoas, mas não altera** (`/members`): criar conta ou
+  resetar senha devolve uma senha provisória.
+- **Reset de senha por quem administra revoga as chaves da conta.**
 - **(padrão) Até 10 chaves ativas por pessoa.**
 - Pessoa desativada: as chaves param na hora (já é a regra do login).
   **(padrão) Trocar a senha não mata as chaves**; revogar é explícito.
 - O servidor guarda só o *hash* da chave, nunca a chave.
 
-### Webhooks
-
-- **Criar:** URL (`https://`), time (e quadro, opcional) e os eventos. O
-  servidor gera um **segredo**, mostrado uma vez, para o destino conferir a
-  assinatura.
-- **Cada entrega:** `POST` com JSON
-  `{ "event": "task.moved", "occurred_at": "…", "data": { … } }` e os
-  cabeçalhos `X-TM-Event`, `X-TM-Delivery` e
-  `X-TM-Signature: sha256=<HMAC do corpo com o segredo>`.
-- **Na hora em que vai sair, confere de novo** se o dono está ativo e ainda
-  vê o time. Se não, não envia.
-- **Não atrasa a tela:** o envio sai depois de gravar, fora da resposta.
-  Espera até 5 s pelo destino.
-- **Histórico:** as últimas 50 entregas de cada webhook: quando, evento,
-  código de resposta, tempo, erro. Botão **"Enviar teste"** (um `ping`).
-- **(padrão) Desliga sozinho depois de 20 falhas seguidas**, e a tela mostra
-  "Desligado por falhas — religar".
-- **(padrão) Até 10 webhooks por pessoa.**
-- **Proteção:** só `https`, sem seguir redirecionamento, e recusa endereço de
-  rede interna (localhost, 10.x, 192.168.x, 172.16–31.x, 169.254.x, etc.),
-  conferido depois de resolver o nome. Sem isso, qualquer pessoa usaria o
-  servidor para chamar o Postgres ou o n8n por dentro da VPS.
-- O aviso de status fixo no `.env` **continua como está**.
-
 ### Guia
 
 Escrito à mão, curto, com exemplos em `curl` e no nó HTTP Request do n8n:
 criar uma chave e autenticar; listar tarefas de um quadro; criar tarefa;
-mover de coluna; listar e mudar solicitações; receber um webhook e conferir
-a assinatura (exemplo em Node e no n8n); erros comuns (401, 403, 422, 429).
+mover de coluna; listar e mudar solicitações; erros comuns (401, 403, 422, 429).
 
 ### Referência
 
@@ -102,8 +76,8 @@ desatualizada.
 ## Fora desta spec
 
 - Escopos por recurso (tarefas, solicitações...) nas chaves.
-- Reenvio automático e reenvio manual de entregas.
-- Outros eventos (comentário, projeto, Base).
+- Webhooks configuráveis pela pessoa. O aviso de status fixo no `.env`
+  continua como está.
 - Integrações prontas com serviços específicos: é a conversa seguinte.
 
 ## Fatias (um PR, um commit por fatia)
@@ -113,10 +87,6 @@ desatualizada.
   das rotas de conta, testes (inclusive a linha na matriz de permissões).
 - **B. Página e aba Chaves:** o cartão no perfil, `/perfil/desenvolvedor` com
   as abas, e a aba Chaves.
-- **C. Webhooks (servidor):** migration `0039` (`webhook`,
-  `webhook_delivery`), rotas `/me/webhooks`, emissão nos quatro eventos,
-  assinatura, proteção de rede interna, testes.
-- **D. Aba Webhooks:** criar, lista, histórico, enviar teste.
 - **E. Guia e Referência:** o texto, `GET /dev/openapi` e a lista gerada.
 
-**Deploy:** as duas migrations só criam tabelas; vão antes do código.
+**Deploy:** a migration `0038` só cria tabela; vai antes do código.

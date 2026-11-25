@@ -22,12 +22,12 @@ function Secao({ titulo, children }: { titulo: string; children: ReactNode }) {
   );
 }
 
-export default function GuiaDaApi({ irPara }: { irPara: (aba: "chaves" | "webhooks" | "referencia") => void }) {
+export default function GuiaDaApi({ irPara }: { irPara: (aba: "chaves" | "referencia") => void }) {
   // Só no navegador: o endereço da API pode ser o próprio site.
   const [base, setBase] = useState("https://seu-endereco");
   useEffect(() => setBase(urlBaseDaApi()), []);
 
-  const link = (aba: "chaves" | "webhooks" | "referencia", texto: string) => (
+  const link = (aba: "chaves" | "referencia", texto: string) => (
     <button type="button" className="font-semibold text-accent underline" onClick={() => irPara(aba)}>
       {texto}
     </button>
@@ -93,48 +93,14 @@ export default function GuiaDaApi({ irPara }: { irPara: (aba: "chaves" | "webhoo
         </p>
       </Secao>
 
-      <Secao titulo="6. Receba avisos (webhooks)">
-        <p className="m-0">
-          Na aba {link("webhooks", "Webhooks")}, cadastre a URL que vai receber os avisos e escolha os
-          eventos. Cada aviso é um <code>POST</code> com JSON assim:
-        </p>
-        <Codigo>{`{
-  "event": "task.moved",
-  "delivery_id": "…",
-  "occurred_at": "2026-11-19T18:30:00+00:00",
-  "data": {
-    "id": "…", "title": "Post do vestibular", "status": "IN_PROGRESS",
-    "column": { "id": "…", "name": "Em andamento" },
-    "previous_column": { "id": "…", "name": "A fazer" },
-    "board_id": "…", "team_id": "…", "path": "/tarefa/…"
-  }
-}`}</Codigo>
-        <p className="m-0">
-          Para conferir que o aviso veio daqui, compare o cabeçalho <code>X-TM-Signature</code> com o
-          HMAC-SHA256 do corpo, usando o segredo que apareceu ao criar o webhook:
-        </p>
-        <Codigo>{`// Node.js
-const crypto = require("crypto");
-const esperado = "sha256=" + crypto
-  .createHmac("sha256", process.env.SEGREDO_DO_WEBHOOK)
-  .update(corpoCru)            // o corpo como chegou, antes de virar objeto
-  .digest("hex");
-const confere = crypto.timingSafeEqual(
-  Buffer.from(esperado), Buffer.from(req.headers["x-tm-signature"]));`}</Codigo>
-        <p className="muted m-0 text-xs">
-          O aviso é enviado uma vez. Se o destino estiver fora do ar ou demorar mais de 5 segundos, a
-          falha fica no histórico do webhook. Depois de 20 falhas seguidas ele desliga sozinho.
-        </p>
-      </Secao>
-
-      <Secao titulo="7. Quando dá erro">
+      <Secao titulo="6. Quando dá erro">
         <ul className="m-0 flex list-disc flex-col gap-1 pl-5">
           <li>
             <strong>401</strong>: chave errada, revogada, vencida, ou a sua conta foi desativada.
           </li>
           <li>
             <strong>403</strong>: a chave é só de leitura, ou você não tem essa permissão naquele time.
-            Chave também não cria chave nem webhook: isso é só pela tela.
+            Chave também não cria outra chave nem altera pessoas (só consulta): isso é só pela tela.
           </li>
           <li>
             <strong>404</strong>: não existe, ou você não vê (a API não diz qual dos dois).

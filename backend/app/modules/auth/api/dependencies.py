@@ -14,11 +14,11 @@ from fastapi import Depends, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.deps import SessionDep
-from app.core.tenant import TenantContext, set_tenant
+from app.core.tenant import Membership, TeamNode, TenantContext, set_tenant
 from app.db.models import User
-from app.modules.auth.application.contexto import montar_contexto
 from app.modules.auth.domain.permissions import (
     ALL_PERMISSIONS,
+    permissions_for_actor,
 )
 from app.modules.auth.infrastructure.security import (
     TokenType,
@@ -91,11 +91,27 @@ async def get_tenant_context(
     if chave is not None and chave.read_only and request.method not in _SO_LEITURA:
         raise AuthorizationError("Esta chave de API é só de leitura.")
 
-    context = await montar_contexto(
-        membership_repo,
-        membership,
-        user_id=user_id,
+    # Permissao = papeis de time (com o time) + papel de organizacao (sem time).
+    memberships = tuple(
+        Membership(team_id=team_id, role=role)
+        for team_id, role in membership.team_roles
+    )
+    tree_rows = await membership_repo.load_team_tree(workspace_id=workspace_id)
+    team_tree = tuple(
+        TeamNode(team_id=tid, parent_team_id=pid) for tid, pid in tree_rows
+    )
+    permissions = permissions_for_actor(
+        memberships=memberships, tree=team_tree, org_role=membership.org_role
+    )
+
+    context = TenantContext(
         workspace_id=workspace_id,
+        user_id=user_id,
+        roles=membership.roles,
+        permissions=permissions,
+        memberships=memberships,
+        team_tree=team_tree,
+        org_role=membership.org_role,
         via_api_key=chave is not None,
     )
 
@@ -174,14 +190,24 @@ TenantContextDep = Annotated[TenantContext, Depends(get_tenant_context)]
 def require_screen_login(
     context: Annotated[TenantContext, Depends(get_tenant_context)],
 ) -> TenantContext:
-    """So o login da tela: chave de API nao cria chave nem webhook (uma chave
-    vazada criaria outra para sobreviver a revogacao)."""
+    """So o login da tela: chave de API nao cria chave (uma chave vazada criaria
+    outra para sobreviver a revogacao)."""
     if context.via_api_key:
         raise AuthorizationError("Isto exige o login da tela, não uma chave de API.")
     return context
 
 
 ScreenLoginDep = Annotated[TenantContext, Depends(require_screen_login)]
+
+
+def key_only_reads(
+    request: Request,
+    context: Annotated[TenantContext, Depends(get_tenant_context)],
+) -> None:
+    """Para routers de conta: chave de API consulta, nao altera. Criar pessoa ou
+    resetar senha devolve uma senha provisoria, com a qual a chave se perpetuaria."""
+    if context.via_api_key and request.method not in _SO_LEITURA:
+        raise AuthorizationError("Alterar pessoas exige o login da tela, não uma chave de API.")
 CurrentUserDep = Annotated[User, Depends(get_current_user)]
 
 

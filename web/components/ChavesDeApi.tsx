@@ -58,7 +58,8 @@ export default function ChavesDeApi() {
       <div className="flex flex-wrap items-start gap-3">
         <p className="muted m-0 max-w-[620px] flex-1 text-sm">
           Use uma chave para chamar a API por fora: n8n, planilhas, scripts. Ela age como você,
-          com as suas permissões, e para de funcionar se a sua conta for desativada.
+          com as suas permissões, e para de funcionar se a sua conta for desativada. Se quem
+          administra resetar a sua senha, as chaves são revogadas.
         </p>
         {!criando && !nova && (
           <button type="button" className="btn btn-primary" onClick={() => setCriando(true)}>

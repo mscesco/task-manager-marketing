@@ -1,5 +1,5 @@
 "use client";
-// Um segredo que o servidor mostra uma vez só (chave de API, segredo de webhook), com copiar.
+// Um segredo que o servidor mostra uma vez só (a chave de API), com copiar.
 
 import { useState } from "react";
 import { Copy } from "lucide-react";
